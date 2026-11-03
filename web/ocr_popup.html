@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <title>Capri OCR Sonuç</title>
+  <link rel="stylesheet" href="ocr.css">
+</head>
+<body>
+  <div class="card" id="card">
+    <div class="head pywebview-drag-region">
+      <span class="mark"><svg class="i" viewBox="0 0 24 24"><path d="M4 7h10M9 4v3M6 7c1 4 4 7 8 8M12 7c-1 4-4 7-7 8M14 20l4-9 4 9M15.5 17h5"/></svg></span>
+      <span class="title">Ekran çevirisi</span>
+      <span class="grow"></span>
+      <span class="pill" id="engine">—</span>
+      <button class="icon-btn close" id="close" title="Kapat (Esc)"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </div>
+    <div class="body">
+      <div id="content"></div>
+      <div class="orig selectable" id="orig"></div>
+    </div>
+    <div class="foot">
+      <span class="meta" id="meta"></span>
+      <button class="btn" id="copy"><svg class="i" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg>Kopyala</button>
+      <button class="btn lime" id="pin" title="Bu alanı canlı çeviri için sabitle"><svg class="i" viewBox="0 0 24 24"><path d="M12 17v5M9 3h6l-1 6 4 4H6l4-4z"/></svg>Sabitle</button>
+    </div>
+  </div>
+  <script>
+    "use strict";
+    const $ = (s) => document.querySelector(s);
+    const api = () => window.pywebview && window.pywebview.api;
+    const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+    let lastText = "";
+
+    function fit() {
+      requestAnimationFrame(() => api() && api().ocr_resize("popup", Math.ceil($("#card").scrollHeight)));
+    }
+
+    window.OCRPOP = {
+      show(d) {
+        $("#engine").textContent = d.engine || "—";
+        $("#orig").textContent = d.original || "";
+        $("#orig").style.display = d.original ? "block" : "none";
+        if (d.state === "loading") $("#content").innerHTML = `<div class="skeleton"><i></i><i></i></div>`;
+        else if (d.state === "empty") $("#content").innerHTML = `<div class="err">Bu alanda okunabilir metin bulunamadı.</div>`;
+        else if (d.state === "error") $("#content").innerHTML = `<div class="err">${esc(d.error)}</div>`;
+        else $("#content").innerHTML = `<div class="tr selectable">${esc(d.translation)}</div>`;
+        lastText = d.translation || "";
+        $("#meta").textContent = d.meta || "";
+        $("#copy").disabled = !lastText;
+        fit();
+      },
+    };
+    $("#close").addEventListener("click", () => api().ocr_hide("popup"));
+    $("#pin").addEventListener("click", () => api().ocr_pin_last());
+    $("#copy").addEventListener("click", () => navigator.clipboard.writeText(lastText).then(() => {
+      $("#copy").lastChild.textContent = "Kopyalandı";
+      setTimeout(() => { $("#copy").lastChild.textContent = "Kopyala"; }, 1200);
+    }));
+    addEventListener("keydown", (e) => { if (e.key === "Escape") api().ocr_hide("popup"); });
+  </script>
+</body>
+</html>

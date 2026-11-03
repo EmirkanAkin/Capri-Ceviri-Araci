@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Capri</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-logo" viewBox="0 0 24 24"><path d="M14.4 6.9A6.2 6.2 0 1 0 14.4 17.1M11 10.7h7.5M11 13.3h4.8"/></symbol>
+    <symbol id="i-compass" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m15.5 8.5-2 5-5 2 2-5z"/></symbol>
+    <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5z"/><path d="m3 13 9 5 9-5"/></symbol>
+    <symbol id="i-archive" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9M10 13h4"/></symbol>
+    <symbol id="i-diamond" viewBox="0 0 24 24"><path d="M12 3 21 12 12 21 3 12z"/></symbol>
+    <symbol id="i-cpu" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></symbol>
+    <symbol id="i-terminal" viewBox="0 0 24 24"><path d="m5 7 5 5-5 5M12 17h7"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2.5h8.5A1.5 1.5 0 0 1 21 9v9.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18.5z"/></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/></symbol>
+    <symbol id="i-right" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+    <symbol id="i-chev-r" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
+    <symbol id="i-chev-l" viewBox="0 0 24 24"><path d="m15 6-6 6 6 6"/></symbol>
+    <symbol id="i-min" viewBox="0 0 24 24"><path d="M6 12h12"/></symbol>
+    <symbol id="i-max" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+    <symbol id="i-scan" viewBox="0 0 24 24"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M7 12h10"/></symbol>
+    <symbol id="i-undo" viewBox="0 0 24 24"><path d="M4 10h11a5 5 0 0 1 0 10h-3"/><path d="m8 6-4 4 4 4"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M5 7h14M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol>
+    <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.5 3 14.5 0 18M12 3c-3 3.5-3 14.5 0 18"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 5 6v6c0 4.5 3 7.5 7 9 4-1.5 7-4.5 7-9V6z"/></symbol>
+    <symbol id="i-zap" viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></symbol>
+    <symbol id="i-flame" viewBox="0 0 24 24"><path d="M12 21c4 0 7-2.7 7-6.8 0-3.6-2.5-6-4.3-8.2-.5 2.3-1.7 3.6-3 4.2C12 7 10.8 4.6 9 3c0 3.2-4 5.9-4 11.2C5 18.3 8 21 12 21z"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 5 5 9-10"/></symbol>
+    <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M4 19V5M8 7h7"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13 7 4 4"/></symbol>
+    <symbol id="i-braces" viewBox="0 0 24 24"><path d="M8 4c-2 0-2 1-2 3s0 4-2 5c2 1 2 3 2 5s0 3 2 3M16 4c2 0 2 1 2 3s0 4 2 5c-2 1-2 3-2 5s0 3-2 3"/></symbol>
+    <symbol id="i-dict" viewBox="0 0 24 24"><path d="M4 4h7v16H4zM13 4h7v16h-7z"/><path d="M6.5 8h2M15.5 8h2"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 5v14l11-7z"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17v.5"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11m0 0-4-4m4 4 4-4"/><path d="M5 19h14"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 15V4m0 0-4 4m4-4 4 4"/><path d="M5 19h14"/></symbol>
+    <symbol id="i-lines" viewBox="0 0 24 24"><path d="M5 6h14M5 10h14M5 14h9M5 18h6"/></symbol>
+    <symbol id="i-gamepad" viewBox="0 0 24 24"><path d="M6 8h12a4 4 0 0 1 4 4v1a4 4 0 0 1-7 2.7L14 15h-4l-1 .7A4 4 0 0 1 2 13v-1a4 4 0 0 1 4-4z"/><path d="M7 11v3M5.5 12.5h3M16 12h.01M18 13.5h.01"/></symbol>
+    <symbol id="i-swap" viewBox="0 0 24 24"><path d="M7 7h13l-4-4M17 17H4l4 4"/></symbol>
+    <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 17v5M9 3h6l-1 6 4 4H6l4-4z"/></symbol>
+    <symbol id="i-type" viewBox="0 0 24 24"><path d="M5 6V4h14v2M12 4v16M9 20h6"/></symbol>
+    <symbol id="i-keyboard" viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></symbol>
+    <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6"/></symbol>
+  </svg>
+
+  <header class="titlebar pywebview-drag-region">
+    <div class="brand">
+      <span class="brand-mark"><svg class="i"><use href="#i-logo"/></svg></span>
+      <span class="brand-name">Capri</span>
+    </div>
+    <div class="win">
+      <button data-win="min" title="Küçült"><svg class="i"><use href="#i-min"/></svg></button>
+      <button data-win="max" title="Ekranı kapla"><svg class="i"><use href="#i-max"/></svg></button>
+      <button data-win="close" class="close" title="Kapat"><svg class="i"><use href="#i-x"/></svg></button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="side-label">Çeviri</div>
+      <button class="nav active" data-page="studio"><svg class="i"><use href="#i-compass"/></svg>Stüdyo</button>
+      <button class="nav" data-page="library"><svg class="i"><use href="#i-layers"/></svg>Kütüphane<span class="dot hidden" id="libraryDot"></span></button>
+      <button class="nav" data-page="editor"><svg class="i"><use href="#i-edit"/></svg>Çeviri Editörü<span class="count hidden" id="reviewCount"></span></button>
+      <button class="nav" data-page="backups"><svg class="i"><use href="#i-archive"/></svg>Yedekler</button>
+      <div class="side-label">Araçlar</div>
+      <button class="nav" data-page="glossary"><svg class="i"><use href="#i-dict"/></svg>Sözlük</button>
+      <button class="nav" data-page="translator"><svg class="i"><use href="#i-type"/></svg>Metin Çevirici</button>
+      <button class="nav" data-page="ocr"><svg class="i"><use href="#i-scan"/></svg>Ekran Çevirisi<span class="dot hidden" id="ocrDot"></span></button>
+      <button class="nav" data-page="json"><svg class="i"><use href="#i-braces"/></svg>JSON Çevirici</button>
+      <div class="side-label">Sistem</div>
+      <button class="nav" data-page="providers"><svg class="i"><use href="#i-diamond"/></svg>Sağlayıcılar</button>
+      <button class="nav" data-page="models"><svg class="i"><use href="#i-cpu"/></svg>Yerel Modeller</button>
+      <div class="side-spacer"></div>
+      <div class="engine-card">
+        <div class="engine-head">
+          <div class="engine-icon"><svg class="i"><use href="#i-zap"/></svg></div>
+          <div class="engine-meta"><div class="engine-tag">Aktif motor</div><div class="engine-title" id="engineTitle">—</div></div>
+        </div>
+        <div class="engine-rows">
+          <div class="engine-row"><span>Durum</span><span id="engineState"><span class="pill ok">Hazır</span></span></div>
+          <div class="engine-row"><span>Donanım</span><span id="engineGpu">—</span></div>
+          <div class="engine-row"><span>Ekran çevirisi</span><span id="engineOcr">—</span></div>
+        </div>
+        <button class="btn-wide" data-page="providers"><svg class="i"><use href="#i-diamond"/></svg>Motoru değiştir</button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="topbar">
+        <label class="search">
+          <svg class="i"><use href="#i-search"/></svg>
+          <input id="searchInput" placeholder="Kütüphanede ara" autocomplete="off" spellcheck="false">
+          <span class="kbd">Ctrl K</span>
+        </label>
+        <nav class="toplinks">
+          <button data-action="pick"><svg class="i"><use href="#i-plus"/></svg>Oyun ekle</button>
+          <button data-page="translator"><svg class="i"><use href="#i-type"/></svg>Metin çevir</button>
+          <button data-page="ocr"><svg class="i"><use href="#i-scan"/></svg>Ekran çevirisi</button>
+          <button data-page="guide"><svg class="i"><use href="#i-book"/></svg>Rehber</button>
+        </nav>
+        <div class="topright">
+          <button class="round" id="openFolderBtn" title="Oyun klasörünü aç"><svg class="i"><use href="#i-folder"/></svg></button>
+          <button class="round" id="updateBtn" title="Güncellemeler"><svg class="i"><use href="#i-download"/></svg><span class="dot hidden" id="updateDot"></span></button>
+          <button class="round" id="bellBtn" title="Bildirimler"><svg class="i"><use href="#i-bell"/></svg><span class="badge hidden" id="bellBadge"></span></button>
+        </div>
+      </div>
+
+      <div class="taskbar hidden" id="taskbar">
+        <span class="label" id="taskLabel">Çeviri</span>
+        <div class="bar" id="taskBar"><i></i></div>
+        <span class="meta num" id="taskMeta"></span>
+        <button class="btn sm danger" data-action="cancel"><svg class="i"><use href="#i-stop"/></svg>Durdur</button>
+      </div>
+
+      <div class="scroll" id="scroll">
+        <!-- STÜDYO -->
+        <section class="page active" id="page-studio">
+          <div class="hero" id="hero">
+            <div class="hero-bg fallback" id="heroBg"></div>
+            <div class="hero-body">
+              <span class="eyebrow" id="heroTag">Hoş geldin</span>
+              <h1 class="hero-title" id="heroTitle">Oyununu Türkçeye çevir.</h1>
+              <div class="hero-meta" id="heroMeta"></div>
+              <p class="hero-desc" id="heroDesc"></p>
+              <div class="hero-actions" id="heroActions"></div>
+              <div class="hero-progress hidden" id="heroProgress">
+                <div class="progress-line"><span class="big num" id="progPct">%0</span><span class="meta num" id="progMeta"></span></div>
+                <div class="bar" id="heroBar"><i></i></div>
+                <div class="progress-last" id="progLast"></div>
+              </div>
+              <div class="steps hidden" id="heroSteps">
+                <span class="step"><b>1</b>Oyun klasörünü seç</span>
+                <span class="step"><b>2</b>Otomatik analiz</span>
+                <span class="step"><b>3</b>Tek tıkla çeviri</span>
+              </div>
+            </div>
+            <div class="poster hidden" id="heroPoster"></div>
+            <div class="demo hidden" id="heroDemo">
+              <div class="demo-card" id="demoCard">
+                <div class="demo-row"><span class="demo-lang">EN</span><div class="demo-text src" id="demoSrc"></div></div>
+                <div class="demo-sep">etiketler korunur</div>
+                <div class="demo-row"><span class="demo-lang tr">TR</span><div class="demo-text" id="demoTr"></div></div>
+              </div>
+              <div class="demo-ocr hidden" id="demoOcr">
+                <div class="docr-screen">
+                  <div class="docr-scene"><i class="docr-moon"></i><i class="docr-hill a"></i><i class="docr-hill b"></i></div>
+                  <div class="docr-keys"><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>T</kbd></div>
+                  <div class="docr-dialog"><b id="docrName"></b><span id="docrSrc"></span></div>
+                  <div class="docr-sel" id="docrSel"><i class="docr-scan"></i></div>
+                </div>
+                <div class="docr-pop" id="docrPop">
+                  <div class="docr-pop-head"><span class="demo-lang tr">TR</span><span>Ekran çevirisi</span><em id="docrMs"></em></div>
+                  <div class="docr-pop-text" id="docrTr"></div>
+                </div>
+              </div>
+              <div class="demo-engines" id="demoEngines"><span>Ren'Py</span><span>Unity</span><span>Unreal</span><span>RPG Maker</span><span>JSON</span><span>Ekran (OCR)</span></div>
+            </div>
+            <div class="hero-nav hidden" id="heroNav">
+              <div class="hero-dots" id="heroDots"></div>
+              <span class="hero-count num" id="heroCount"></span>
+              <button class="sq" id="heroPrev" title="Önceki"><svg class="i"><use href="#i-chev-l"/></svg></button>
+              <button class="sq" id="heroNext" title="Sonraki"><svg class="i"><use href="#i-chev-r"/></svg></button>
+            </div>
+          </div>
+
+          <div class="stats" id="stats"></div>
+
+          <div class="section">
+            <span class="eyebrow">Ayarlar</span>
+            <div class="section-head"><h2 class="section-title">Çeviri ayarları</h2></div>
+            <div class="config">
+              <div class="field">
+                <div class="field-label"><svg class="i"><use href="#i-globe"/></svg>Kaynak dil</div>
+                <select class="input" id="sourceSelect"></select>
+              </div>
+              <div class="field">
+                <div class="field-label"><svg class="i"><use href="#i-globe"/></svg>Hedef dil</div>
+                <select class="input" id="targetSelect"></select>
+              </div>
+              <div class="field span2">
+                <div class="field-label"><svg class="i"><use href="#i-zap"/></svg>Çeviri motoru</div>
+                <select class="input" id="modelSelect"></select>
+                <div class="field-hint" id="modelHint"></div>
+              </div>
+              <label class="field toggle-row">
+                <div>
+                  <div class="field-label"><svg class="i"><use href="#i-shield"/></svg>Güvenlik</div>
+                  <div class="toggle-title">Çeviri öncesi yedek al</div>
+                  <div class="field-hint">Değişen dosyalar tek tıkla orijinaline döner.</div>
+                </div>
+                <span class="switch"><input type="checkbox" id="backupToggle"><i></i></span>
+              </label>
+              <label class="field toggle-row">
+                <div>
+                  <div class="field-label"><svg class="i"><use href="#i-flame"/></svg>Sözlük</div>
+                  <div class="toggle-title">Yetişkin (NSFW) sözlüğü</div>
+                  <div class="field-hint">Argo ve yetişkin sahneleri doğal günlük dille aktarır.</div>
+                </div>
+                <span class="switch"><input type="checkbox" id="nsfwToggle"><i></i></span>
+              </label>
+              <label class="field toggle-row span2">
+                <div>
+                  <div class="field-label"><svg class="i"><use href="#i-edit"/></svg>Kalite</div>
+                  <div class="toggle-title">Kalite editörü geçişi (Ren'Py)</div>
+                  <div class="field-hint">Çeviriden sonra sorunlu taslaklar (İngilizce kalıntı, robotik ifade) konuşmacı ve önceki satırlarla birlikte bir sohbet modeline düzelttirilir. Gemini, OpenAI, Claude veya Ollama kullanır.</div>
+                </div>
+                <span class="switch"><input type="checkbox" id="qualityToggle"><i></i></span>
+              </label>
+              <div class="field span-all">
+                <div class="field-label"><svg class="i"><use href="#i-scan"/></svg>Analiz</div>
+                <ul class="notes" id="analysisNotes"></ul>
+                <div class="eta" id="analysisEta"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="section">
+            <span class="eyebrow">Kütüphane</span>
+            <div class="section-head">
+              <h2 class="section-title">Projelerim</h2>
+              <button class="link-more" data-page="library">Tümünü gör <svg class="i"><use href="#i-chev-r"/></svg></button>
+            </div>
+            <div id="homeLibrary"></div>
+          </div>
+        </section>
+
+        <!-- KÜTÜPHANE -->
+        <section class="page" id="page-library">
+          <div class="page-head">
+            <span class="eyebrow">Kütüphane</span>
+            <div class="section-head"><h2 class="section-title">Tüm projeler</h2>
+              <div class="row-actions" style="margin:0">
+                <button class="btn" data-action="import-patch"><svg class="i"><use href="#i-download"/></svg>Yama içe aktar</button>
+                <button class="btn lime" data-action="pick"><svg class="i"><use href="#i-plus"/></svg>Oyun ekle</button>
+              </div>
+            </div>
+            <p class="page-sub">Analiz ettiğin ve çevirdiğin oyunlar. Bir karta tıklayarak projeyi aç.</p>
+          </div>
+          <div id="fullLibrary"></div>
+        </section>
+
+        <!-- EDİTÖR -->
+        <section class="page" id="page-editor">
+          <div class="page-head">
+            <span class="eyebrow">Çeviri editörü</span>
+            <div class="section-head"><h2 class="section-title" id="editorTitle">Çevirileri düzenle</h2>
+              <div class="row-actions" style="margin:0">
+                <button class="btn hidden" data-action="quality-pass" id="qualityBtn"><svg class="i"><use href="#i-sparkle"/></svg>Kalite editörü</button>
+                <button class="btn" data-action="export-patch"><svg class="i"><use href="#i-upload"/></svg>Yamayı dışa aktar</button>
+                <button class="btn" data-action="import-patch"><svg class="i"><use href="#i-download"/></svg>Yama içe aktar</button>
+              </div>
+            </div>
+            <p class="page-sub">Önbellekteki çevirileri ara, düzelt ve kaydet. “Oyuna uygula” düzenlemeleri oyun dosyalarına yazar — API harcamaz. Turuncu çizgili satırlar incelenmeli.</p>
+          </div>
+          <div id="editorBody"></div>
+        </section>
+
+        <!-- YEDEKLER -->
+        <section class="page" id="page-backups">
+          <div class="page-head">
+            <span class="eyebrow">Yedekler</span>
+            <div class="section-head"><h2 class="section-title">Yedekler</h2>
+              <button class="btn" id="refreshBackups"><svg class="i"><use href="#i-scan"/></svg>Yenile</button></div>
+            <p class="page-sub" id="backupsSub"></p>
+          </div>
+          <div class="list" id="backupList"></div>
+        </section>
+
+        <!-- SÖZLÜK -->
+        <section class="page" id="page-glossary">
+          <div class="page-head">
+            <span class="eyebrow">Sözlük</span>
+            <div class="section-head"><h2 class="section-title">Terim sözlüğü</h2>
+              <button class="btn lime" id="glossarySave"><svg class="i"><use href="#i-check"/></svg>Kaydet</button></div>
+            <p class="page-sub">Tam eşleşen metinler model kullanılmadan bu karşılıklarla çevrilir (menüler, karakter adları, özel terimler).</p>
+          </div>
+          <div class="filters" id="glossaryTabs"></div>
+          <div class="panel hidden" id="glossaryProject" style="margin-top:14px"></div>
+          <div class="toolbar">
+            <input class="input grow" id="glossarySearch" placeholder="Terimlerde ara" spellcheck="false">
+            <button class="btn" id="glossaryAdd"><svg class="i"><use href="#i-plus"/></svg>Terim ekle</button>
+            <span class="status-msg" id="glossaryStatus"></span>
+          </div>
+          <div class="table glossary" id="glossaryTable"></div>
+        </section>
+
+        <!-- JSON -->
+        <section class="page" id="page-json">
+          <div class="page-head">
+            <span class="eyebrow">JSON çevirici</span>
+            <div class="section-head"><h2 class="section-title">Motor bağımsız JSON</h2></div>
+            <p class="page-sub">Kendi motorunu kullanan oyunlarda (ör. VNE, Electron) metin dosyalarını çevir. Anahtarlar ve kod parçaları korunur; düz ve iç içe yapılar desteklenir.</p>
+          </div>
+          <div class="panels">
+            <div class="panel">
+              <div class="panel-title">Giriş</div>
+              <p class="panel-desc">Tek bir .json dosyası ya da içinde .json dosyaları olan bir klasör.</p>
+              <input class="input" id="jsonInput" placeholder="Dosya veya klasör yolu" spellcheck="false">
+              <div class="row-actions">
+                <button class="btn" data-action="json-file"><svg class="i"><use href="#i-braces"/></svg>Dosya seç</button>
+                <button class="btn" data-action="json-folder"><svg class="i"><use href="#i-folder"/></svg>Klasör seç</button>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="panel-title">Çıkış</div>
+              <p class="panel-desc">Boş bırakılırsa dosya adının sonuna “_tr” eklenir; orijinal dosyaya dokunulmaz.</p>
+              <input class="input" id="jsonOutput" placeholder="Otomatik" spellcheck="false">
+              <div class="row-actions">
+                <button class="btn lime" data-action="json-run"><svg class="i"><use href="#i-play"/></svg>Çevir</button>
+                <span class="status-msg" id="jsonModel"></span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- SAĞLAYICILAR -->
+        <section class="page" id="page-providers">
+          <div class="page-head">
+            <span class="eyebrow">Sağlayıcılar</span>
+            <div class="section-head"><h2 class="section-title">Çeviri motoru seç</h2></div>
+            <p class="page-sub">Bir motora tıklayıp ayarlarını yap. API anahtarları Windows Kimlik Bilgisi Yöneticisi'nde, Windows hesabına bağlı olarak şifreli saklanır.</p>
+          </div>
+          <div class="prov-grid" id="providerGrid"></div>
+          <div class="panel prov-detail" id="providerDetail"></div>
+        </section>
+
+        <!-- YEREL MODELLER -->
+        <section class="page" id="page-models">
+          <div class="page-head">
+            <span class="eyebrow">Yerel modeller</span>
+            <div class="section-head"><h2 class="section-title">Çevrimdışı modeller</h2></div>
+            <p class="page-sub">İnternet ve kota gerektirmeyen, ekran kartında çalışan nöral çeviri modelleri.</p>
+          </div>
+          <div class="panel runtime-panel hidden" id="runtimePanel"></div>
+          <div class="panel gpu-panel" id="gpuPanel"></div>
+          <div class="panels" id="modelPanels"></div>
+        </section>
+
+        <!-- METİN ÇEVİRİCİ -->
+        <section class="page" id="page-translator">
+          <div class="page-head">
+            <span class="eyebrow">Metin çevirici</span>
+            <div class="section-head"><h2 class="section-title">Metin çevir</h2></div>
+            <p class="page-sub">Metni yaz ya da yapıştır; seçtiğin motorla anında çevrilsin. Satır yapısı ve oyun etiketleri korunur.</p>
+          </div>
+          <div class="tx-bar">
+            <select class="input" id="txSource"></select>
+            <button class="sq tx-swap" id="txSwap" title="Dilleri değiştir"><svg class="i"><use href="#i-swap"/></svg></button>
+            <select class="input" id="txTarget"></select>
+            <span class="tx-spacer"></span>
+            <select class="input" id="txModel"></select>
+            <label class="tx-auto"><span class="switch"><input type="checkbox" id="txAuto" checked><i></i></span>Yazarken çevir</label>
+          </div>
+          <div class="tx-panes">
+            <div class="tx-pane">
+              <textarea id="txInput" spellcheck="false" placeholder="Çevrilecek metni yaz veya yapıştır…"></textarea>
+              <div class="tx-foot">
+                <span class="status-msg num" id="txCount">0 karakter</span>
+                <span class="tx-spacer"></span>
+                <button class="btn sm" id="txClear"><svg class="i"><use href="#i-x"/></svg>Temizle</button>
+                <button class="btn sm lime" id="txGo"><svg class="i"><use href="#i-zap"/></svg>Çevir <span class="kbd">Ctrl ⏎</span></button>
+              </div>
+            </div>
+            <div class="tx-pane out">
+              <div class="tx-output selectable" id="txOutput"><span class="tx-placeholder">Çeviri burada görünecek.</span></div>
+              <div class="tx-foot">
+                <span class="status-msg num" id="txMeta"></span>
+                <span class="tx-spacer"></span>
+                <button class="btn sm" id="txCopy"><svg class="i"><use href="#i-copy"/></svg>Kopyala</button>
+              </div>
+            </div>
+          </div>
+          <div class="chips" id="samples"></div>
+          <div class="section" style="margin-top:28px">
+            <div class="section-head" style="margin-top:0"><h3 class="panel-title">Son çeviriler</h3>
+              <button class="link-more" id="txHistoryClear">Geçmişi temizle</button></div>
+            <div class="tx-history" id="txHistory"></div>
+          </div>
+        </section>
+
+        <!-- EKRAN ÇEVİRİSİ (OCR) -->
+        <section class="page" id="page-ocr">
+          <div class="page-head">
+            <span class="eyebrow">Ekran çevirisi</span>
+            <div class="section-head"><h2 class="section-title">Oyun ekranını çevir</h2></div>
+            <p class="page-sub">Kısayola bas: ekran donar, çevirmek istediğin yeri sürükleyip seç, çeviri hemen yanında belirir. Sabit modda seçtiğin alan canlı izlenir ve metin her değiştiğinde yeniden çevrilir.</p>
+          </div>
+          <div class="ocr-actions">
+            <div class="ocr-action">
+              <div class="stat-icon"><svg class="i"><use href="#i-scan"/></svg></div>
+              <div class="grow"><div class="panel-title">Alan seç ve çevir</div>
+                <p class="panel-desc">Tek seferlik: diyalog, menü ya da görev metnini seç, çeviri açılır pencerede görünsün.</p>
+                <div class="row-actions"><span class="hotkey" id="hkOnceView">Ctrl + Shift + T</span>
+                  <button class="btn lime" data-action="ocr-once"><svg class="i"><use href="#i-scan"/></svg>Şimdi dene</button></div></div>
+            </div>
+            <div class="ocr-action">
+              <div class="stat-icon"><svg class="i"><use href="#i-pin"/></svg></div>
+              <div class="grow"><div class="panel-title">Alanı sabitle (canlı)</div>
+                <p class="panel-desc">Altyazı ve diyalog kutuları için: seçilen alan sürekli izlenir, değişen metin otomatik çevrilir.</p>
+                <div class="row-actions"><span class="hotkey" id="hkPinView">Ctrl + Shift + Y</span>
+                  <button class="btn lime" data-action="ocr-pin" id="ocrPinBtn"><svg class="i"><use href="#i-pin"/></svg>Alan seç</button></div></div>
+            </div>
+          </div>
+          <div class="panels">
+            <div class="panel">
+              <div class="panel-head"><div><div class="panel-title">Kısayollar ve ayarlar</div>
+                <p class="panel-desc">Kısayol kutusuna tıklayıp yeni tuş kombinasyonuna bas.</p></div></div>
+              <div class="form-grid">
+                <div><div class="field-label"><svg class="i"><use href="#i-keyboard"/></svg>Tek seferlik</div>
+                  <input class="input hk-input" id="hkOnce" data-setting="ocr_hotkey" readonly></div>
+                <div><div class="field-label"><svg class="i"><use href="#i-keyboard"/></svg>Sabit / kapat</div>
+                  <input class="input hk-input" id="hkPin" data-setting="pin_hotkey" readonly></div>
+                <div class="full"><div class="field-label"><svg class="i"><use href="#i-zap"/></svg>Ekran çevirisi motoru</div>
+                  <select class="input" id="ocrModel"></select>
+                  <div class="field-hint">En hızlısı ekran kartında çalışan OPUS'tur (~50 ms). Gemini daha doğal ama ~1 sn sürer.</div></div>
+                <div><div class="field-label">Canlı yenileme aralığı · <span id="ocrIntervalVal" class="num">350 ms</span></div>
+                  <input type="range" class="range" id="ocrInterval" min="150" max="1500" step="50"></div>
+                <div><div class="field-label">Sabit çeviri penceresi</div>
+                  <div class="seg" id="ocrPlace"><button data-place="below">Alanın altında</button><button data-place="over">Orijinalin üstünde</button></div></div>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="panel-head"><div><div class="panel-title">Durum</div>
+                <p class="panel-desc">Metinler Windows'un yerleşik OCR motoruyla okunur; ek model indirmek gerekmez.</p></div>
+                <span class="pill" id="ocrState">—</span></div>
+              <div class="engine-rows" id="ocrRows" style="margin:16px 0 0"></div>
+              <ul class="notes" style="margin-top:16px">
+                <li>Oyun “özel tam ekran” modundaysa ekran üstüne pencere çizilemez; oyunu “kenarlıksız / pencereli tam ekran” çalıştır.</li>
+                <li>Çeviri pencereleri ekran yakalamaya görünmez yapılır, bu yüzden orijinal yazının üstünde dursalar bile kendi yazılarını okumazlar.</li>
+                <li>Daha iyi tanıma için Windows'a İngilizce dil paketini ekleyebilirsin (Ayarlar › Saat ve dil › Dil ve bölge).</li>
+                <li>Seçim ekranında <b>Esc</b> veya sağ tık iptal eder.</li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        <!-- REHBER -->
+        <section class="page" id="page-guide">
+          <div class="page-head">
+            <span class="eyebrow">Rehber</span>
+            <div class="section-head"><h2 class="section-title">Nasıl çalışır?</h2></div>
+          </div>
+          <div class="panels">
+            <div class="panel"><div class="panel-title">1 · Oyunu ekle</div><p class="panel-desc">“Oyun ekle” ile oyun klasörünü seç. Motor otomatik algılanır ve oyun analiz edilir; indirme sarmalayıcısı klasörü seçsen bile içteki oyun bulunur. Kapak görseli Steam'den gelir.</p></div>
+            <div class="panel"><div class="panel-title">2 · Motoru seç</div><p class="panel-desc">Gemini hızlı ve doğaldır; birden fazla anahtar girersen paralel çalışır. OpenAI, Claude ve DeepL bulut seçenekleridir. OPUS (EN→TR) ve NLLB (200 dil) ekran kartında internetsiz çalışır. Ollama yerel LLM ile sansürsüz çeviri sağlar.</p></div>
+            <div class="panel"><div class="panel-title">3 · Çevir, durdur, devam et</div><p class="panel-desc">“Çeviriyi başlat” önce dosyaları yedekler. İstediğin an “Durdur”a bas; çeviriler önbellekte kalır ve tekrar başlatınca kaldığı yerden, aynı satırlar için API harcamadan devam eder.</p></div>
+            <div class="panel"><div class="panel-title">4 · Düzelt ve paylaş</div><p class="panel-desc">Çeviri Editörü'nde satırları düzelt, “Oyuna uygula” ile yaz. Yamayı .capripatch olarak dışa aktarıp arkadaşlarınla paylaşabilir, onların yamasını içe aktarabilirsin.</p></div>
+            <div class="panel"><div class="panel-title">Geri al</div><p class="panel-desc">Yedekler sayfasından istediğin yedeği geri yükleyerek oyunu orijinal hâline döndür. Unity IL2CPP oyunlarında çeviri BepInEx + XUnity.AutoTranslator dosyaları olarak yazılır (onayın istenir).</p></div>
+            <div class="panel"><div class="panel-title">Güncellemeler</div>
+              <p class="panel-desc">Yeni sürüm çıktığında Capri haber verir; tek tıkla indirip kurar ve yeniden açılır.
+                Ayarların, önbelleklerin, modellerin ve API anahtarların korunur.</p>
+              <div class="row-actions">
+                <button class="btn lime" data-action="update-open"><svg class="i"><use href="#i-download"/></svg>Güncellemeleri kontrol et</button>
+              </div></div>
+            <div class="panel"><div class="panel-title">Kısayollar</div><p class="panel-desc"><b>Ctrl K</b> kütüphanede ara · <b>Ctrl O</b> oyun ekle · <b>Ctrl B</b> bildirimler · <b>← →</b> vitrinde gezin · <b>Esc</b> paneli kapat.<br>Her yerde: <b>Ctrl Shift T</b> alan seç ve çevir · <b>Ctrl Shift Y</b> alanı sabitle / kaldır (Ekran Çevirisi sayfasından değiştirilebilir).</p></div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <aside class="drawer" id="drawer">
+    <div class="drawer-head">
+      <div class="drawer-top">
+        <div class="drawer-title">Bildirimler</div>
+        <button class="sq" id="drawerClose" title="Kapat"><svg class="i"><use href="#i-x"/></svg></button>
+      </div>
+      <div class="seg" id="drawerTabs">
+        <button class="on" data-tab="notifs">Bildirimler</button>
+        <button data-tab="log">Teknik günlük</button>
+      </div>
+    </div>
+    <div class="drawer-tools" id="drawerTools"></div>
+    <div class="drawer-body" id="drawerBody"></div>
+  </aside>
+
+  <div class="dropzone hidden" id="dropzone">
+    <div class="dropzone-card">
+      <div class="plus"><svg class="i"><use href="#i-download"/></svg></div>
+      <div class="dropzone-title">Oyun klasörünü bırak</div>
+      <div class="dropzone-sub" id="dropzoneSub">Klasör, oyunun .exe dosyası ya da masaüstü kısayolu olabilir</div>
+    </div>
+  </div>
+
+  <div class="toasts" id="toasts"></div>
+  <script src="app.js"></script>
+</body>
+</html>
