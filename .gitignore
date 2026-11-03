@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Derleme çıktıları
+build/
+dist/
+*.spec
+
+# Kullanıcı verisi (önbellekler, ayarlar, proje listesi, API ayarları)
+portable_cache/
+config_providers.json
+gemini_api_key.txt
+
+# Büyük ve uygulama içinden indirilen dosyalar
+model/
+model_nllb/
+runtime/
+tools/
+*.part

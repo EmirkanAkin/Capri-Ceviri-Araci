@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <title>Capri OCR Seçim</title>
+  <link rel="stylesheet" href="ocr.css">
+</head>
+<body class="select">
+  <img id="shot" alt="">
+  <div id="dim"></div>
+  <div id="rect"></div>
+  <div id="size"></div>
+  <div class="hint" id="hint">
+    <span class="mark"><svg class="i" viewBox="0 0 24 24"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/></svg></span>
+    <span id="hintText">Çevrilecek alanı sürükleyerek seç</span>
+    <kbd>Esc</kbd><span style="color:var(--muted)">iptal</span>
+  </div>
+  <script>
+    "use strict";
+    const $ = (s) => document.querySelector(s);
+    const api = () => window.pywebview && window.pywebview.api;
+    let start = null, cur = null, active = false;
+
+    function draw() {
+      const r = $("#rect"), sz = $("#size");
+      if (!start || !cur) { r.style.display = sz.style.display = "none"; $("#dim").style.display = "block"; return; }
+      const x = Math.min(start.x, cur.x), y = Math.min(start.y, cur.y);
+      const w = Math.abs(cur.x - start.x), h = Math.abs(cur.y - start.y);
+      Object.assign(r.style, { display: "block", left: `${x}px`, top: `${y}px`, width: `${w}px`, height: `${h}px` });
+      $("#dim").style.display = "none";
+      const scale = ($("#shot").naturalWidth || innerWidth) / innerWidth;
+      sz.textContent = `${Math.round(w * scale)} × ${Math.round(h * scale)}`;
+      Object.assign(sz.style, { display: "block", left: `${x}px`, top: `${Math.max(4, y - 28)}px` });
+    }
+
+    window.OCRSEL = {
+      open(src, mode) {
+        start = cur = null;
+        active = true;
+        $("#shot").src = src;
+        $("#hintText").textContent = mode === "pin"
+          ? "Sabitlenecek alanı seç — bu alan canlı olarak çevrilecek"
+          : "Çevrilecek alanı sürükleyerek seç";
+        draw();
+        window.focus();
+      },
+      reset() { active = false; start = cur = null; $("#shot").removeAttribute("src"); draw(); },
+    };
+
+    function cancel() { if (!active) return; OCRSEL.reset(); api() && api().ocr_cancel(); }
+
+    addEventListener("mousedown", (e) => {
+      if (e.button === 2) { cancel(); return; }
+      if (e.button !== 0 || !active) return;
+      start = cur = { x: e.clientX, y: e.clientY };
+      draw();
+    });
+    addEventListener("mousemove", (e) => { if (start) { cur = { x: e.clientX, y: e.clientY }; draw(); } });
+    addEventListener("mouseup", (e) => {
+      if (!start || e.button !== 0) return;
+      const x0 = Math.min(start.x, cur.x), y0 = Math.min(start.y, cur.y);
+      const x1 = Math.max(start.x, cur.x), y1 = Math.max(start.y, cur.y);
+      start = null;
+      if (x1 - x0 < 8 || y1 - y0 < 8) { cur = null; draw(); return; }
+      active = false;
+      api().ocr_selected(x0 / innerWidth, y0 / innerHeight, x1 / innerWidth, y1 / innerHeight);
+      setTimeout(() => { cur = null; draw(); }, 50);
+    });
+    addEventListener("contextmenu", (e) => e.preventDefault());
+    addEventListener("keydown", (e) => { if (e.key === "Escape") cancel(); });
+  </script>
+</body>
+</html>
