@@ -24,3 +24,4 @@
 - Kalite editörünü Ren'Py dışındaki motorlara ve Türkçe dışındaki dillere genişletmek.
 - Ren'Py'de Çince, Japonca, Korece için uygun açık font (Noto) indirip otomatik yamalamak.
 - Tarama sonuçlarında oyunun yaklaşık satır sayısı ve süresi.
+- Uygulamaya farklı dil destekleri, buna uygun dil seçme menüsü ve otomatik sistem dilini algılayarak kullanıcıya kullandığı dili verme.

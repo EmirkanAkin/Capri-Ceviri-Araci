@@ -690,7 +690,7 @@ def test_retoc_is_installed_only_after_consent(tmp_path, monkeypatch, fake_ollam
 def test_whats_new_is_short_and_in_state(tmp_path, monkeypatch):
     state = make_bridge(tmp_path, monkeypatch).get_state()
     assert state["whats_new"] and all(len(line) < 90 for line in state["whats_new"])
-    assert state["version"] == "1.0.1"
+    assert state["version"] == app_modern.APP_VERSION
 
 
 def _build_module():
@@ -701,11 +701,19 @@ def _build_module():
     return module
 
 
-def test_release_notes_come_from_changelog():
-    notes = _build_module().release_notes("1.0.1")
-    assert "### Düzeltmeler" in notes and "## [1.0.0]" not in notes
-    with pytest.raises(RuntimeError):
-        _build_module().release_notes("9.9.9")
+def test_release_notes_are_short_plain_list():
+    notes = _build_module().release_notes().splitlines()
+    assert notes == [f"- {item}" for item in app_modern.WHATS_NEW] and len(notes) <= 10
+    assert not any(mark in line for line in notes for mark in ("#", "**", "`"))
+
+
+def test_update_notes_are_cleaned_for_display():
+    import updater
+    body = ("### Düzeltmeler\n- **Çeviri:** `→` hatası\n  (alt satır) düzeldi\n\n"
+            "### Arayüz\n* [Bağlantı](http://x) metni\nDüz satır\n")
+    assert updater.clean_notes(body) == ["Çeviri: → hatası (alt satır) düzeldi", "Bağlantı metni", "Düz satır"]
+    assert len(updater.clean_notes("\n".join(f"- m{i}" for i in range(30)))) == 12
+    assert updater.clean_notes("") == []
 
 
 def test_signing_is_optional_and_uses_certificate(tmp_path, monkeypatch):
@@ -746,3 +754,13 @@ def test_folder_named_content_is_not_unreal(tmp_path):
     (real / "G" / "Content" / "Paks").mkdir(parents=True)
     (real / "G" / "Content" / "Paks" / "a.pak").write_bytes(b"P")
     assert detect_unreal_game(real).game_project_name == "G"
+
+
+def test_second_instance_does_not_share_ui_port():
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as first:
+        first.bind(("127.0.0.1", 0))
+        first.listen(1)
+        busy = first.getsockname()[1]
+        assert app_modern.free_ui_port(busy) != busy
+    assert app_modern.free_ui_port(busy) == busy, "boşsa aynı port kullanılmalı (yerel veriler adrese bağlı)"

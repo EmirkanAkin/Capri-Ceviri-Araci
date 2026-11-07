@@ -1,5 +1,11 @@
 # Capri — Değişim Günlüğü
 
+## [1.0.2] - 2026-11-07
+### Düzeltmeler
+- Güncelleme penceresi: notlar kısa ve düzgün liste olarak görünüyor, düğmeler hizalı.
+- Aynı anda iki Capri açıkken ikincisi birincinin (belki eski sürümün) arayüzüyle açılıyordu; artık her biri kendi arayüzünü kullanır.
+- GitHub'ın derlediği pakette eksik kalan `numpy` eklendi (şifreli RPG Maker arşivleri hızlı açılır).
+
 ## [1.0.1] - 2026-11-07
 ### Düzeltmeler
 - **Çeviri başlamıyordu:** Türkçe Windows'ta exe sürümünde `→`, `✔` gibi karakterler içeren her günlük satırı işi düşürüyordu

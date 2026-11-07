@@ -588,3 +588,6 @@ button:active:not(:disabled) { filter: brightness(.92); }
 .scan-panel .chip svg.i { width: 12px; height: 12px; vertical-align: -2px; }
 .scan-panel .tx-auto { margin-top: 12px; display: inline-flex; }
 .scan-panel .spinner { width: 14px; height: 14px; }
+
+.update-modal .row-actions { flex-wrap: nowrap; }
+#updActions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
