@@ -140,6 +140,9 @@ class FakeUi:
     def progress(self, payload):
         self.events.append(("progress", payload))
 
+    def clear_progress(self):
+        pass
+
 
 def make_bridge(tmp_path, monkeypatch, **settings):
     monkeypatch.setattr(app_modern, "DATA_DIR", tmp_path / "data")

@@ -5,6 +5,10 @@ Kullanım:
     python build_exe.py                          # dist/Capri klasörünü üretir
     python build_exe.py --zip                    # + GitHub sürümüne eklenecek Capri-win64.zip
     python build_exe.py --zip --out D:/Surumler --repo kullanici/Capri
+    python build_exe.py --check-tag v1.0.1       # etiket APP_VERSION ile aynı mı (GitHub Actions)
+    python build_exe.py --notes notlar.md        # CHANGELOG'daki bu sürümün notları
+
+Kod imzalama: CAPRI_SIGN_PFX (.pfx yolu) ve CAPRI_SIGN_PASSWORD tanımlıysa Capri.exe imzalanır (signtool gerekir).
 
 Çıktı kurulum gerektirmez: klasörü istediğin yere kopyalayıp Capri.exe'yi çalıştırırsın. Ayarlar,
 önbellekler, modeller ve yerel model ortamı exe'nin yanında tutulur. PyTorch/Transformers pakete
@@ -16,6 +20,7 @@ exe'ye gömülür; kullanıcılar uygulamada yalnızca "Güncellemeleri kontrol 
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -35,10 +40,42 @@ EXCLUDES = ["torch", "torchvision", "torchaudio", "transformers", "tokenizers", 
 HIDDEN = ["webview", "webview.platforms.edgechromium", "webview.platforms.winforms", "clr", "UnityPy", "pylocres",
           "mss", "rpycdec", "numpy", "requests"]
 DATA = ["web", "assets", "data"]
+TIMESTAMP_URL = "http://timestamp.digicert.com"
 
 
 def version() -> str:
     return re.search(r'APP_VERSION = "([^"]+)"', (SRC / "app_modern.py").read_text(encoding="utf-8")).group(1)
+
+
+def find_signtool() -> str:
+    tool = shutil.which("signtool")
+    if tool:
+        return tool
+    kits = sorted(Path(r"C:\Program Files (x86)\Windows Kits\10\bin").glob("*/x64/signtool.exe"))
+    if kits:
+        return str(kits[-1])
+    raise RuntimeError("signtool bulunamadı (Windows SDK ile gelir).")
+
+
+def sign(exe: Path) -> bool:
+    """Sertifika tanımlıysa exe'yi imzalar; tanımlı değilse imzasız devam eder."""
+    pfx = os.environ.get("CAPRI_SIGN_PFX")
+    if not pfx:
+        print("İmzalama atlandı (CAPRI_SIGN_PFX tanımlı değil).")
+        return False
+    subprocess.run([find_signtool(), "sign", "/fd", "SHA256", "/f", pfx, "/p", os.environ.get("CAPRI_SIGN_PASSWORD", ""),
+                    "/tr", TIMESTAMP_URL, "/td", "SHA256", str(exe)], check=True)
+    print(f"İmzalandı: {exe}")
+    return True
+
+
+def release_notes(ver: str) -> str:
+    """CHANGELOG.md içinden bu sürümün bölümü."""
+    text = (APP_DIR / "CHANGELOG.md").read_text(encoding="utf-8")
+    match = re.search(rf"^## \[{re.escape(ver)}\][^\n]*\n(.*?)(?=^## \[|\Z)", text, re.M | re.S)
+    if not match:
+        raise RuntimeError(f"CHANGELOG.md içinde {ver} bölümü yok.")
+    return match.group(1).strip() + "\n"
 
 
 def build(repo: str) -> Path:
@@ -47,7 +84,7 @@ def build(repo: str) -> Path:
     (build_dir / "build_info.json").write_text(json.dumps({"repo": repo, "version": version()}), encoding="utf-8")
     args = [sys.executable, "-m", "PyInstaller", f"--name={NAME}", "--onedir", "--windowed", "--noconfirm", "--clean",
             f"--icon={APP_DIR / 'assets' / 'capri.ico'}", f"--distpath={DIST}", f"--workpath={build_dir}",
-            f"--specpath={build_dir}", f"--paths={SRC}", "--collect-submodules=winrt", "--collect-data=webview",
+            f"--specpath={build_dir}", f"--paths={SRC}", "--collect-submodules=winrt", "--collect-submodules=rpycdec", "--collect-data=webview",
             "--copy-metadata=pywebview", f"--add-data={build_dir / 'build_info.json'};."]
     args += [f"--add-data={APP_DIR / item};{item}" for item in DATA]
     args += [f"--hidden-import={m}" for m in HIDDEN] + [f"--exclude-module={m}" for m in EXCLUDES]
@@ -55,6 +92,7 @@ def build(repo: str) -> Path:
     print("PyInstaller çalışıyor…")
     subprocess.run(args, cwd=str(APP_DIR), check=True)
     out = DIST / NAME
+    sign(out / f"{NAME}.exe")
     (out / "BENIOKU.txt").write_text(
         "Capri — taşınabilir sürüm\n\n"
         "Kurulum gerekmez: Capri.exe'yi çalıştır. Klasörü istediğin yere taşıyabilirsin.\n"
@@ -78,6 +116,14 @@ def make_zip(folder: Path, out_dir: Path) -> Path:
 
 
 if __name__ == "__main__":
+    if "--check-tag" in sys.argv:
+        tag = sys.argv[sys.argv.index("--check-tag") + 1]
+        if tag.lstrip("v") != version():
+            sys.exit(f"Etiket {tag} ile APP_VERSION {version()} farklı.")
+        sys.exit(0)
+    if "--notes" in sys.argv:
+        Path(sys.argv[sys.argv.index("--notes") + 1]).write_text(release_notes(version()), encoding="utf-8")
+        sys.exit(0)
     import updater
     repo = sys.argv[sys.argv.index("--repo") + 1] if "--repo" in sys.argv else updater.repo_from_git(APP_DIR)
     folder = build(repo)

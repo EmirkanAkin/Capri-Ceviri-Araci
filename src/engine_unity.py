@@ -12,6 +12,7 @@ import json
 import os
 import re
 import shutil
+import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -130,6 +131,7 @@ class UnityGameInfo:
     embedded_fonts: List[str] = field(default_factory=list)
     font_turkish_support: bool = True
     missing_font_chars: List[str] = field(default_factory=list)
+    scanned: bool = False          # varlık/font taraması yapıldı mı (bkz. scan_unity_assets)
 
 
 def detect_unity_game(selected: Union[str, Path]) -> Optional[UnityGameInfo]:
@@ -198,59 +200,6 @@ def detect_unity_game(selected: Union[str, Path]) -> Optional[UnityGameInfo]:
     shared_files = sorted(data_dir.glob("sharedassets*.assets"))
     streaming_dir = data_dir / "StreamingAssets" if (data_dir / "StreamingAssets").is_dir() else None
 
-    # 6. resources.assets içindeki lokalizasyon metin varlıklarını tara
-    loc_assets = []
-    embedded_fonts = []
-
-    if res_assets_path and res_assets_path.exists():
-        try:
-            env = UnityPy.load(str(res_assets_path))
-            for obj in env.objects:
-                if obj.type.name == "TextAsset":
-                    name = getattr(obj.read(), "m_Name", "")
-                    if any(k in name.lower() for k in ["english", "localization", "language", "dialog", "strings", "text"]):
-                        loc_assets.append(name)
-                elif obj.type.name == "Font":
-                    try:
-                        font_data = obj.read()
-                        fname = getattr(font_data, "m_Name", "Font")
-                        embedded_fonts.append(fname)
-                    except Exception:
-                        pass
-        except Exception:
-            pass
-
-    # Font uyumluluk testi (Latin / UI fontlarını test et, CJK fontlarını hariç tut)
-    latin_fonts_ok = True
-    missing_chars: Set[str] = set()
-    tested_latin_fonts = 0
-
-    for f_asset in [data_dir / "sharedassets0.assets", res_assets_path]:
-        if f_asset and f_asset.exists():
-            try:
-                env = UnityPy.load(str(f_asset))
-                for obj in env.objects:
-                    if obj.type.name == "Font":
-                        fdata = obj.read()
-                        fname = getattr(fdata, "m_Name", "")
-                        # CJK (Çince/Japonca) fontlarını atla, sadece Latin fontları test et
-                        if "cjk" in fname.lower() or "japanese" in fname.lower() or "chinese" in fname.lower():
-                            continue
-
-                        ttf = getattr(fdata, "m_FontData", None)
-                        if ttf:
-                            temp_p = data_dir / f"_temp_font_check_{tested_latin_fonts}.ttf"
-                            temp_p.write_bytes(bytes(ttf))
-                            res = FontChecker.check_turkish_support(temp_p)
-                            if temp_p.exists():
-                                temp_p.unlink()
-                            tested_latin_fonts += 1
-                            if not res.get("fully_supported", True):
-                                missing_chars.update(res.get("missing_chars", []))
-                                latin_fonts_ok = False
-            except Exception:
-                pass
-
     return UnityGameInfo(
         root=root,
         data_dir=data_dir,
@@ -262,11 +211,70 @@ def detect_unity_game(selected: Union[str, Path]) -> Optional[UnityGameInfo]:
         resources_assets_path=res_assets_path,
         sharedassets_files=shared_files,
         streaming_assets_dir=streaming_dir,
-        localization_text_assets=loc_assets,
-        embedded_fonts=embedded_fonts,
-        font_turkish_support=latin_fonts_ok if tested_latin_fonts > 0 else True,
-        missing_font_chars=sorted(list(missing_chars)),
     )
+
+
+def _asset_name(obj: Any) -> str:
+    """Varlığın adı; içeriğini okumadan (büyük varlıklarda çok daha hızlı)."""
+    try:
+        return obj.peek_name() or ""
+    except Exception:
+        return getattr(obj.read(), "m_Name", "") or ""
+
+
+def scan_unity_assets(info: "UnityGameInfo", log: LogFn = print, env: Any = None) -> None:
+    """
+    Lokalizasyon varlıklarını ve font uyumunu bulur. resources.assets ayrıştırması büyük oyunlarda saniyeler sürer;
+    bu yüzden algılamada değil analizde, çağıranın zaten yüklediği ortam üzerinden yapılır.
+    """
+    info.scanned = True
+    missing_chars: Set[str] = set()
+    tested = 0
+    fonts_ok = True
+
+    def check_fonts(environment: Any) -> None:
+        nonlocal tested, fonts_ok
+        for obj in environment.objects:
+            if obj.type.name != "Font":
+                continue
+            data = obj.read()
+            name = getattr(data, "m_Name", "") or "Font"
+            if name not in info.embedded_fonts:
+                info.embedded_fonts.append(name)
+            if any(k in name.lower() for k in ("cjk", "japanese", "chinese")):  # yalnızca Latin fontları test edilir
+                continue
+            ttf = getattr(data, "m_FontData", None)
+            if not ttf:
+                continue
+            with tempfile.TemporaryDirectory() as folder:   # oyun klasörüne geçici dosya yazılmaz
+                temp = Path(folder) / f"font_{tested}.ttf"
+                temp.write_bytes(bytes(ttf))
+                result = FontChecker.check_turkish_support(temp)
+            tested += 1
+            if not result.get("fully_supported", True):
+                missing_chars.update(result.get("missing_chars", []))
+                fonts_ok = False
+
+    if env is None and info.resources_assets_path and info.resources_assets_path.exists():
+        env = UnityPy.load(str(info.resources_assets_path))
+    if env is not None:
+        try:
+            for obj in env.objects:
+                if obj.type.name == "TextAsset":
+                    name = _asset_name(obj)
+                    if any(k in name.lower() for k in ("english", "localization", "language", "dialog", "strings", "text")):
+                        info.localization_text_assets.append(name)
+            check_fonts(env)
+        except Exception as exc:
+            log(f"Varlık taraması tamamlanamadı: {exc}")
+    shared = info.data_dir / "sharedassets0.assets"
+    if not tested and shared.exists():   # font resources.assets'te yoksa bir kez daha yükleme gerekir
+        try:
+            check_fonts(UnityPy.load(str(shared)))
+        except Exception as exc:
+            log(f"Font taraması tamamlanamadı: {exc}")
+    info.font_turkish_support = fonts_ok
+    info.missing_font_chars = sorted(missing_chars)
 
 
 def extract_texts_unity(info: UnityGameInfo, log: LogFn = print) -> List[UnityTextItem]:
@@ -281,17 +289,18 @@ def extract_texts_unity(info: UnityGameInfo, log: LogFn = print) -> List[UnityTe
         log(f"Varlıklar taranıyor: {info.resources_assets_path.name}")
         try:
             env = UnityPy.load(str(info.resources_assets_path))
+            if not info.scanned:
+                scan_unity_assets(info, log, env)
             for obj in env.objects:
                 if obj.type.name == "TextAsset":
+                    name = _asset_name(obj)
+                    # İngilizce veya ana diyalog dosyalarını belirle (diğerleri hiç okunmaz)
+                    if "english" not in name.lower() and name not in info.localization_text_assets:
+                        continue
                     data = obj.read()
-                    name = getattr(data, "m_Name", "")
+                    name = getattr(data, "m_Name", name)
                     script = getattr(data, "m_Script", "")
                     if not script:
-                        continue
-
-                    # İngilizce veya ana diyalog dosyalarını belirle
-                    is_english_target = "english" in name.lower() or name in info.localization_text_assets
-                    if not is_english_target:
                         continue
 
                     lines = script.splitlines()
@@ -498,6 +507,8 @@ def translate_texts_unity(
             protected_pattern=PROTECTED_UNITY,
             log=log,
             host=ollama_host,
+            target_lang=target_lang,
+            source_lang=source_lang,
         )
         cache.update(engine.translate_batch(missing, progress=progress, tracker=tracker))
 
@@ -595,6 +606,40 @@ def write_translations_unity(
         except Exception as e:
             log(f"resources.assets yazma hatası: {e}")
             raise e
+
+    # 2. StreamingAssets metin dosyaları (sekmeyle ayrılmış: anahtar <tab> metin)
+    by_file: Dict[str, List[UnityTextItem]] = {}
+    for item in extracted_items:
+        if item.format_type == "tsv_file":
+            by_file.setdefault(item.source_file, []).append(item)
+    for relative, items in by_file.items():
+        path = info.root / relative
+        try:
+            content = path.read_bytes().decode("utf-8")   # kayıpsız okunamayan dosyaya dokunulmaz
+        except (OSError, UnicodeDecodeError) as e:
+            log(f"Atlandı: {path.name} ({e})")
+            continue
+        lines = content.splitlines(keepends=True)
+        changed = 0
+        for item in items:
+            translated = translations.get(item.original)
+            if not translated or translated == item.original or item.line_index >= len(lines):
+                continue
+            raw = lines[item.line_index]
+            body = raw.rstrip("\r\n")
+            ending = raw[len(body):]
+            parts = body.split("\t")
+            if len(parts) < 2 or parts[1].strip() != item.original:
+                continue
+            parts[1] = parts[1].replace(item.original, translated)
+            lines[item.line_index] = "\t".join(parts) + ending
+            changed += 1
+        if changed:
+            temporary = path.with_suffix(path.suffix + ".tmp")
+            temporary.write_bytes("".join(lines).encode("utf-8"))
+            temporary.replace(path)
+            modified_count += changed
+            log(f"Güncellendi: {path.name} ({changed} satır)")
 
     return modified_count
 

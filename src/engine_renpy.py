@@ -248,6 +248,20 @@ class GameInfo:
     packed_rpy: int
     packed_rpyc: int
     existing_tl_files: int
+    language: str = "Turkish"      # Ren'Py dil klasörü: game/tl/<language>
+
+    @property
+    def tl_dir(self) -> Path:
+        return self.game_dir / "tl" / self.language
+
+    @property
+    def support_file(self) -> Path:
+        name = "zz_turkish_autoload.rpy" if self.language == "Turkish" else f"zz_capri_{self.language.lower()}_autoload.rpy"
+        return self.game_dir / name
+
+
+def _is_support_script(name: str) -> bool:
+    return name.lower().startswith(("zz_turkish_autoload.", "turkish_support.", "zz_capri_"))
 
 
 def normalize_game_root(selected: str | Path) -> tuple[Path, Path]:
@@ -338,7 +352,7 @@ def inspect_archive(path: Path) -> ArchiveInfo | None:
     )
 
 
-def analyze_game(selected: str | Path, log: LogFn = print) -> GameInfo:
+def analyze_game(selected: str | Path, log: LogFn = print, language: str = "Turkish") -> GameInfo:
     root, game_dir = normalize_game_root(selected)
     executable = find_executable(root)
     archives = []
@@ -354,20 +368,14 @@ def analyze_game(selected: str | Path, log: LogFn = print) -> GameInfo:
     loose = [
         p for p in game_dir.rglob("*.rpy")
         if "tl" not in {part.lower() for part in p.relative_to(game_dir).parts}
-        and p.name.lower() not in {
-            "zz_turkish_autoload.rpy",
-            "turkish_support.rpy",
-        }
+        and not _is_support_script(p.name)
     ]
     loose_c = [
         p for p in game_dir.rglob("*.rpyc")
         if "tl" not in {part.lower() for part in p.relative_to(game_dir).parts}
-        and p.name.lower() not in {
-            "zz_turkish_autoload.rpyc",
-            "turkish_support.rpyc",
-        }
+        and not _is_support_script(p.name)
     ]
-    tl_dir = game_dir / "tl" / "Turkish"
+    tl_dir = game_dir / "tl" / language
     info = GameInfo(
         root=root,
         game_dir=game_dir,
@@ -378,6 +386,7 @@ def analyze_game(selected: str | Path, log: LogFn = print) -> GameInfo:
         packed_rpy=sum(a.rpy_count for a in archives),
         packed_rpyc=sum(a.rpyc_count for a in archives),
         existing_tl_files=len(list(tl_dir.rglob("*.rpy"))) if tl_dir.exists() else 0,
+        language=language,
     )
     log(f"Oyun: {root}")
     log(f"Çalıştırıcı: {executable.name}")
@@ -405,8 +414,8 @@ def extract_entry(archive: Path, chunks, target: Path):
 
 
 def backup_translation(info: GameInfo, log: LogFn = print) -> Path | None:
-    tl_dir = info.game_dir / "tl" / "Turkish"
-    support = info.game_dir / "zz_turkish_autoload.rpy"
+    tl_dir = info.tl_dir
+    support = info.support_file
     if not tl_dir.exists() and not support.exists():
         return None
     backup_dir = info.root / "_turkish_backups"
@@ -449,10 +458,10 @@ def restore_translation_backup(
     if not backup.exists():
         raise FileNotFoundError(f"Yedek bulunamadı: {backup}")
 
-    tl_dir = info.game_dir / "tl" / "Turkish"
+    tl_dir = info.tl_dir
     support_files = [
-        info.game_dir / "zz_turkish_autoload.rpy",
-        info.game_dir / "zz_turkish_autoload.rpyc",
+        info.support_file,
+        info.support_file.with_suffix(".rpyc"),
     ]
     if tl_dir.exists():
         shutil.rmtree(tl_dir)
@@ -626,7 +635,7 @@ def generate_templates(info: GameInfo, log: LogFn = print):
     script_archives = [archive for archive in info.archives if archive.rpy_count]
     if not script_archives and not info.loose_rpy:
         if info.packed_rpyc or info.loose_rpyc:
-            existing = info.game_dir / "tl" / "Turkish"
+            existing = info.tl_dir
             if existing.exists() and list(existing.rglob("*.rpy")):
                 log("Mevcut derlenmiş-oyun Türkçe şablonları kullanılacak.")
                 return existing
@@ -662,7 +671,7 @@ def generate_templates(info: GameInfo, log: LogFn = print):
             str(info.executable),
             ".",
             "translate",
-            "Turkish",
+            info.language,
             "--empty",
         ]
         log("Ren'Py Türkçe şablonları üretiyor...")
@@ -693,7 +702,7 @@ def generate_templates(info: GameInfo, log: LogFn = print):
             compiled.unlink(missing_ok=True)
         restore_runtime_cache(info.game_dir, cache_hidden, cache_existed)
 
-    tl_dir = info.game_dir / "tl" / "Turkish"
+    tl_dir = info.tl_dir
     files = list(tl_dir.rglob("*.rpy")) if tl_dir.exists() else []
     if not files:
         raise RuntimeError("Ren'Py Türkçe çeviri şablonu üretmedi.")
@@ -714,7 +723,7 @@ def generate_compiled_templates(info: GameInfo, log: LogFn = print):
             "(pip install -r requirements.txt)."
         ) from error
 
-    tl_dir = info.game_dir / "tl" / "Turkish"
+    tl_dir = info.tl_dir
     with tempfile.TemporaryDirectory(prefix="renptr_compiled_") as temporary_name:
         temporary = Path(temporary_name)
         source_dir = temporary / "rpyc"
@@ -743,6 +752,7 @@ def generate_compiled_templates(info: GameInfo, log: LogFn = print):
             if source.name.lower() in {
                 "zz_turkish_autoload.rpyc",
                 "turkish_support.rpyc",
+                f"zz_capri_{info.language.lower()}_autoload.rpyc",
             }:
                 continue
             target = source_dir / relative
@@ -765,7 +775,7 @@ def generate_compiled_templates(info: GameInfo, log: LogFn = print):
             "--output",
             str(output_dir),
             "--language",
-            "Turkish",
+            info.language,
             "--empty",
         ]
         result = subprocess.run(
@@ -780,7 +790,7 @@ def generate_compiled_templates(info: GameInfo, log: LogFn = print):
         if result.returncode:
             tail = "\n".join((result.stdout + "\n" + result.stderr).splitlines()[-30:])
             raise RuntimeError(f"RPYC çeviri çıkarımı başarısız:\n{tail}")
-        generated = output_dir / "tl" / "Turkish"
+        generated = output_dir / "tl" / info.language
         files = list(generated.rglob("*.rpy")) if generated.exists() else []
         if not files:
             raise RuntimeError("RPYC ayrıştırıcısı çeviri şablonu üretmedi.")
@@ -797,7 +807,7 @@ def generate_compiled_templates(info: GameInfo, log: LogFn = print):
             str(info.executable),
             ".",
             "translate",
-            "Turkish",
+            info.language,
             "--empty",
             "--strings-only",
         ],
@@ -1376,10 +1386,7 @@ def _copy_source_scripts_for_ui_scan(info: GameInfo, output_dir: Path, log: LogF
         relative = source.relative_to(info.game_dir)
         if "tl" in {part.lower() for part in relative.parts}:
             continue
-        if source.name.lower() in {
-            "zz_turkish_autoload.rpyc",
-            "turkish_support.rpyc",
-        }:
+        if _is_support_script(source.name):
             continue
         target = output_dir / relative
         if not target.exists():
@@ -1455,7 +1462,7 @@ def augment_ui_string_templates(
     lines = [
         "# Capri - ek arayüz/telefon/görev metinleri.\n",
         "# Bu dosya otomatik üretilir; oyun koduna dokunmadan strings çevirisi sağlar.\n",
-        "translate Turkish strings:\n",
+        f"translate {tl_dir.name} strings:\n",
         "\n",
     ]
     for value, location in found.items():
@@ -2169,7 +2176,7 @@ def quality_edit_templates(
         if done - last_flush >= 64 or done == len(pending):
             temporary = cache_path.with_suffix(".tmp")
             temporary.write_text(
-                json.dumps(cache, ensure_ascii=False, indent=2),
+                json.dumps(cache, ensure_ascii=False),
                 encoding="utf-8",
             )
             temporary.replace(cache_path)
@@ -2208,7 +2215,7 @@ def _write_cache_file(cache: dict[str, str], cache_path: Path, skip: set[str] | 
     data = {k: v for k, v in cache.items() if k not in skip} if skip else cache
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     temporary = cache_path.with_suffix(".tmp")
-    temporary.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    temporary.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
     temporary.replace(cache_path)
 
 
@@ -2263,7 +2270,7 @@ def quality_edit_with_llm(
     def flush():
         quality_path.parent.mkdir(parents=True, exist_ok=True)
         tmp = quality_path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(qcache, ensure_ascii=False, indent=1), encoding="utf-8")
+        tmp.write_text(json.dumps(qcache, ensure_ascii=False), encoding="utf-8")
         tmp.replace(quality_path)
 
     for start in range(0, len(pending), batch_size):
@@ -2632,8 +2639,11 @@ def translate_with_transformers(
     selected_model: str,
     log: LogFn = print,
     progress: ProgressFn | None = None,
+    target_lang: str = "tr",
+    source_lang: str = "en",
 ):
     import torch
+    from engine_common import NLLB_LANG_CODES
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     dtype = torch.float16 if device == "cuda" else torch.float32
@@ -2648,14 +2658,14 @@ def translate_with_transformers(
         tokenizer = AutoTokenizer.from_pretrained(
             str(model_dir),
             local_files_only=True,
-            src_lang="eng_Latn",
+            src_lang=NLLB_LANG_CODES.get(source_lang, "eng_Latn"),
         )
         model = AutoModelForSeq2SeqLM.from_pretrained(
             str(model_dir),
             local_files_only=True,
             dtype=dtype,
         ).to(device).eval()
-        forced_bos_token_id = tokenizer.convert_tokens_to_ids("tur_Latn")
+        forced_bos_token_id = tokenizer.convert_tokens_to_ids(NLLB_LANG_CODES.get(target_lang, "tur_Latn"))
         max_batch_size = 32 if device == "cuda" else 4
         token_budget = 900 if device == "cuda" else 256
     else:
@@ -2787,7 +2797,8 @@ def translate_with_transformers(
                 else:
                     restored = cleaned_inner
             if restored is not None:
-                restored = postprocess_turkish_text(restored, tr_post)
+                if target_lang == "tr":
+                    restored = postprocess_turkish_text(restored, tr_post)
                 restored = f"{lead}{restored}{trail}"
             if not protected_content_valid(source, restored):
                 parts = PROTECTED.split(source)
@@ -2844,6 +2855,8 @@ def translate_templates(
     ollama_host: str = "http://localhost:11434",
     failed_out: set[str] | None = None,
     extra_instruction: str = "",
+    target_lang: str = "tr",
+    source_lang: str = "en",
 ):
     entries, unparsed = collect_empty_entries(tl_dir)
     if unparsed:
@@ -2860,7 +2873,8 @@ def translate_templates(
         except (OSError, json.JSONDecodeError):
             cache = {}
     cache.update(glossary)
-    cache.update(STAGE_DIRECTIONS)
+    if target_lang == "tr":     # sahne yönergeleri tablosu Türkçedir
+        cache.update(STAGE_DIRECTIONS)
 
     # Diyalog sırası korunur: aynı partide ardışık konuşmalar birlikte gider (model bağlamı görür)
     unique = list(dict.fromkeys(source for _, _, source in entries))
@@ -2896,6 +2910,8 @@ def translate_templates(
                 progress=progress,
                 failed_out=failed_out,
                 extra_instruction=extra_instruction,
+                target_lang=target_lang,
+                source_lang=source_lang,
             )
         elif selected_model in ("openai", "anthropic", "deepl"):
             from providers import translate_with_cloud
@@ -2903,6 +2919,7 @@ def translate_templates(
             translate_with_cloud(
                 selected_model, missing, cache, cache_path, log=log, progress=progress,
                 game_engine="Ren'Py Visual Novel", failed_out=failed_out, extra_instruction=extra_instruction,
+                target_lang=target_lang, source_lang=source_lang,
             )
         elif selected_model == "ollama":
             from engine_common import OllamaTranslationEngine, TranslationCache
@@ -2913,6 +2930,8 @@ def translate_templates(
                 protected_pattern=PROTECTED,
                 log=log,
                 host=ollama_host,
+                target_lang=target_lang,
+                source_lang=source_lang,
             )
             cache.update(engine.translate_batch(missing, progress=progress))
         else:
@@ -2924,6 +2943,8 @@ def translate_templates(
                 selected_model=selected_model,
                 log=log,
                 progress=progress,
+                target_lang=target_lang,
+                source_lang=source_lang,
             )
 
     by_file = {}
@@ -2956,12 +2977,21 @@ def translate_templates(
 
 
 def enable_turkish(info: GameInfo, force: bool, log: LogFn = print):
-    support = info.game_dir / "zz_turkish_autoload.rpy"
+    """Çeviriyi oyunun varsayılan dili yapar (ad tarihsel: info.language hangi dilse o)."""
+    from languages import NO_FONT_FALLBACK, SUPPORTED_LANGUAGES, code_for_renpy_name
+    language = info.language
+    code = code_for_renpy_name(language)
+    native = SUPPORTED_LANGUAGES[code].name_native
+    support = info.support_file
     if not force:
         support.unlink(missing_ok=True)
         return
+    # Başka bir dilin desteği kalırsa iki dil birbirini ezer; çeviri klasörleri silinmez
+    for other in info.game_dir.glob("zz_*_autoload.rpy*"):
+        if other.stem != support.stem and _is_support_script(other.name):
+            other.unlink(missing_ok=True)
 
-    # Türkçe karakter desteği eksik olan fontları tespit et
+    # Hedef dilin karakterleri eksik olan fontları tespit et
     bad_font_names = []
     try:
         fonts = scan_game_fonts(info)
@@ -2975,7 +3005,11 @@ def enable_turkish(info: GameInfo, force: bool, log: LogFn = print):
 
     dejavu_src = info.root / "renpy" / "common" / "DejaVuSans.ttf"
     dejavu_bold_src = info.root / "renpy" / "common" / "DejaVuSans-Bold.ttf"
-    tl_turkish = info.game_dir / "tl" / "Turkish"
+    tl_turkish = info.tl_dir
+    if code in NO_FONT_FALLBACK:   # DejaVu bu yazıyı içermez: yanlış fonta geçmek metni bozar
+        if bad_font_names:
+            log(f"Uyarı: oyunun fontları {native} karakterlerini içermiyor; bu dil için font elle eklenmeli.")
+        bad_font_names = []
     if tl_turkish.exists() and dejavu_src.exists():
         for bad_name in bad_font_names:
             target = tl_turkish / bad_name
@@ -2992,7 +3026,7 @@ def enable_turkish(info: GameInfo, force: bool, log: LogFn = print):
         bad_fonts_repr = repr(bad_font_names)
         font_block = (
             "\n"
-            "translate Turkish python:\n"
+            f"translate {language} python:\n"
             "    gui.text_font = \"DejaVuSans.ttf\"\n"
             "    gui.name_text_font = \"DejaVuSans.ttf\"\n"
             "    gui.interface_text_font = \"DejaVuSans.ttf\"\n"
@@ -3007,7 +3041,7 @@ def enable_turkish(info: GameInfo, force: bool, log: LogFn = print):
             "        config.font_replacement_map[_orig, True, True] = (\"DejaVuSans-Bold.ttf\", False, True)\n"
         )
 
-    support.write_text(
+    script = (
         "# Capri tarafından oluşturuldu.\n"
         "init 1499 python:\n"
         "    config.default_language = \"Turkish\"\n"
@@ -3039,6 +3073,9 @@ def enable_turkish(info: GameInfo, force: bool, log: LogFn = print):
         "    if \"renptr_language_switcher\" not in config.overlay_screens:\n"
         "        config.overlay_screens.append(\"renptr_language_switcher\")\n"
         "\n"
+    )
+    # Akrabalık adları tablosu yalnızca Türkçe için
+    names_block = (
         "init 1502 python:\n"
         "    _renptr_orig_names = {}\n"
         "    _renptr_char_map = {\n"
@@ -3071,10 +3108,15 @@ def enable_turkish(info: GameInfo, force: bool, log: LogFn = print):
         "        except Exception:\n"
         "            pass\n"
         "    if _renptr_fix_characters not in config.start_interact_callbacks:\n"
-        "        config.start_interact_callbacks.append(_renptr_fix_characters)\n",
-        encoding="utf-8",
+        "        config.start_interact_callbacks.append(_renptr_fix_characters)\n"
     )
-    log("Türkçe varsayılan dil olarak etkinleştirildi.")
+    version_key = "_renptr_turkish_version" if language == "Turkish" else f"_renptr_{language.lower()}_version"
+    script = script.replace('"Turkish"', f'"{language}"').replace('"tr", "Türkçe"', f'"{code}", "{native}"') \
+        .replace('"Türkçe"', f'"{native}"').replace("_renptr_turkish_version", version_key)
+    if code == "tr":
+        script += names_block
+    support.write_text(script, encoding="utf-8")
+    log(f"{native} varsayılan dil olarak etkinleştirildi.")
 
 
 def repair_safe_issues(tl_dir: Path, log: LogFn = print) -> int:
@@ -3211,6 +3253,8 @@ def scan_game_fonts(info: GameInfo) -> list[dict]:
     font_dirs.append(info.game_dir)
     font_dirs.append(info.root)
 
+    from languages import LANGUAGE_CHARS, code_for_renpy_name
+    chars = LANGUAGE_CHARS.get(code_for_renpy_name(info.language))
     results: list[dict] = []
     seen: set[Path] = set()
     for directory in font_dirs:
@@ -3221,7 +3265,7 @@ def scan_game_fonts(info: GameInfo) -> list[dict]:
                     seen.add(resolved)
                     try:
                         from engine_common import FontChecker
-                        results.append(FontChecker.check_turkish_support(path))
+                        results.append(FontChecker.check_turkish_support(path, chars))
                     except Exception:
                         pass
     return results

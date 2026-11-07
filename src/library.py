@@ -11,12 +11,14 @@ arayüz için kapak (poster) ve vitrin (hero) görsellerini bulur:
 """
 from __future__ import annotations
 
-import base64
 import difflib
 import hashlib
+import http.server
 import io
 import json
+import mimetypes
 import re
+import shutil
 import threading
 import time
 import urllib.parse
@@ -73,13 +75,29 @@ class ProjectLibrary:
     def get(self, path: str | Path) -> Optional[Dict[str, Any]]:
         return self._items.get(self.key(path))
 
-    def upsert(self, path: str | Path, **fields: Any) -> Dict[str, Any]:
+    def upsert(self, path: str | Path, touch: bool = True, **fields: Any) -> Dict[str, Any]:
+        """touch=False: arka plan güncellemeleri (kapak görseli) projeyi listede öne almaz."""
         with self._lock:
-            item = self._items.setdefault(self.key(path), {"path": str(path), "created": time.time()})
+            item = self._items.setdefault(self.key(path), {"path": str(path), "created": time.time(), "updated": time.time()})
             item.update({k: v for k, v in fields.items() if v is not None})
-            item["updated"] = time.time()
+            if touch:
+                item["updated"] = time.time()
             self._save()
             return dict(item)
+
+    def recover_interrupted(self) -> None:
+        """Uygulama çeviri sürerken kapanmışsa proje 'sürüyor' durumunda takılı kalmasın."""
+        with self._lock:
+            stuck = [p for p in self._items.values() if p.get("status") == "translating"]
+            for item in stuck:
+                item["status"] = "paused"
+                item.pop("last_action", None)
+            # Eski sürümlerden kalan kayıtlar: "son işlem" yalnızca gerçek bir işlemi gösterir
+            old = [p for p in self._items.values() if p.get("translated_at") and not p.get("last_action_at")]
+            for item in old:
+                item.update(last_action="Çeviri tamamlandı", last_action_at=item["translated_at"])
+            if stuck or old:
+                self._save()
 
     def remove(self, path: str | Path) -> None:
         with self._lock:
@@ -187,7 +205,8 @@ def _appid_from_store(title: str) -> Optional[str]:
         ratio = difflib.SequenceMatcher(None, query, _normalize_title(item.get("name", ""))).ratio()
         if ratio > best_ratio:
             best, best_ratio = item, ratio
-    return str(best["id"]) if best and best_ratio >= 0.72 else None
+    # Gevşek eşleşme başka oyunun adını ve kapağını getirir ("Demo Quest" → "Demon Quest (Demo)")
+    return str(best["id"]) if best and best_ratio >= 0.85 else None
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -288,8 +307,43 @@ def _local_game_images(root: Path, engine: str) -> Dict[str, Path]:
     return {}
 
 
-def _to_data_uri(path: Path, kind: str) -> Optional[str]:
-    """Görseli küçültüp JPEG data URI olarak döndürür (sonuç diskte önbelleklenir)."""
+class _ArtHandler(http.server.BaseHTTPRequestHandler):
+    """Yalnızca kapak önbelleğindeki dosyaları verir; arayüz http üzerinden yüklendiği için file:// görsel açamaz."""
+
+    def do_GET(self) -> None:
+        name = self.path.lstrip("/").split("?")[0]
+        target = ART_DIR / name
+        if not re.fullmatch(r"[\w.-]+", name) or not target.is_file():
+            self.send_error(404)
+            return
+        data = target.read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type", mimetypes.guess_type(name)[0] or "image/jpeg")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "public, max-age=86400")
+        self.end_headers()
+        self.wfile.write(data)
+
+    def log_message(self, *args: Any) -> None:
+        pass
+
+
+_art_server: Optional[http.server.ThreadingHTTPServer] = None
+_art_server_lock = threading.Lock()
+
+
+def art_address(name: str) -> str:
+    """Kapak dosyasının yerel adresi (sunucu yalnızca 127.0.0.1'e bağlanır, ilk kullanımda başlar)."""
+    global _art_server
+    with _art_server_lock:
+        if _art_server is None:
+            _art_server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _ArtHandler)
+            threading.Thread(target=_art_server.serve_forever, daemon=True, name="art-server").start()
+    return f"http://127.0.0.1:{_art_server.server_port}/{name}"
+
+
+def _art_url(path: Path, kind: str) -> Optional[str]:
+    """Görseli küçültür, önbelleğe yazar ve adresini döndürür: her olayda yüzlerce KB base64 taşınmaz."""
     try:
         stat = path.stat()
     except OSError:
@@ -313,14 +367,15 @@ def _to_data_uri(path: Path, kind: str) -> Optional[str]:
             # Pillow yoksa veya görsel okunamıyorsa: JPEG/PNG'yi olduğu gibi gönder
             if path.suffix.lower() not in (".jpg", ".jpeg", ".png") or stat.st_size > 3_000_000:
                 return None
-            mime = "image/png" if path.suffix.lower() == ".png" else "image/jpeg"
-            return f"data:{mime};base64," + base64.b64encode(path.read_bytes()).decode("ascii")
-    return "data:image/jpeg;base64," + base64.b64encode(cached.read_bytes()).decode("ascii")
+            cached = ART_DIR / f"r_{digest}{path.suffix.lower()}"
+            ART_DIR.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(path, cached)
+    return art_address(cached.name)
 
 
 def resolve_art(root: str | Path, engine: str, title: str, appid: Optional[str] = None,
                 online: bool = True) -> Dict[str, Any]:
-    """Oyun için {appid, poster, hero} döndürür; görseller data URI ya da None."""
+    """Oyun için {appid, poster, hero} döndürür; görseller yerel adres ya da None."""
     root = Path(root)
     steam = _steam_root()
     appid = appid or _appid_from_files(root) or _appid_from_manifest(root, steam)
@@ -352,6 +407,6 @@ def resolve_art(root: str | Path, engine: str, title: str, appid: Optional[str] 
     return {
         "appid": appid,
         "name": steam_name,
-        "poster": _to_data_uri(images["poster"], "poster") if "poster" in images else None,
-        "hero": _to_data_uri(images["hero"], "hero") if "hero" in images else None,
+        "poster": _art_url(images["poster"], "poster") if "poster" in images else None,
+        "hero": _art_url(images["hero"], "hero") if "hero" in images else None,
     }

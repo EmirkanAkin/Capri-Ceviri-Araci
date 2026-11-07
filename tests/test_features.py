@@ -206,7 +206,8 @@ def test_open_project_does_not_reanalyze(tmp_path, monkeypatch):
     bridge._select_game(str(make_rpgmaker_game(tmp_path / "game")))
     run_sync(bridge, "analyze")
     calls = []
-    monkeypatch.setattr(bridge, "_run_task", lambda *a: calls.append(a) or True)
+    original = bridge._analyze_rpgmaker
+    monkeypatch.setattr(bridge, "_analyze_rpgmaker", lambda game: calls.append(1) or original(game))
     assert bridge.analyze() is True and not calls, "analiz sonucu varken tekrar analiz edilmemeli"
-    bridge.analyze(True)
+    run_sync(bridge, "analyze", True)
     assert len(calls) == 1

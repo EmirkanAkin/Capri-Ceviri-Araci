@@ -1,5 +1,44 @@
 # Capri — Değişim Günlüğü
 
+## [1.0.1] - 2026-11-07
+### Düzeltmeler
+- **Çeviri başlamıyordu:** Türkçe Windows'ta exe sürümünde `→`, `✔` gibi karakterler içeren her günlük satırı işi düşürüyordu
+  (`'charmap' codec can't encode`). Günlük yazmak artık hiçbir koşulda işi durduramaz.
+- Hata yolunun kendisi de düşebildiği için proje "Çeviri sürüyor" durumunda takılı kalıyordu; artık her hata açıkça bildirilir,
+  uygulama çeviri sırasında kapansa bile proje takılı kalmaz.
+- Açılışta her proje "son işlem az önce" görünüyordu: kapak görseli yüklemek işlem sayılıyordu.
+- Güncellemeden sonra yeni kod eski arayüz dosyalarıyla açılabiliyordu (WebView2 önbelleği); arayüz değişince önbellek temizlenir.
+- **Unity StreamingAssets metinleri çevriliyor ama oyuna yazılmıyordu;** artık yazılıyor ve yedekleniyor.
+- BepInEx reddedilince oyuna hiçbir şey yazılmadığı hâlde "Çeviri tamamlandı" deniyordu. İzin artık çeviriden önce isteniyor (boşuna API
+  harcanmaz) ve yazılan satır yoksa bu açıkça söyleniyor.
+- Ollama çevirileri hedef dil ne olursa olsun Türkçe talimat kullanıyordu; artık hedef dile göre.
+- Çevrilmiş oyunda çeviri tekrar başlatılınca Türkçe metin yeniden çevrilebiliyordu; "Baştan çevir" önce orijinalleri geri yükler.
+- Süre tahmini her oyunda ~5 sn çıkıyordu. Artık metin miktarı, önbellek, motor ve anahtar sayısına göre hesaplanır;
+  gerçek çevirilerden öğrenir.
+- Gevşek Steam eşleşmesi başka oyunun adını ve kapağını getirebiliyordu.
+- Unity analizi oyun klasörüne geçici font dosyası yazıyordu; artık yazmıyor.
+### Arayüz
+- Çeviri durumları netleşti: düğme "Çeviri devam ediyor %31" olur, bitince kilitlenip "Çeviri tamamlandı"ya döner;
+  durdurulunca "Kaldığı yerden devam et", hata olunca "Tekrar dene".
+- İlerleme paneli: Yedek · Hazırlık · Çeviri · Yazma adımları, yüzde, satır sayısı, hız, canlı kalan ve geçen süre.
+- Hatalar anlaşılır dilde: ne oldu, ne yapmalı, gerekiyorsa ilgili sayfaya düğme; teknik ayrıntı katlanır bölümde.
+- Analiz paneli: çevrilecek satır, kelime, hazır çeviri, tahmini süre ve font uyumu; teknik notlar katlanır bölümde.
+- Teknik günlük `portable_cache/capri.log` dosyasına da yazılır.
+### Yeni
+- **Otomatik oyun bulma:** Kütüphane; Steam, Epic, GOG, sürücülerdeki Games/Oyunlar klasörleri ve eklediğin klasörleri tarar (yalnızca okur).
+  Bulunanlar öneri olarak listelenir, tek tıkla eklenir. Açılışta otomatik çalışır, kapatılabilir.
+- **Ren'Py çok dilli hedef:** Türkçe dışındaki 16 dile de çeviri (`tl/<Dil>`); fontlar hedef dilin karakterlerine göre denetlenir.
+- **Unreal IoStore:** metinler .pak içinde yoksa `.utoc` kapsayıcıları açık kaynak `retoc` ile okunur (araç onay alınarak indirilir).
+- Güncelleme penceresinde "Bu sürümde" notları.
+- GitHub Actions: test ve etiketle otomatik sürüm; sertifika tanımlanırsa exe imzalama.
+### Performans
+- Unity oyun açma: 14 sn → 5 ms (`resources.assets` algılamada 3 kez ayrıştırılıyordu; artık analizde 1 kez).
+- Analiz arka planda çalışır ve uygulamayı kilitlemez; değişmeyen oyunun sonucu diskten anında gelir.
+- Kapak görselleri her olayda base64 olarak taşınmıyor (proje başına ~280 KB → ~0,5 KB).
+- Çeviri önbelleği yazımı yaklaşık 10 kat hızlı; editör araması her tuşta dosya okumuyor ve tüm satırları doğrulamıyor.
+- Açılışta PyTorch yüklenmiyor; yalnızca yerel motor seçiliyse hazırlanır.
+- Arayüz değişmeyen içeriği yeniden çizmiyor; olay kanalı boştayken uyuyor ve tepki süresi 100 ms'den 40 ms'ye indi.
+
 ## [1.0.0] - 2026-11-03
 İlk herkese açık sürüm.
 

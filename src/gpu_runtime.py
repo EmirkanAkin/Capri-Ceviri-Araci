@@ -81,6 +81,19 @@ def driver_cuda() -> Optional[Tuple[int, int]]:
     return (int(match.group(1)), int(match.group(2))) if match else None
 
 
+def nvidia_info() -> Optional[Dict[str, str]]:
+    """Kart adı ve belleği (torch yüklemeden, ~50 ms); NVIDIA kart yoksa None."""
+    exe = shutil.which("nvidia-smi") or r"C:\Windows\System32\nvidia-smi.exe"
+    try:
+        out = subprocess.run([exe, "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"], capture_output=True,
+                             text=True, timeout=10, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stdout
+        name, memory = out.splitlines()[0].rsplit(",", 1)
+        return {"name": name.replace("NVIDIA ", "").replace("GeForce ", "").strip(),
+                "memory": f"{round(int(memory.strip()) / 1024)} GB"}
+    except (OSError, subprocess.SubprocessError, ValueError, IndexError):
+        return None
+
+
 def _version_key(text: str) -> Tuple[int, ...]:
     return tuple(int(n) for n in re.findall(r"\d+", text))
 
