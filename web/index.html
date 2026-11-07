@@ -133,11 +133,13 @@
               <h1 class="hero-title" id="heroTitle">Oyununu Türkçeye çevir.</h1>
               <div class="hero-meta" id="heroMeta"></div>
               <p class="hero-desc" id="heroDesc"></p>
+              <div class="hero-error hidden" id="heroError"></div>
               <div class="hero-actions" id="heroActions"></div>
               <div class="hero-progress hidden" id="heroProgress">
+                <div class="prog-steps" id="progSteps"></div>
                 <div class="progress-line"><span class="big num" id="progPct">%0</span><span class="meta num" id="progMeta"></span></div>
                 <div class="bar" id="heroBar"><i></i></div>
-                <div class="progress-last" id="progLast"></div>
+                <div class="prog-facts num" id="progFacts"></div>
               </div>
               <div class="steps hidden" id="heroSteps">
                 <span class="step"><b>1</b>Oyun klasörünü seç</span>
@@ -219,8 +221,7 @@
               </label>
               <div class="field span-all">
                 <div class="field-label"><svg class="i"><use href="#i-scan"/></svg>Analiz</div>
-                <ul class="notes" id="analysisNotes"></ul>
-                <div class="eta" id="analysisEta"></div>
+                <div id="analysisPanel"></div>
               </div>
             </div>
           </div>
@@ -247,6 +248,7 @@
             </div>
             <p class="page-sub">Analiz ettiğin ve çevirdiğin oyunlar. Bir karta tıklayarak projeyi aç.</p>
           </div>
+          <div id="scanPanel"></div>
           <div id="fullLibrary"></div>
         </section>
 

@@ -113,3 +113,27 @@ def build_system_instruction(
             "4. The output array MUST have the EXACT SAME length and element order as the input array.\n"
             "5. Return ONLY a valid JSON array of strings (no markdown wrapping, no extra keys)."
         )
+
+
+# Font uyumu için her dilin ayırt edici karakterleri
+LANGUAGE_CHARS: Dict[str, str] = {
+    "tr": "çğıİöşüÇĞÖŞÜ", "de": "äöüßÄÖÜ", "es": "áéíñóúü¿¡", "fr": "àâçéèêëîïôùûœ", "it": "àèéìòù",
+    "pt": "ãáâçéêíóõú", "pt-BR": "ãáâçéêíóõú", "pl": "ąćęłńóśźżŁŚŻ", "nl": "ëéï",
+    "ru": "абвгдеёжзийклмнопрстуфхцчшщъыьэюя", "uk": "абвгґдеєжзиіїйклмнопрстуфхцчшщьюя",
+    "ar": "ابتثجحخدذرزسشصضطظعغفقكلمنهوي", "ja": "あいうアイウ日本語", "ko": "한국어가나다", "zh-CN": "简体中文的是", "zh-TW": "繁體中文的是",
+}
+# DejaVu bu yazı sistemlerini içermez; Ren'Py'de otomatik font yaması uygulanamaz
+NO_FONT_FALLBACK = ("ja", "ko", "zh-CN", "zh-TW")
+
+
+def renpy_language_name(code: str) -> str:
+    """Ren'Py dil klasörü adı: tl/<ad>. Yalnızca harf: 'Simplified Chinese' → 'SimplifiedChinese'."""
+    language = SUPPORTED_LANGUAGES.get(code) or SUPPORTED_LANGUAGES["tr"]
+    return "".join(ch for ch in language.name_en if ch.isalnum())
+
+
+def code_for_renpy_name(name: str) -> str:
+    for code in SUPPORTED_LANGUAGES:
+        if renpy_language_name(code) == name:
+            return code
+    return "tr"

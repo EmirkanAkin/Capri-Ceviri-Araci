@@ -213,6 +213,11 @@ def detect_unreal_game(selected: Union[str, Path]) -> Optional[UnrealGameInfo]:
             for lf in search_base.glob("**/*.locres"):
                 locres_files.append(lf)
 
+    # "Content" adlı bir klasör Unreal demek değildir (ör. steamapps/content): gerçek bir iz şart
+    has_shipping_exe = any((project_dir / "Binaries").rglob("*Shipping*.exe")) if (project_dir / "Binaries").is_dir() else False
+    if not (pak_files or locres_files or has_shipping_exe or engine_dir):
+        return None
+
     return UnrealGameInfo(
         root=root,
         game_project_name=project_name,
@@ -410,6 +415,8 @@ def translate_texts_unreal(
             protected_pattern=PROTECTED_UNREAL,
             log=log,
             host=ollama_host,
+            target_lang=target_lang,
+            source_lang=source_lang,
         )
         cache.update(engine.translate_batch(missing, progress=progress, tracker=tracker))
     else:

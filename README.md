@@ -10,7 +10,7 @@ Ren'Py · Unity · Unreal Engine · RPG Maker · JSON — artı oyun ekranını 
 ![Windows 10/11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows&logoColor=white)
 ![Python 3.11](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)
 [![Son sürüm](https://img.shields.io/github/v/release/EmirkanAkin/Capri-Ceviri-Araci?label=son%20s%C3%BCr%C3%BCm&color=dfe86b)](https://github.com/EmirkanAkin/Capri-Ceviri-Araci/releases/latest)
-![Testler](https://img.shields.io/badge/testler-144%20ge%C3%A7ti-86e0a0)
+![Testler](https://img.shields.io/badge/testler-202%20ge%C3%A7ti-86e0a0)
 
 <img src="docs/media/capri-home.gif" width="860" alt="Capri ana sayfası: canlı çeviri vitrini">
 
@@ -26,6 +26,7 @@ Ren'Py · Unity · Unreal Engine · RPG Maker · JSON — artı oyun ekranını 
 - [Güvenlik ve gizlilik](#güvenlik-ve-gizlilik)
 - [Kaynak koddan çalıştırma](#kaynak-koddan-çalıştırma)
 - [Proje yapısı](#proje-yapısı)
+- [Lisans ve proje ekibi](#lisans-ve-proje-ekibi)
 
 ## Öne çıkanlar
 - **Tek tıkla oyun çevirisi:** Oyun klasörünü sürükleyip bırak; motor otomatik algılanır, metinler çıkarılır,
@@ -39,6 +40,7 @@ Ren'Py · Unity · Unreal Engine · RPG Maker · JSON — artı oyun ekranını 
 - **Çeviri Editörü ve yama paylaşımı:** Satırları düzelt, API harcamadan oyuna uygula, `.capripatch` olarak paylaş.
 - **Şifreli arşivler:** RPG Maker `Game.rgss3a / .rgss2a / .rgssad` arşivleri dahili olarak açılır; Unreal `.pak`
   paketleri için gereken araç, sana sorulduktan sonra kurulur.
+- **Otomatik oyun bulma:** Steam, Epic, GOG ve oyun klasörlerindeki çevrilebilir oyunlar kütüphanede öneri olarak çıkar.
 - **Çevrimdışı mod:** OPUS-MT ve NLLB-200 ekran kartında, internetsiz ve kotasız çalışır.
 
 ## İndir ve çalıştır
@@ -52,6 +54,10 @@ Ren'Py · Unity · Unreal Engine · RPG Maker · JSON — artı oyun ekranını 
    basıp kontrol edebilirsin; "İndir ve kur" dediğinde indirir, kurar ve yeniden açılır. Ayarların, sözlüklerin,
    önbelleklerin ve modellerin korunur.
 
+> **"Windows kişisel bilgisayarınızı korudu" uyarısı çıkarsa:** Capri henüz kod imzalı olmadığı için SmartScreen
+> yeni uygulamalarda bu uyarıyı gösterebilir. **Ek bilgi → Yine de çalıştır** ile açabilirsin. Kaynak kodun tamamı bu
+> depoda, sürüm paketi de GitHub Actions ile buradaki koddan derleniyor.
+
 > **Gerekenler:** Windows 10/11 64 bit ve Microsoft Edge WebView2 (Windows 11'de hazır gelir).
 > Yerel modelleri ilk kez kullandığında Capri, ekran kartına uygun PyTorch'u (NVIDIA'da ≈2,9 GB) indirmek için
 > izin ister; modeller **Yerel Modeller** sayfasından tek tıkla iner.
@@ -59,9 +65,9 @@ Ren'Py · Unity · Unreal Engine · RPG Maker · JSON — artı oyun ekranını 
 ## Desteklenen oyun motorları
 | Motor | Ne çevrilir | Notlar |
 | --- | --- | --- |
-| **Ren'Py** | `.rpy`, `.rpyc`, `.rpa` | Diyalog sırasıyla bağlamlı çeviri, kalite düzeltme turu, Türkçe font yaması |
+| **Ren'Py** | `.rpy`, `.rpyc`, `.rpa` | 17 hedef dil, diyalog sırasıyla bağlamlı çeviri, Türkçede kalite turu, otomatik font yaması |
 | **Unity** | `resources.assets` TextAsset, StreamingAssets | BepInEx + XUnity.AutoTranslator otomatik kurulumu (Mono / IL2CPP) |
-| **Unreal Engine 4/5** | `.locres` (açık ya da `.pak` içinde) | Paketler `repak` ile açılır, çeviri `Paks/~mods` altına yama paketi olur; şifreli oyunlarda AES anahtarı girilebilir |
+| **Unreal Engine 4/5** | `.locres` (açık, `.pak` ya da `.utoc` içinde) | Paketler `repak` / `retoc` ile okunur, çeviri `Paks/~mods` altına yama paketi olur; şifreli oyunlarda AES anahtarı girilebilir |
 | **RPG Maker MV / MZ** | `data/*.json` | Diyalog, seçenekler, veritabanı, sistem terimleri |
 | **RPG Maker XP / VX / VX Ace** | `Data/*.rxdata / .rvdata / .rvdata2` | Değişmeyen her bayt korunur; şifreli arşivler otomatik açılır ve yedeklenir |
 | **Diğer** | Herhangi bir `.json` dil dosyası | JSON Çevirici: anahtarlar ve kod parçaları korunur |
@@ -102,6 +108,9 @@ Ren'Py · Unity · Unreal Engine · RPG Maker · JSON — artı oyun ekranını 
 - **Ek araçlar ve kütüphaneler** (repak, BepInEx, PyTorch) yalnızca gerektiğinde ve **sana ne kurulacağı
   söylenip onay alındıktan sonra** resmi kaynaklarından indirilir.
 - Metinler yalnızca seçtiğin çeviri sağlayıcısına gönderilir; yerel modellerde bilgisayarından çıkmaz.
+- Capri kullanım verisi toplamaz. Hangi durumda nereye bağlandığı [gizlilik sayfasında](PRIVACY.md) yazıyor.
+- **Kaldırmak için** uygulama klasörünü silmen yeterli. Çevirdiğin oyunları önce **Yedekler** sayfasından orijinaline
+  döndürebilirsin; kayıtlı API anahtarları Windows Kimlik Bilgisi Yöneticisi'nden silinebilir.
 
 ## Kaynak koddan çalıştırma
 ```bash
@@ -116,8 +125,8 @@ Taşınabilir sürümü derlemek için:
 python build_exe.py --zip           # dist/Capri + dist/Capri-win64.zip
 ```
 
-**Yeni sürüm yayımlamak:** `src/app_modern.py` içindeki `APP_VERSION` değerini artır, `python build_exe.py --zip`
-ile derle ve GitHub'da `v<sürüm>` etiketli yeni bir sürüm (Release) açıp `Capri-win64.zip` dosyasını ekle.
+**Yeni sürüm yayımlamak:** `src/app_modern.py` içindeki `APP_VERSION` değerini artır, `CHANGELOG.md`'ye bölüm ekle ve
+`git tag v<sürüm> && git push --tags` çalıştır. GitHub Actions test eder, derler ve sürümü zip'iyle yayımlar.
 Güncelleme kaynağı derleme sırasında git'in `origin` adresinden okunup exe'ye yazılır; kullanıcıların hiçbir
 ayar yapması gerekmez.
 
@@ -140,7 +149,9 @@ src/                 Uygulama kaynak kodu
   engine_json.py       Motor bağımsız JSON çevirici
   engine_common.py     Önbellek, çeviri belleği, sözlük, kalite denetimi, yerel motorlar
   providers.py         Sağlayıcılar, bağlantı testleri, model indirme · languages.py
+  progress.py          Süre tahmini ve canlı kalan süre · user_errors.py (anlaşılır hata metinleri)
   gpu_runtime.py       Yerel model ortamı (PyTorch) kurulumu
+  game_scanner.py      Bilgisayardaki oyunları bulma
   ocr.py               Ekran çevirisi: yakalama, Windows OCR, canlı izleyici, kısayollar
   library.py           Proje kütüphanesi ve Steam kapak görselleri
   backup_system.py     Yedekleme / geri yükleme
@@ -155,3 +166,10 @@ tests/               pytest testleri
 ```
 
 Değişiklikler için [CHANGELOG.md](CHANGELOG.md), planlanan işler için [docs/YOL_HARITASI.md](docs/YOL_HARITASI.md).
+
+## Lisans ve proje ekibi
+Capri [MIT lisansı](LICENSE) ile dağıtılır. Kullanılan bileşenler: [üçüncü taraf bildirimleri](THIRD_PARTY_NOTICES.md).
+
+**Ekip:** Yazar, gözden geçiren ve sürüm onaylayan: [EmirkanAkin](https://github.com/EmirkanAkin).
+
+**Kod imzalama:** Sürümler şu an imzasızdır; SignPath Foundation'ın açık kaynak programına başvuru planlanıyor.

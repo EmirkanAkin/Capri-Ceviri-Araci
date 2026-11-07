@@ -243,7 +243,7 @@ class TranslationCache:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.path.with_suffix(".tmp")
         tmp.write_text(
-            json.dumps(self._data, ensure_ascii=False, indent=2),
+            json.dumps(self._data, ensure_ascii=False),
             encoding="utf-8",
         )
         tmp.replace(self.path)
@@ -423,11 +423,12 @@ class FontChecker:
     """TTF/OTF font dosyalarında Türkçe karakter desteğini kontrol eder."""
 
     @staticmethod
-    def check_turkish_support(font_path: str | Path) -> dict:
+    def check_turkish_support(font_path: str | Path, chars: Any = None) -> dict:
         """
-        Font dosyasını tarayarak Türkçe karakterlerin varlığını kontrol eder.
+        Font dosyasını tarayarak hedef dilin karakterlerini (varsayılan Türkçe) kontrol eder.
         TTF/OTF cmap tablosunu okur.
         """
+        chars = set(chars) if chars else _TURKISH_CHARS
         font_path = Path(font_path)
         result: dict[str, Any] = {
             "path": str(font_path),
@@ -443,7 +444,7 @@ class FontChecker:
 
         try:
             codepoints = FontChecker._read_cmap(font_path)
-            for char in sorted(_TURKISH_CHARS):
+            for char in sorted(chars):
                 if ord(char) in codepoints:
                     result["supported_chars"].append(char)
                 else:
@@ -451,7 +452,7 @@ class FontChecker:
             result["fully_supported"] = len(result["missing_chars"]) == 0
         except Exception as e:
             result["error"] = str(e)
-            result["missing_chars"] = sorted(_TURKISH_CHARS)
+            result["missing_chars"] = sorted(chars)
 
         return result
 
@@ -1233,6 +1234,10 @@ class OllamaTranslationEngine:
 
     _SEP = "§SEP§"
 
+    _SYSTEM_PROMPT_OTHER = (
+        "\n\nKeep game codes such as \\C[1] \\V[2] {PlayerName} [name] %s exactly as they are. "
+        "Write only the translations and separate each one with the exact token §SEP§."
+    )
     _SYSTEM_PROMPT = (
         "Sen profesyonel bir İngilizce→Türkçe çevirmensin. "
         "Metinleri doğal, akıcı, günlük konuşma diline uygun Türkçeye çevir. "
@@ -1255,6 +1260,8 @@ class OllamaTranslationEngine:
         host: str = "http://localhost:11434",
         temperature: float = 0.1,
         batch_size: int = 30,
+        target_lang: str = "tr",
+        source_lang: str = "en",
     ):
         self.model_name = model_name
         self.cache = cache
@@ -1264,6 +1271,8 @@ class OllamaTranslationEngine:
         self.host = host.rstrip("/")
         self.temperature = temperature
         self.batch_size = max(1, batch_size)
+        self.target_lang = target_lang
+        self.source_lang = source_lang
 
     def _api_batch(self, texts: list) -> list:
         """Birden fazla metni tek API çağrısıyla çevir, §SEP§ ile ayırır."""
@@ -1280,7 +1289,7 @@ class OllamaTranslationEngine:
         payload = _j.dumps({
             "model": self.model_name,
             "messages": [
-                {"role": "system", "content": self._SYSTEM_PROMPT},
+                {"role": "system", "content": self._system_prompt()},
                 {"role": "user",   "content": msg},
             ],
             "stream": False,
@@ -1304,6 +1313,12 @@ class OllamaTranslationEngine:
         while len(parts) < len(texts):
             parts.append("")
         return parts[:len(texts)]
+
+    def _system_prompt(self) -> str:
+        if self.target_lang == "tr":
+            return self._SYSTEM_PROMPT
+        from languages import build_system_instruction
+        return build_system_instruction(self.target_lang, self.source_lang, "video game") + self._SYSTEM_PROMPT_OTHER
 
     def translate_batch(self, sources: list, progress=None, tracker=None) -> dict:
         """Toplu çeviri — önbellek+sözlük filtresi, ardından BATCH_SIZE'lık API çağrıları."""

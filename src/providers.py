@@ -1124,7 +1124,7 @@ def translate_with_cloud(
         data = {k: v for k, v in cache.items() if k not in failed}
         cache_path.parent.mkdir(parents=True, exist_ok=True)
         tmp = cache_path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
         tmp.replace(cache_path)
 
     def translate_items(items: List[str]) -> List[Optional[str]]:

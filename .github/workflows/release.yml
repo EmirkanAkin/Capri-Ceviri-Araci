@@ -1,0 +1,38 @@
+# v1.2.3 etiketi gönderilince: test et, derle, (sertifika varsa) imzala, GitHub sürümü aç, zip'i ekle.
+name: Sürüm
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: python build_exe.py --check-tag ${{ github.ref_name }}
+      - run: pip install -r requirements-core.txt pytest pyinstaller
+      - run: python -m pytest -m "not slow" -q
+      - name: Sertifikayı hazırla (isteğe bağlı)
+        if: ${{ env.PFX != '' }}
+        env:
+          PFX: ${{ secrets.SIGN_PFX_BASE64 }}
+        shell: pwsh
+        run: |
+          [IO.File]::WriteAllBytes("$env:RUNNER_TEMP\capri.pfx", [Convert]::FromBase64String($env:PFX))
+          "CAPRI_SIGN_PFX=$env:RUNNER_TEMP\capri.pfx" >> $env:GITHUB_ENV
+      - run: python build_exe.py --zip --out dist --repo ${{ github.repository }}
+        env:
+          CAPRI_SIGN_PASSWORD: ${{ secrets.SIGN_PFX_PASSWORD }}
+      - run: python build_exe.py --notes notes.md
+      - name: Sürümü yayımla
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create ${{ github.ref_name }} dist/Capri-win64.zip --title "Capri ${{ github.ref_name }}" --notes-file notes.md
