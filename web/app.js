@@ -1194,7 +1194,7 @@ function renderUpdate() {
     actions = `<button class="btn" data-upd="retry">Tekrar dene</button>` + actions;
   } else if (u.available) {
     body = `<div class="upd-state ok">${icon("sparkle")}<div><b>Yeni sürüm: ${esc(u.latest)}</b><p>${u.published ? esc(u.published) + " · " : ""}${u.asset_size ? mb(u.asset_size) + " MB" : ""}</p></div></div>
-      ${u.notes ? `<div class="upd-notes selectable">${esc(u.notes)}</div>` : ""}`;
+      ${(u.notes || []).length ? `<div class="upd-news"><div class="upd-news-title">Yeni sürümde</div><ul>${u.notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul></div>` : ""}`;
     actions = u.can_apply ? `<button class="btn" data-upd="close">Sonra</button><button class="btn lime" data-upd="install">${icon("download")}İndir ve kur</button>`
       : `<button class="btn" data-upd="close">Kapat</button><button class="btn lime" data-upd="page">${icon("globe")}Sürüm sayfası</button>`;
   } else if (u.latest) {

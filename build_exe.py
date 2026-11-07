@@ -6,7 +6,7 @@ Kullanım:
     python build_exe.py --zip                    # + GitHub sürümüne eklenecek Capri-win64.zip
     python build_exe.py --zip --out D:/Surumler --repo kullanici/Capri
     python build_exe.py --check-tag v1.0.1       # etiket APP_VERSION ile aynı mı (GitHub Actions)
-    python build_exe.py --notes notlar.md        # CHANGELOG'daki bu sürümün notları
+    python build_exe.py --notes notlar.md        # sürüm açıklaması (uygulamadaki kısa liste)
 
 Kod imzalama: CAPRI_SIGN_PFX (.pfx yolu) ve CAPRI_SIGN_PASSWORD tanımlıysa Capri.exe imzalanır (signtool gerekir).
 
@@ -19,6 +19,7 @@ exe'ye gömülür; kullanıcılar uygulamada yalnızca "Güncellemeleri kontrol 
 """
 from __future__ import annotations
 
+import ast
 import json
 import os
 import re
@@ -69,13 +70,11 @@ def sign(exe: Path) -> bool:
     return True
 
 
-def release_notes(ver: str) -> str:
-    """CHANGELOG.md içinden bu sürümün bölümü."""
-    text = (APP_DIR / "CHANGELOG.md").read_text(encoding="utf-8")
-    match = re.search(rf"^## \[{re.escape(ver)}\][^\n]*\n(.*?)(?=^## \[|\Z)", text, re.M | re.S)
-    if not match:
-        raise RuntimeError(f"CHANGELOG.md içinde {ver} bölümü yok.")
-    return match.group(1).strip() + "\n"
+def release_notes() -> str:
+    """Sürüm açıklaması: uygulamadaki kısa "Bu sürümde" listesi. Eski sürümler bu metni olduğu gibi gösterir, düz kalmalı."""
+    tree = ast.parse((SRC / "app_modern.py").read_text(encoding="utf-8"))
+    items = next(ast.literal_eval(n.value) for n in tree.body if isinstance(n, ast.Assign) and getattr(n.targets[0], "id", "") == "WHATS_NEW")
+    return "".join(f"- {item}\n" for item in items)
 
 
 def build(repo: str) -> Path:
@@ -122,7 +121,7 @@ if __name__ == "__main__":
             sys.exit(f"Etiket {tag} ile APP_VERSION {version()} farklı.")
         sys.exit(0)
     if "--notes" in sys.argv:
-        Path(sys.argv[sys.argv.index("--notes") + 1]).write_text(release_notes(version()), encoding="utf-8")
+        Path(sys.argv[sys.argv.index("--notes") + 1]).write_text(release_notes(), encoding="utf-8")
         sys.exit(0)
     import updater
     repo = sys.argv[sys.argv.index("--repo") + 1] if "--repo" in sys.argv else updater.repo_from_git(APP_DIR)

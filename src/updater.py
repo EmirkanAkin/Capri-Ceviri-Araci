@@ -16,7 +16,7 @@ import shutil
 import sys
 import zipfile
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import requests
 
@@ -58,6 +58,25 @@ def default_repo() -> str:
     return "" if FROZEN else repo_from_git(APP_DIR)
 
 
+def clean_notes(body: str, limit: int = 12) -> List[str]:
+    """Sürüm açıklamasını düz madde listesine çevirir: başlıklar atılır, Markdown işaretleri temizlenir."""
+    items: List[str] = []
+    for raw in (body or "").splitlines():
+        line = raw.strip()
+        if not line or line.startswith(("#", ">", "```")):
+            continue
+        is_item = line.startswith(("- ", "* "))
+        line = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", line.lstrip("-* ").strip())
+        line = line.replace("**", "").replace("`", "").strip()
+        if not line:
+            continue
+        if not is_item and items and raw[:1].isspace():    # alt satıra taşan madde
+            items[-1] += " " + line
+        else:
+            items.append(line)
+    return items[:limit]
+
+
 def check(current: str, repo: str, timeout: float = 10) -> Dict[str, Any]:
     """{'available', 'latest', 'url', 'notes', 'asset'} döndürür."""
     if not re.fullmatch(r"[\w.-]+/[\w.-]+", repo or ""):
@@ -75,7 +94,7 @@ def check(current: str, repo: str, timeout: float = 10) -> Dict[str, Any]:
         "available": parse_version(tag) > parse_version(current),
         "latest": tag.lstrip("v"),
         "url": rel.get("html_url", ""),
-        "notes": (rel.get("body") or "")[:1500],
+        "notes": clean_notes(rel.get("body") or ""),
         "asset": asset["browser_download_url"] if asset else "",
         "asset_name": asset["name"] if asset else "",
         "asset_size": int(asset.get("size") or 0) if asset else 0,

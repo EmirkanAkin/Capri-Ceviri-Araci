@@ -10,7 +10,7 @@ Ren'Py · Unity · Unreal Engine · RPG Maker · JSON — artı oyun ekranını 
 ![Windows 10/11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows&logoColor=white)
 ![Python 3.11](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)
 [![Son sürüm](https://img.shields.io/github/v/release/EmirkanAkin/Capri-Ceviri-Araci?label=son%20s%C3%BCr%C3%BCm&color=dfe86b)](https://github.com/EmirkanAkin/Capri-Ceviri-Araci/releases/latest)
-![Testler](https://img.shields.io/badge/testler-202%20ge%C3%A7ti-86e0a0)
+![Testler](https://img.shields.io/badge/testler-204%20ge%C3%A7ti-86e0a0)
 
 <img src="docs/media/capri-home.gif" width="860" alt="Capri ana sayfası: canlı çeviri vitrini">
 

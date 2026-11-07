@@ -17,6 +17,7 @@ import json
 import os
 import queue
 import re
+import socket
 import sys
 import threading
 import time
@@ -38,7 +39,7 @@ from progress import LiveEta, SpeedStore, estimate, format_duration, format_rate
 from languages import renpy_language_name
 from user_errors import describe_error
 
-APP_VERSION = "1.0.1"
+APP_VERSION = "1.0.2"
 from paths import APP_DIR, FROZEN, GLOSSARY_DIR, ICON_FILE, WEB_DIR, seed_user_files
 import gpu_runtime
 gpu_runtime.activate()  # exe sürümünde sonradan kurulan PyTorch ortamı
@@ -77,15 +78,16 @@ DEFAULT_SETTINGS = {
 # Güncelleme penceresinde gösterilir; ayrıntılar CHANGELOG.md'de
 WHATS_NEW = [
     "Çeviri başlamıyordu: Türkçe Windows'taki hata düzeltildi",
-    "Düğme ve ilerleme paneli: adımlar, yüzde, hız, kalan süre",
-    "Hatalar artık ne olduğunu ve ne yapman gerektiğini söylüyor",
+    "Çeviri durumu, ilerleme ve hata mesajları çok daha anlaşılır",
     "Oyun açma çok daha hızlı; analiz sonucu saklanıyor",
     "Kütüphane bilgisayarındaki oyunları otomatik buluyor",
     "Ren'Py oyunları artık Türkçe dışındaki dillere de çevriliyor",
     "Unity StreamingAssets metinleri artık oyuna yazılıyor",
     "BepInEx izni artık çeviriden önce isteniyor; yanlış \"tamamlandı\" yok",
     "Unreal IoStore (.utoc) oyunları için retoc desteği",
+    "Güncelleme penceresi ve notları düzenlendi",
 ]
+UI_PORT = 42001
 ANALYSIS_VERSION = 1     # analiz biçimi değişince eski kayıtlar yok sayılır
 LEARN_MIN_LINES, LEARN_MIN_SECONDS = 20, 5.0
 OCR_TITLES = {"select": "Capri OCR Seçim", "popup": "Capri OCR Sonuç", "pin": "Capri OCR Sabit"}
@@ -338,6 +340,19 @@ def load_settings() -> Dict[str, Any]:
 
 def save_settings(settings: Dict[str, Any]) -> None:
     _write_json(SETTINGS_FILE, settings)
+
+
+def free_ui_port(start: int = UI_PORT, tries: int = 50) -> int:
+    """
+    Arayüzü sunan yerel port. Sabit kalmalı (yerel veriler adrese bağlıdır), ama Windows aynı porta ikinci dinleyiciye
+    izin verir: başka bir Capri açıksa yeni pencere onun eski arayüzünü yüklerdi. Dolu port sırası atlanır.
+    """
+    for port in range(start, start + tries):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            probe.settimeout(0.2)
+            if probe.connect_ex(("127.0.0.1", port)) != 0:
+                return port
+    return 0    # pywebview kendi seçsin
 
 
 def refresh_web_cache(web_dir: Path, storage: Path, version: str) -> bool:
@@ -2910,7 +2925,7 @@ def main() -> None:
     except Exception as exc:
         print(f"[UYARI] Ekran çevirisi pencereleri oluşturulamadı: {exc}")
 
-    webview.start(bridge._on_start, debug="--debug" in sys.argv, private_mode=False,
+    webview.start(bridge._on_start, debug="--debug" in sys.argv, private_mode=False, http_port=free_ui_port() or None,
                   storage_path=str(DATA_DIR / "webview"))
 
 
