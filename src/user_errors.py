@@ -11,6 +11,7 @@ import socket
 import urllib.error
 from typing import Any, Dict, Optional
 
+AI_MODULES = {"torch", "transformers", "tokenizers", "safetensors", "sentencepiece", "sacremoses", "huggingface_hub"}
 PROVIDERS_ACTION = {"label": "Sağlayıcılara git", "page": "providers"}
 MODELS_ACTION = {"label": "Yerel modellere git", "page": "models"}
 
@@ -28,9 +29,14 @@ def describe_error(exc: BaseException) -> Dict[str, Any]:
                        "Diğer uygulamaları kapatıp tekrar dene. Sürerse bulut motoruna geç; yapılan çeviriler kaybolmadı.",
                        detail, MODELS_ACTION)
     if isinstance(exc, ImportError):
-        return _result("Yerel model ortamı eksik",
-                       "Bu motor için gereken kütüphaneler kurulu değil. Yerel Modeller sayfasından tek tıkla kurabilirsin.",
-                       detail, MODELS_ACTION)
+        module = (getattr(exc, "name", "") or "").split(".")[0]
+        if module in AI_MODULES:
+            return _result("Yerel model ortamı eksik",
+                           "Bu motor için gereken kütüphaneler kurulu değil. Yerel Modeller sayfasından tek tıkla kurabilirsin.",
+                           detail, MODELS_ACTION)
+        return _result("Uygulamanın bir parçası eksik",
+                       "Bu bir Capri paketleme hatası. Son sürümü indirip aynı klasöre açman sorunu çözer; ayarların ve "
+                       "çevirilerin korunur.", detail, {"label": "Güncellemeleri kontrol et", "update": True})
     if any(k in text for k in ("resource_exhausted", "quota", "rate limit", "too many requests", " 429")):
         return _result("API kotası doldu",
                        "Sağlayıcının kullanım sınırına ulaşıldı. Biraz bekleyip kaldığın yerden devam et ya da başka bir "

@@ -214,7 +214,7 @@
               <label class="field toggle-row span2">
                 <div>
                   <div class="field-label"><svg class="i"><use href="#i-edit"/></svg>Kalite</div>
-                  <div class="toggle-title">Kalite editörü geçişi (Ren'Py)</div>
+                  <div class="toggle-title">Kalite editörü geçişi</div>
                   <div class="field-hint">Çeviriden sonra sorunlu taslaklar (İngilizce kalıntı, robotik ifade) konuşmacı ve önceki satırlarla birlikte bir sohbet modeline düzelttirilir. Gemini, OpenAI, Claude veya Ollama kullanır.</div>
                 </div>
                 <span class="switch"><input type="checkbox" id="qualityToggle"><i></i></span>
@@ -292,6 +292,8 @@
           <div class="toolbar">
             <input class="input grow" id="glossarySearch" placeholder="Terimlerde ara" spellcheck="false">
             <button class="btn" id="glossaryAdd"><svg class="i"><use href="#i-plus"/></svg>Terim ekle</button>
+            <button class="btn" data-action="glossary-import"><svg class="i"><use href="#i-download"/></svg>İçe aktar</button>
+            <button class="btn" data-action="glossary-export"><svg class="i"><use href="#i-upload"/></svg>Dışa aktar</button>
             <span class="status-msg" id="glossaryStatus"></span>
           </div>
           <div class="table glossary" id="glossaryTable"></div>

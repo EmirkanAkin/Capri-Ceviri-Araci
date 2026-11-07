@@ -35,11 +35,11 @@ from backup_system import create_game_backup, list_game_backups, restore_game_ba
 from engine_common import Glossary, TranslationCache, TranslationCancelled, cache_file_for
 from languages import get_all_source_languages, get_all_target_languages
 from library import ProjectLibrary, resolve_art
-from progress import LiveEta, SpeedStore, estimate, format_duration, format_rate
+from progress import LiveEta, SpeedStore, estimate, estimate_cost, format_duration, format_rate
 from languages import renpy_language_name
 from user_errors import describe_error
 
-APP_VERSION = "1.0.2"
+APP_VERSION = "1.0.3"
 from paths import APP_DIR, FROZEN, GLOSSARY_DIR, ICON_FILE, WEB_DIR, seed_user_files
 import gpu_runtime
 gpu_runtime.activate()  # exe sürümünde sonradan kurulan PyTorch ortamı
@@ -77,17 +77,19 @@ DEFAULT_SETTINGS = {
 }
 # Güncelleme penceresinde gösterilir; ayrıntılar CHANGELOG.md'de
 WHATS_NEW = [
-    "Çeviri başlamıyordu: Türkçe Windows'taki hata düzeltildi",
-    "Çeviri durumu, ilerleme ve hata mesajları çok daha anlaşılır",
-    "Oyun açma çok daha hızlı; analiz sonucu saklanıyor",
-    "Kütüphane bilgisayarındaki oyunları otomatik buluyor",
-    "Ren'Py oyunları artık Türkçe dışındaki dillere de çevriliyor",
-    "Unity StreamingAssets metinleri artık oyuna yazılıyor",
-    "BepInEx izni artık çeviriden önce isteniyor; yanlış \"tamamlandı\" yok",
-    "Unreal IoStore (.utoc) oyunları için retoc desteği",
-    "Güncelleme penceresi ve notları düzenlendi",
+    "Gemini çevirisi yaklaşık 5 kat hızlı; yarıda takılma düzeltildi",
+    "İlerleme çubuğu sürekli ilerliyor, kalan süre gerçekçi",
+    "Unity oyunlarında yazma hatası (UnityPy.resources) düzeltildi",
+    "Güncelleme artık siyah pencere açmadan arayüzden kuruluyor",
+    "GPU paneli \"Algılanıyor\"da kalmıyor; Durdur düğmesi yenilendi",
+    "Oyna düğmesi, sözlük içe/dışa aktarma, yama paylaşma",
+    "Ücretli API'lerde tahmini maliyet; çeviri bitince görev çubuğu uyarısı",
+    "Kalite editörü tüm motorlarda ve dillerde",
+    "Çince, Japonca, Korece için otomatik yazı tipi (Ren'Py)",
 ]
 UI_PORT = 42001
+NOTO = "https://github.com/notofonts/noto-cjk/raw/main/Sans/SubsetOTF/{0}/NotoSans{0}-Regular.otf"
+NOTO_FONTS = {"ja": NOTO.format("JP"), "zh-CN": NOTO.format("SC"), "zh-TW": NOTO.format("TC"), "ko": NOTO.format("KR")}
 ANALYSIS_VERSION = 1     # analiz biçimi değişince eski kayıtlar yok sayılır
 LEARN_MIN_LINES, LEARN_MIN_SECONDS = 20, 5.0
 OCR_TITLES = {"select": "Capri OCR Seçim", "popup": "Capri OCR Sonuç", "pin": "Capri OCR Sabit"}
@@ -157,6 +159,33 @@ def detect_any_game_type(path_str: str) -> Tuple[Optional[str], Any]:
 def game_root_of(game_type: str, info: Any, fallback: Path) -> Path:
     root = getattr(info, "root", None)
     return Path(root) if root else fallback
+
+
+def parse_glossary_file(path: Path) -> List[List[str]]:
+    import csv
+    text = path.read_text(encoding="utf-8-sig")
+    if path.suffix.lower() == ".csv":
+        rows = [r for r in csv.reader(text.splitlines()) if len(r) >= 2]
+        if rows and rows[0][0].strip().lower() in ("kaynak", "source", "en", "english"):
+            rows = rows[1:]
+        return [[a.strip(), b.strip()] for a, b, *_ in rows if a.strip() and b.strip()]
+    data = json.loads(text)
+    items = data.items() if isinstance(data, dict) else (tuple(x[:2]) for x in data if isinstance(x, (list, tuple)) and len(x) >= 2)
+    return [[str(a), str(b)] for a, b in items if not str(a).startswith("_") and str(a).strip() and str(b).strip()]
+
+
+def quick_line_count(game: Dict[str, Any]) -> Optional[int]:
+    """Tarama önerileri için ucuz satır tahmini: Ren'Py betikleri ve RPG Maker MV/MZ verisi (Unity/Unreal analizde)."""
+    root = Path(game["path"])
+    if game["engine"] == "renpy":
+        game_dir = root / "game" if (root / "game").is_dir() else root
+        return estimate_renpy_text(game_dir).get("unique") or None
+    if game["engine"] == "rpgmaker":
+        from engine_rpgmaker import detect_rpgmaker_game, extract_texts_mv_mz
+        info = detect_rpgmaker_game(root)
+        if info.engine_type in ("mv", "mz"):
+            return len({t.original for t in extract_texts_mv_mz(info.data_dir, log=lambda s: None)}) or None
+    return None
 
 
 def readable_folder_name(root: Path) -> str:
@@ -493,7 +522,7 @@ class CapriBridge:
         self._library = ProjectLibrary()
         self._library.recover_interrupted()
         self._settings = load_settings()
-        self._speeds = SpeedStore(DATA_DIR / "speeds.json")
+        self._speeds = SpeedStore(DATA_DIR / "speeds_v2.json")   # v2: Gemini hızlandı, eski ölçümler geçersiz
         self._editor_cache: Optional[Tuple[Tuple[str, int], Dict[str, str], Dict[str, bool]]] = None
         self._analysis_thread: Optional[threading.Thread] = None
         self._scan_running = False
@@ -579,6 +608,14 @@ class CapriBridge:
         self._ui.emit("stage", {"key": key, "label": label})
         self._log(label)
 
+    def _attention(self) -> None:
+        from ocr import attention
+        attention("Capri")
+
+    def _notice(self, text: str) -> None:
+        """İlerleme panelinin altındaki kısa durum notu (ör. sağlayıcı hız sınırı)."""
+        self._ui.emit("notice", {"text": text})
+
     def _ask(self, title: str, text: str, timeout: float = 300.0) -> bool:
         """Arayüzde onay penceresi açar ve kullanıcının yanıtını bekler."""
         cid = uuid.uuid4().hex
@@ -641,6 +678,11 @@ class CapriBridge:
         self._eta_prior = None
         self._eta = LiveEta()
         self._ui.clear_progress()
+        try:
+            import engine_renpy
+            engine_renpy.NOTICE = self._notice
+        except Exception:
+            pass
         self._ui.emit("busy", {"busy": True, "label": label})
 
         def work():
@@ -690,6 +732,8 @@ class CapriBridge:
                 game["root"], status="error", last_error=info, last_action=info["title"], last_action_at=time.time()))
             self._safely(lambda: self._emit_project(game["root"]))
         self._safely(lambda: self._ui.emit("task_error", {"label": label, **info}))
+        if self._translating:
+            self._safely(self._attention)
         self._safely(lambda: self._status(info["title"], tone))
         self._safely(lambda: self._notify(info["title"], info["hint"], tone, "alert", info.get("action")))
 
@@ -912,6 +956,62 @@ class CapriBridge:
         self._emit_stats()
         return True
 
+    def _game_executable(self, game: Dict[str, Any]) -> Optional[Path]:
+        info, root = game.get("info"), Path(game["root"])
+        for attr in ("executable", "exe_path"):
+            path = getattr(info, attr, None)
+            if path and Path(path).is_file():
+                return Path(path)
+        skip = ("unins", "crash", "unitycrash", "notification_helper", "updater", "setup", "vc_redist", "dxsetup")
+        candidates = [p for p in root.glob("*.exe") if not p.name.lower().startswith(skip)]
+        preferred = [p for p in candidates if p.stem.lower() in ("game", "nw")] or candidates
+        return sorted(preferred, key=lambda p: -p.stat().st_size)[0] if preferred else None
+
+    def play_game(self) -> bool:
+        """Oyunu Capri'den açar: çeviriyi hemen oyunda görmek için."""
+        import subprocess
+        game = self._game
+        if not game:
+            return False
+        exe = self._game_executable(game)
+        if not exe:
+            self._toast("Oyunun çalıştırılabilir dosyası bulunamadı; oyun klasöründen açabilirsin.", "warn")
+            return False
+        subprocess.Popen([str(exe)], cwd=str(exe.parent), close_fds=True,
+                         creationflags=getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
+        self._log(f"Oyun başlatıldı: {exe}")
+        return True
+
+    # ── Sözlük içe / dışa aktarma ──
+    def glossary_export(self, kind: str, rows: List[List[str]]) -> Optional[str]:
+        import csv
+        import io
+        import webview
+        if not self._window:
+            return None
+        result = self._window.create_file_dialog(webview.FileDialog.SAVE, save_filename=f"capri_sozluk_{kind}.json",
+                                                 file_types=("JSON (*.json)", "CSV (*.csv)"))
+        if not result:
+            return None
+        target = Path(result if isinstance(result, str) else result[0])
+        pairs = [(str(a), str(b)) for a, b in (r for r in rows if len(r) == 2) if str(a).strip()]
+        if target.suffix.lower() == ".csv":
+            buffer = io.StringIO()
+            csv.writer(buffer).writerows([("kaynak", "çeviri"), *pairs])
+            target.write_text(buffer.getvalue(), encoding="utf-8-sig")
+        else:
+            _write_json(target, dict(pairs))
+        self._toast(f"{_n(len(pairs))} terim dışa aktarıldı.", "ok")
+        return str(target)
+
+    def glossary_import(self) -> Optional[List[List[str]]]:
+        """JSON (sözlük ya da [kaynak, çeviri] listesi) veya iki sütunlu CSV okur; kaydetmek kullanıcıya kalır."""
+        import webview
+        if not self._window:
+            return None
+        result = self._window.create_file_dialog(webview.FileDialog.OPEN, file_types=("Sözlük (*.json;*.csv)",))
+        return parse_glossary_file(Path(result[0])) if result else None
+
     def open_url(self, url: str) -> bool:
         """Bağlantıyı varsayılan tarayıcıda açar (yalnızca http/https)."""
         import webbrowser
@@ -1074,7 +1174,9 @@ class CapriBridge:
         workers = self._workers(model)
         gpu = bool(self._gpu and self._gpu.get("cuda"))
         result = estimate(model, chars, workers, gpu, self._speeds)
-        return {**result, "lines": total, "cached": cached, "pending": total - cached, "chars": chars, "workers": workers,
+        cfg = prov.load_provider_config()
+        cost = estimate_cost(model, {"openai": cfg.openai_model, "anthropic": cfg.anthropic_model}.get(model, ""), chars)
+        return {**result, "cost": cost, "lines": total, "cached": cached, "pending": total - cached, "chars": chars, "workers": workers,
                 "model": MODEL_LABELS.get(model, model), "exact": bool(stats.get("exact"))}
 
     def _emit_estimate(self, game: Dict[str, Any]) -> None:
@@ -1375,6 +1477,7 @@ class CapriBridge:
             message = f"{_n(written)} satır oyuna yazıldı · {format_duration(max(took, 1))}"
             self._status(message, "ok")
             self._notify("Çeviri tamamlandı", f"{game['title']} · {message}", "ok", "check")
+            self._safely(self._attention)
             self._ui.emit("done", {"written": written, "failed": len(failed), "took": took})
             self._emit_stats()
 
@@ -1391,6 +1494,27 @@ class CapriBridge:
             self._restore_originals(game)
             game.update(info=None, texts=None, skip_backup=True)
         return True
+
+    def _cjk_font(self, target: str, info: Any) -> Optional[Path]:
+        """Çince/Japonca/Korece: oyunun fontu desteklemiyorsa izin alıp açık kaynak Noto Sans indirir."""
+        from engine_renpy import scan_game_fonts
+        url = NOTO_FONTS.get(target)
+        if not url or not any(f.get("missing_chars") for f in scan_game_fonts(info)):
+            return None
+        target_file = DATA_DIR / "fonts" / url.rsplit("/", 1)[1]
+        if target_file.exists():
+            return target_file
+        if not self._ask("Yazı tipi indirilecek", "Oyunun fontları bu dilin karakterlerini içermiyor; metinler oyunda görünmez. "
+                         "Capri, Google'ın açık kaynak Noto Sans yazı tipini (yaklaşık 5-8 MB, SIL Open Font License) "
+                         "GitHub'dan indirip çeviri klasörüne ekleyecek. Devam edilsin mi?"):
+            return None
+        import requests
+        self._stage("write", "Yazı tipi indiriliyor")
+        response = requests.get(url, timeout=120, headers={"User-Agent": "Capri"})
+        response.raise_for_status()
+        target_file.parent.mkdir(parents=True, exist_ok=True)
+        target_file.write_bytes(response.content)
+        return target_file
 
     def _want_backup(self, game: Dict[str, Any]) -> bool:
         return bool(self._settings["backup"]) and not game.get("skip_backup")
@@ -1565,11 +1689,11 @@ class CapriBridge:
             source_lang="en" if s["source"] == "auto" else s["source"],
         )
         self._learn_speed(game)
-        if s.get("quality_pass") and s["target"] == "tr":   # kalite editörünün talimatları Türkçedir
+        if s.get("quality_pass"):
             self._stage("translate", "Kalite editörü sorunlu satırları düzeltiyor")
             self._run_quality(tl_dir)
         self._stage("write", "Çeviri oyuna uygulanıyor")
-        enable_turkish(info, True, self._log)
+        enable_turkish(info, True, self._log, fallback_font=self._cjk_font(s["target"], info))
         repair_say_prefixes(tl_dir, self._log)
         repair_safe_issues(tl_dir, self._log)
         qa = qa_translation(tl_dir)
@@ -1621,6 +1745,8 @@ class CapriBridge:
             extra_instruction=self._extra_instruction(),
         )
         self._learn_speed(game)
+        if s.get("quality_pass") and texts:
+            translations.update(self._quality_edits(unique, translations))
         self._stage("write", "Çeviri oyuna yazılıyor")
         written = write_translations_unity(info, translations, texts, self._log) if texts else 0
         game["texts"] = None  # Varlıklar değişti; bir sonraki analizde yeniden okunur
@@ -1771,6 +1897,8 @@ class CapriBridge:
         translations = self._translate_strings(unique, self._cache_path(), PROTECTED_RPGM,
                                                self._glossary("glossary_rpgm.json"), "RPG Maker Game", failed)
         self._learn_speed(game)
+        if self._settings.get("quality_pass"):
+            translations.update(self._quality_edits(unique, translations))
         self._stage("write", "Çeviri oyuna yazılıyor")
         game["texts"] = None
         game["analysis"] = None
@@ -1823,6 +1951,23 @@ class CapriBridge:
             return "gemini"
         raise UserError("Kalite editörü bir sohbet modeli ister: Gemini, OpenAI, Claude veya Ollama seçin.")
 
+    def _quality_edits(self, sources: List[str], translations: Dict[str, str]) -> Dict[str, str]:
+        """Ren'Py dışı motorlar: sorunlu taslakları düzeltir, önbelleğe yazar ve düzeltmeleri döndürür."""
+        from engine_renpy import quality_edit_pairs
+        provider = self._quality_provider()
+        cfg = prov.load_provider_config()
+        self._stage("translate", f"Kalite editörü sorunlu satırları düzeltiyor ({MODEL_LABELS[provider]})")
+        edits = quality_edit_pairs(sources, translations, lambda system, user: prov.llm_complete(provider, system, user, cfg),
+                                   target_lang=self._settings["target"], log=self._log, progress=self._progress,
+                                   extra_instruction=self._extra_instruction())
+        if edits:
+            cache = TranslationCache(self._cache_path())
+            cache.load()
+            cache.update(edits)
+            cache.save()
+            self._notify("Kalite editörü tamamlandı", f"{_n(len(edits))} satır düzeltildi ({MODEL_LABELS[provider]}).", "ok", "edit")
+        return edits
+
     def _run_quality(self, tl_dir: Path) -> Dict[str, int]:
         from engine_renpy import quality_edit_with_llm
         provider = self._quality_provider()
@@ -1831,6 +1976,7 @@ class CapriBridge:
         result = quality_edit_with_llm(
             tl_dir, self._cache_path(), lambda system, user: prov.llm_complete(provider, system, user, cfg),
             log=self._log, progress=self._progress, extra_instruction=self._extra_instruction(),
+            target_lang=self._settings["target"],
         )
         self._notify("Kalite editörü tamamlandı",
                      f"{_n(result['candidates'])} sorunlu taslaktan {_n(result['edited'])} satır düzeltildi "
@@ -1841,12 +1987,17 @@ class CapriBridge:
         """Mevcut Ren'Py çevirisinde yalnızca kalite editörünü çalıştırır."""
         def task():
             game = self._require_game()
-            if game["type"] != "renpy":
-                raise UserError("Kalite editörü şu an Ren'Py oyunları için.")
             from engine_renpy import analyze_game
-            if self._settings["target"] != "tr":
-                raise UserError("Kalite editörü şimdilik yalnızca Türkçe çeviriler için çalışıyor.")
-            tl_dir = analyze_game(game["root"], self._log).tl_dir
+            if game["type"] != "renpy":
+                uniques = game.get("uniques") or []
+                cache = _read_json(self._cache_path(), {})
+                if not uniques or not cache:
+                    raise UserError("Önce çeviriyi başlat; düzeltilecek çeviri yok.")
+                if self._quality_edits(uniques, {u: cache[u] for u in uniques if u in cache}):
+                    written = getattr(self, f"_apply_{game['type']}")(game, _read_json(self._cache_path(), {}))
+                    self._status(f"Düzeltmeler oyuna yazıldı: {_n(written)} satır.", "ok")
+                return
+            tl_dir = analyze_game(game["root"], self._log, language=renpy_language_name(self._settings["target"])).tl_dir
             if not tl_dir.is_dir():
                 raise UserError("Önce çeviriyi başlatın; Türkçe çeviri klasörü yok.")
             self._run_quality(tl_dir)
@@ -2091,8 +2242,17 @@ class CapriBridge:
         with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as archive:
             archive.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
             archive.writestr("translations.json", json.dumps(cache, ensure_ascii=False))
-        self._notify("Yama dışa aktarıldı", f"{_n(len(cache))} satır · {target.name}", "ok", "archive",
-                     {"label": "Klasörü aç", "path": str(target.parent)})
+        import updater
+        repo = self._update_repo()
+        if repo:   # topluluk: yamayı GitHub'da bir konu olarak paylaş (dosyayı sayfaya sürükleyip bırakmak yeter)
+            import urllib.parse
+            query = urllib.parse.urlencode({"title": f"Yama: {game['title']} ({self._settings['target']})", "labels": "yama",
+                                            "body": f"Oyun: {game['title']}\nMotor: {ENGINE_LABELS.get(game['type'], game['type'])}\n"
+                                                    f"Satır: {len(cache)}\n\n{target.name} dosyasını buraya sürükleyip bırak."})
+            action = {"label": "Toplulukla paylaş", "url": f"https://github.com/{repo}/issues/new?{query}"}
+        else:
+            action = {"label": "Klasörü aç", "path": str(target.parent)}
+        self._notify("Yama dışa aktarıldı", f"{_n(len(cache))} satır · {target.name}", "ok", "archive", action)
         return str(target)
 
     def import_patch(self) -> bool:
@@ -2507,6 +2667,8 @@ class CapriBridge:
                 parents, direct = game_scanner.scan_sources(self._settings.get("scan_folders", []))
                 known = [p["path"] for p in self._library.list()]
                 self._scan_found = game_scanner.scan(detect_any_game_type, game_root_of, game_title_of, parents, direct, known)
+                for game in self._scan_found:
+                    self._safely(lambda: game.update(lines=quick_line_count(game)))
                 _write_json(DATA_DIR / "scan.json", self._scan_found, indent=None)
             except Exception:
                 self._safely(lambda: self._log(traceback.format_exc()))
@@ -2605,12 +2767,17 @@ class CapriBridge:
                     self._ui.emit("update_progress", {"done": done, "total": total})
 
             staged = updater.stage(info["asset"], info["latest"], log=self._log, progress=report)
-            script = updater.write_apply_script(staged, pid=os.getpid())
+            helper = staged / Path(sys.executable).name
+            if not helper.exists():
+                raise UserError("İndirilen paket eksik; güncelleme uygulanmadı. Daha sonra tekrar dene.")
             self._ui.emit("update_progress", {"installing": True})
-            subprocess.Popen(["cmd", "/c", str(script)], cwd=str(APP_DIR),
-                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "DETACHED_PROCESS", 0))
+            # Yeni sürümün kendi exe'si dosyaları değiştirir: konsol penceresi açılmaz, hata olursa geri alınır
+            subprocess.Popen([str(helper), "--apply-update", "--pid", str(os.getpid()), "--target", str(APP_DIR),
+                              "--from", APP_VERSION, "--to", str(info["latest"])], cwd=str(staged), close_fds=True,
+                             creationflags=getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
             time.sleep(1.5)
             self.win_close()
+            threading.Timer(5.0, lambda: os._exit(0)).start()   # açık kalan bir iş parçacığı kapanışı geciktirmesin
 
         return self._run_task("Güncelleme", task)
 
@@ -2637,7 +2804,21 @@ class CapriBridge:
             threading.Thread(target=self.check_update, daemon=True).start()
         threading.Thread(target=self._preload_engines, daemon=True, name="preload").start()
         threading.Thread(target=self._scan_on_start, daemon=True, name="scan-start").start()
+        self._report_update_result()
 
+    def _report_update_result(self) -> None:
+        """Güncelleme yardımcısının bıraktığı sonucu bildirir; artıkları temizler."""
+        import updater
+        result = updater.take_result()
+        if not result:
+            return
+        if result.get("ok"):
+            self._notify(f"Capri {result.get('to', APP_VERSION)} sürümüne güncellendi",
+                         "Yenilikleri görmek için güncelleme penceresini aç.", "ok", "download", {"label": "Yenilikler", "update": True})
+        else:
+            self._notify("Güncelleme uygulanamadı", f"Önceki sürüm olduğu gibi duruyor. Ayrıntı: {result.get('error', '')}",
+                         "error", "alert", {"label": "Teknik günlük", "page": "log"})
+            self._log(f"Güncelleme hatası: {result.get('error')}")
     @staticmethod
     def _preload_engines() -> None:
         """İlk oyun açılışı beklemesin: ağır motor modülleri arayüz açıldıktan sonra arka planda yüklenir."""
@@ -2930,6 +3111,9 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    if "--apply-update" in sys.argv:          # güncelleme yardımcısı: pencere açmadan dosyaları değiştirir
+        import updater
+        sys.exit(updater.run_helper(sys.argv))
     if sys.argv[1:3] == ["-m", "rpycdec"]:   # exe'de sys.executable Capri.exe'dir: ikinci pencere açılmasın
         import runpy
         sys.argv = ["rpycdec", *sys.argv[3:]]

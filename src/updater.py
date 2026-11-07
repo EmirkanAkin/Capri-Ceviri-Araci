@@ -14,9 +14,10 @@ import os
 import re
 import shutil
 import sys
+import time
 import zipfile
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple  # noqa: F401
 
 import requests
 
@@ -144,6 +145,124 @@ def stage(asset_url: str, version: str, log: LogFn = print,
         raise RuntimeError("İndirilen paket bir Capri sürümü gibi görünmüyor.")
     log(f"Güncelleme hazır: {target}")
     return target
+
+
+RESULT_FILE = "update_result.json"
+NEW_SUFFIX, OLD_SUFFIX = ".capri-new", ".capri-old"
+
+
+def _wait_for_exit(pid: int, seconds: float = 60) -> None:
+    """Eski sürüm kapanana kadar bekler; kapanmazsa sonlandırır (kendi sürecimiz)."""
+    import ctypes
+    kernel = ctypes.windll.kernel32
+    handle = kernel.OpenProcess(0x00100000 | 0x0001, False, pid)   # SYNCHRONIZE | TERMINATE
+    if not handle:
+        return
+    try:
+        if kernel.WaitForSingleObject(handle, int(seconds * 1000)) != 0:
+            kernel.TerminateProcess(handle, 0)
+            kernel.WaitForSingleObject(handle, 5000)
+    finally:
+        kernel.CloseHandle(handle)
+
+
+def _retry(action: Callable[[], None], seconds: float = 15) -> None:
+    """Antivirüs veya kapanan süreç dosyayı kısa süre kilitleyebilir: kısa aralıklarla tekrar dener."""
+    end = time.monotonic() + seconds
+    while True:
+        try:
+            action()
+            return
+        except PermissionError:
+            if time.monotonic() > end:
+                raise
+            time.sleep(0.25)
+
+
+def install_staged(staged: Path, app_dir: Path, log: LogFn = print) -> int:
+    """
+    Hazırlanan sürümü uygulama klasörüne kurar. Önce tüm dosyalar yanına kopyalanır, sonra hepsi birden yerine
+    taşınır; bir dosya taşınamazsa yapılanlar geri alınır, uygulama yarım güncellenmiş kalmaz.
+    """
+    staged, app_dir = Path(staged).resolve(), Path(app_dir).resolve()
+    files = [p for p in staged.rglob("*") if p.is_file() and not _protected(p.relative_to(staged))]
+    pairs = [(src, app_dir / src.relative_to(staged)) for src in files]
+    for src, dest in pairs:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        new = dest.with_name(dest.name + NEW_SUFFIX)
+        _retry(lambda: shutil.copy2(src, new))
+    moved: List[Tuple[Path, bool]] = []
+    try:
+        for _src, dest in pairs:
+            new, old = dest.with_name(dest.name + NEW_SUFFIX), dest.with_name(dest.name + OLD_SUFFIX)
+            existed = dest.exists()
+            if existed:
+                _retry(lambda: os.replace(dest, old))
+            _retry(lambda: os.replace(new, dest))
+            moved.append((dest, existed))
+    except Exception:
+        for dest, existed in reversed(moved):   # geri al
+            old = dest.with_name(dest.name + OLD_SUFFIX)
+            if existed and old.exists():
+                os.replace(old, dest)
+            elif not existed:
+                dest.unlink(missing_ok=True)
+        for _src, dest in pairs:
+            dest.with_name(dest.name + NEW_SUFFIX).unlink(missing_ok=True)
+        raise
+    cleanup(app_dir)
+    log(f"Güncelleme kuruldu: {len(pairs)} dosya")
+    return len(pairs)
+
+
+def cleanup(app_dir: Path = APP_DIR) -> None:
+    """Önceki güncellemelerden kalan .capri-old dosyalarını siler (çalışan exe kilitliyse bir sonraki açılışa kalır)."""
+    for leftover in Path(app_dir).rglob(f"*{OLD_SUFFIX}"):
+        try:
+            leftover.unlink()
+        except OSError:
+            pass
+
+
+def run_helper(argv: List[str]) -> int:
+    """`Capri.exe --apply-update --pid N --target DİZİN --from A --to B`: eski sürüm kapanınca yeni sürümü kurar ve açar."""
+    import subprocess
+
+    def arg(name: str, default: str = "") -> str:
+        return argv[argv.index(name) + 1] if name in argv else default
+
+    target = Path(arg("--target"))
+    staged = Path(sys.executable).resolve().parent
+    result: Dict[str, Any] = {"from": arg("--from"), "to": arg("--to"), "ok": False}
+    try:
+        if arg("--pid"):
+            _wait_for_exit(int(arg("--pid")))
+        result["files"] = install_staged(staged, target)
+        result["ok"] = True
+    except Exception as error:
+        result["error"] = f"{type(error).__name__}: {error}"
+    try:
+        (target / "portable_cache").mkdir(parents=True, exist_ok=True)
+        (target / "portable_cache" / RESULT_FILE).write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
+    except OSError:
+        pass
+    exe = target / Path(sys.executable).name
+    subprocess.Popen([str(exe)], cwd=str(target), close_fds=True,
+                     creationflags=getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
+    return 0 if result["ok"] else 1
+
+
+def take_result(app_dir: Path = APP_DIR) -> Optional[Dict[str, Any]]:
+    """Son güncellemenin sonucunu bir kez okur; indirilen paketi ve artıkları temizler."""
+    path = Path(app_dir) / "portable_cache" / RESULT_FILE
+    try:
+        result = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    path.unlink(missing_ok=True)
+    shutil.rmtree(STAGING_DIR, ignore_errors=True)
+    cleanup(app_dir)
+    return result
 
 
 def launch_command(app_dir: Path = APP_DIR) -> str:

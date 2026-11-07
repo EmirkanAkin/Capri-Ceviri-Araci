@@ -63,7 +63,8 @@ def test_notify_failure_cannot_leave_project_stuck(tmp_path, monkeypatch):
     (TimeoutError("timed out"), "Sunucu yanıt vermedi", None),
     (OSError(28, "No space left"), "Diskte yer kalmadı", None),
     (MemoryError(), "Bellek yetmedi", "models"),
-    (ModuleNotFoundError("torch"), "Yerel model ortamı eksik", "models"),
+    (ModuleNotFoundError("No module named 'torch'", name="torch"), "Yerel model ortamı eksik", "models"),
+    (ModuleNotFoundError("No module named 'UnityPy.resources'", name="UnityPy.resources"), "Uygulamanın bir parçası eksik", None),
     (UnicodeEncodeError("charmap", "→", 0, 1, "x"), "Beklenmeyen bir hata oluştu", None),
 ])
 def test_errors_are_described_in_plain_language(exc, title, page):
@@ -183,8 +184,8 @@ def test_retranslation_can_be_declined(tmp_path, monkeypatch, fake_ollama):
 def test_estimate_scales_with_text_and_workers(tmp_path):
     from progress import SpeedStore, estimate
     small = estimate("gemini", 5_000)["seconds"]
-    assert estimate("gemini", 500_000)["seconds"] == pytest.approx(small * 100), "metin büyüdükçe süre büyümeli"
-    assert estimate("gemini", 500_000, workers=4)["seconds"] == pytest.approx(small * 25)
+    assert estimate("gemini", 500_000)["seconds"] == pytest.approx(small * 100, rel=0.02), "metin büyüdükçe süre büyümeli"
+    assert estimate("gemini", 500_000, workers=4)["seconds"] == pytest.approx(small * 25, rel=0.02)
     assert estimate("opus", 100_000, gpu=False)["seconds"] > estimate("opus", 100_000, gpu=True)["seconds"] * 5
     assert estimate("gemini", 2_000_000)["text"].endswith(("dk", "sa"))
     store = SpeedStore(tmp_path / "s.json")
@@ -764,3 +765,235 @@ def test_second_instance_does_not_share_ui_port():
         busy = first.getsockname()[1]
         assert app_modern.free_ui_port(busy) != busy
     assert app_modern.free_ui_port(busy) == busy, "boşsa aynı port kullanılmalı (yerel veriler adrese bağlı)"
+
+
+# ── Güncelleyici: konsolsuz, yarım kalmayan kurulum ──────────────────────────
+def _staged(tmp_path, files):
+    staged = tmp_path / "staged"
+    for rel, data in files.items():
+        (staged / rel).parent.mkdir(parents=True, exist_ok=True)
+        (staged / rel).write_bytes(data)
+    return staged
+
+
+def test_install_staged_replaces_files_and_keeps_user_data(tmp_path):
+    import updater
+    app = tmp_path / "app"
+    (app / "_internal").mkdir(parents=True)
+    (app / "Capri.exe").write_bytes(b"old")
+    (app / "_internal" / "a.dll").write_bytes(b"old")
+    (app / "portable_cache").mkdir()
+    (app / "portable_cache" / "settings.json").write_text("{}", encoding="utf-8")
+    staged = _staged(tmp_path, {"Capri.exe": b"new", "_internal/a.dll": b"new", "_internal/b.dll": b"new",
+                                "portable_cache/settings.json": b"EZME", "data/glossary.json": b"EZME"})
+    assert updater.install_staged(staged, app, log=lambda s: None) == 3
+    assert (app / "Capri.exe").read_bytes() == b"new" and (app / "_internal" / "b.dll").read_bytes() == b"new"
+    assert (app / "portable_cache" / "settings.json").read_text(encoding="utf-8") == "{}" and not (app / "data").exists()
+    assert not list(app.rglob("*.capri-*")), "geçici dosya kalmamalı"
+
+
+def test_install_staged_rolls_back_when_a_file_stays_locked(tmp_path, monkeypatch):
+    import os
+    import updater
+    app = tmp_path / "app"
+    app.mkdir()
+    (app / "Capri.exe").write_bytes(b"old-exe")
+    (app / "z.dll").write_bytes(b"old-dll")
+    staged = _staged(tmp_path, {"Capri.exe": b"new-exe", "z.dll": b"new-dll"})
+    real_replace = os.replace
+
+    def locked(src, dst):
+        if str(src).endswith("z.dll"):
+            raise PermissionError("kilitli")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(updater.os, "replace", locked)
+    monkeypatch.setattr(updater, "_retry", lambda action, seconds=15: action())
+    with pytest.raises(PermissionError):
+        updater.install_staged(staged, app, log=lambda s: None)
+    monkeypatch.setattr(updater.os, "replace", real_replace)
+    assert (app / "Capri.exe").read_bytes() == b"old-exe" and (app / "z.dll").read_bytes() == b"old-dll", "yarım güncelleme kalmamalı"
+    assert not list(app.glob("*.capri-new"))
+
+
+def test_update_result_is_reported_once_and_cleaned(tmp_path, monkeypatch):
+    import updater
+    monkeypatch.setattr(updater, "STAGING_DIR", tmp_path / "portable_cache" / "update")
+    (tmp_path / "portable_cache" / "update" / "9.9.9").mkdir(parents=True)
+    (tmp_path / "x.capri-old").write_bytes(b"x")
+    (tmp_path / "portable_cache" / updater.RESULT_FILE).write_text('{"ok": true, "to": "9.9.9"}', encoding="utf-8")
+    assert updater.take_result(tmp_path) == {"ok": True, "to": "9.9.9"}
+    assert updater.take_result(tmp_path) is None
+    assert not (tmp_path / "portable_cache" / "update").exists() and not (tmp_path / "x.capri-old").exists()
+
+
+def test_apply_update_uses_helper_not_batch_file(tmp_path, monkeypatch):
+    import subprocess
+    import updater
+    bridge = make_bridge(tmp_path, monkeypatch)
+    monkeypatch.setattr(app_modern, "FROZEN", True)
+    staged = tmp_path / "staged"
+    staged.mkdir()
+    (staged / Path(sys.executable).name).write_bytes(b"MZ")
+    monkeypatch.setattr(updater, "stage", lambda *a, **k: staged)
+    launched = []
+    monkeypatch.setattr(subprocess, "Popen", lambda cmd, **kw: launched.append((cmd, kw)))
+    monkeypatch.setattr(bridge, "win_close", lambda: None)
+    monkeypatch.setattr(app_modern.time, "sleep", lambda s: None)
+    monkeypatch.setattr(app_modern.threading, "Timer", lambda *a, **k: type("T", (), {"start": lambda self: None})())
+    bridge._update_info = {"available": True, "asset": "http://x/C.zip", "latest": "9.9.9"}
+    run_sync(bridge, "apply_update")
+    cmd, kw = launched[0]
+    assert cmd[0].endswith(Path(sys.executable).name) and "--apply-update" in cmd and "cmd" not in Path(cmd[0]).name.lower()
+    assert ("update_progress", {"installing": True}) in bridge._ui.events
+
+
+# ── Gemini: zaman aşımı, kota ve hız ─────────────────────────────────────────
+def _fake_gemini(monkeypatch, behaviour):
+    import io
+    import urllib.error
+    import engine_renpy as er
+    import providers
+    calls = []
+
+    class Resp(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def urlopen(req, timeout):
+        body = json.loads(req.data)
+        items = json.loads(body["contents"][0]["parts"][0]["text"].split("liste:\n", 1)[1])
+        model = req.full_url.split("/models/")[1].split(":")[0]
+        calls.append((model, len(items), timeout, body["generationConfig"]))
+        outcome = behaviour(model, len(calls))
+        if isinstance(outcome, int):
+            text = b"generateRequestsPerDay limit" if outcome == 4290 else b"{}"
+            raise urllib.error.HTTPError(req.full_url, 429 if outcome == 4290 else outcome, "x", {}, io.BytesIO(text))
+        reply = {"candidates": [{"content": {"parts": [{"text": json.dumps([f"TR {i}" for i in items])}]}}]}
+        return Resp(json.dumps(reply).encode())
+
+    monkeypatch.setattr(er.urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(er, "load_gemini_api_keys", lambda: ["k1", "k2"])
+    monkeypatch.setattr(er.time, "sleep", lambda s: None)
+    monkeypatch.setattr(providers, "gemini_model_order", lambda *a: ["gemini-2.5-flash-lite", "gemini-2.5-flash"])
+    monkeypatch.setattr(providers, "note_gemini_success", lambda m: None)
+    monkeypatch.setattr(er, "_write_cache_file", lambda *a, **k: None)
+    return er, calls
+
+
+def test_gemini_uses_long_timeout_small_batches_and_parallel_requests(tmp_path, monkeypatch):
+    er, calls = _fake_gemini(monkeypatch, lambda model, n: "ok")
+    cache, progress = {}, []
+    lines = [f"line {i}" for i in range(200)]
+    er.translate_with_gemini(lines, cache, tmp_path / "c.json", "k1", log=lambda s: None,
+                             progress=lambda d, t: progress.append(d))
+    assert len(cache) == 200 and all(n <= er.GEMINI_BATCH for _m, n, _t, _c in calls)
+    assert all(t >= 60 for _m, _n, t, _c in calls), "uzun parti erken kesilmemeli"
+    assert progress[0] == 0 and progress[-1] == 200 and len(progress) >= 5, "ilerleme sık güncellenmeli"
+
+
+def test_gemini_flash_runs_without_thinking(tmp_path, monkeypatch):
+    er, calls = _fake_gemini(monkeypatch, lambda model, n: 429 if "lite" in model else "ok")
+    er.translate_with_gemini(["a", "b"], {}, tmp_path / "c.json", "k1", log=lambda s: None)
+    flash = [c for m, _n, _t, c in calls if m == "gemini-2.5-flash"]
+    assert flash and flash[0]["thinkingConfig"] == {"thinkingBudget": 0}
+
+
+def test_gemini_daily_quota_stops_with_clear_error(tmp_path, monkeypatch):
+    import user_errors
+    er, calls = _fake_gemini(monkeypatch, lambda model, n: 4290)
+    with pytest.raises(er.GeminiQuotaExhausted) as raised:
+        er.translate_with_gemini([f"l{i}" for i in range(100)], {}, tmp_path / "c.json", "k1", log=lambda s: None)
+    assert user_errors.describe_error(raised.value)["title"] == "API kotası doldu"
+    assert len(calls) < 40, "kota dolunca sonsuz denemeye girmemeli"
+
+
+# ── Yol haritası: maliyet, sözlük, oyna, kalite, yazı tipi ───────────────────
+def test_cost_estimate_for_paid_providers_only():
+    from progress import estimate_cost
+    assert estimate_cost("gemini", "", 100_000) is None and estimate_cost("opus", "", 100_000) is None
+    assert estimate_cost("openai", "bilinmeyen-model", 100_000) is None
+    mini = estimate_cost("openai", "gpt-4o-mini", 1_000_000)
+    assert 0 < mini["usd"] < 1 and "$" in mini["text"]
+    assert estimate_cost("anthropic", "claude-sonnet-4-5", 1_000_000)["usd"] > mini["usd"]
+    assert estimate_cost("deepl", "", 1_000_000)["usd"] == pytest.approx(25)
+    assert estimate_cost("openai", "gpt-4o-mini", 100)["text"] == "1 sentten az"
+
+
+@pytest.mark.parametrize("name,content,expected", [
+    ("s.json", '{"_aciklama": "x", "Save": "Kaydet", "Load": "Yükle"}', [["Save", "Kaydet"], ["Load", "Yükle"]]),
+    ("s.json", '[["Save", "Kaydet"], ["bos", ""]]', [["Save", "Kaydet"]]),
+    ("s.csv", "kaynak,çeviri\nSave,Kaydet\n\"Hi, you\",\"Selam, sen\"\n", [["Save", "Kaydet"], ["Hi, you", "Selam, sen"]]),
+])
+def test_glossary_files_are_parsed(tmp_path, name, content, expected):
+    path = tmp_path / name
+    path.write_text(content, encoding="utf-8")
+    assert app_modern.parse_glossary_file(path) == expected
+
+
+def test_play_finds_the_game_executable(tmp_path, monkeypatch):
+    import subprocess
+    bridge = make_bridge(tmp_path, monkeypatch)
+    game = make_rpgmaker_game(tmp_path / "game")
+    (game / "Game.exe").write_bytes(b"MZ" * 100)
+    (game / "unins000.exe").write_bytes(b"MZ" * 1000)
+    bridge._select_game(str(game))
+    started = []
+    monkeypatch.setattr(subprocess, "Popen", lambda cmd, **kw: started.append((cmd, kw["cwd"])))
+    assert bridge.play_game() is True and Path(started[0][0][0]).name == "Game.exe"
+
+
+def test_quality_pairs_fix_only_flagged_lines_with_valid_edits():
+    import engine_renpy as er
+    sources = ["Open the gate.", "The storm came {b}fast{/b}.", "Good morning."]
+    drafts = {"Open the gate.": "Open the gate.", "The storm came {b}fast{/b}.": "Fırtına {b}hızlı{/b} geldi.",
+              "Good morning.": "Günaydın."}
+    seen = {}
+
+    def complete(system, user):
+        seen["system"], seen["items"] = system, json.loads(user)
+        return json.dumps([{"id": 0, "tr": "Kapıyı aç."}])
+
+    edits = er.quality_edit_pairs(sources, drafts, complete, target_lang="de", log=lambda s: None)
+    assert edits == {"Open the gate.": "Kapıyı aç."}
+    assert [i["en"] for i in seen["items"]] == ["Open the gate."] and "German" in seen["system"]
+    assert er.quality_system("tr") == er.QUALITY_SYSTEM_TR
+
+
+def test_cjk_font_is_used_and_copied_for_renpy(tmp_path):
+    import engine_renpy as er
+    from engine_common import FontChecker
+    game = tmp_path / "G" / "game"
+    (game / "gui").mkdir(parents=True)
+    (tmp_path / "G" / "Oyun.exe").write_bytes(b"MZ")
+    (game / "script.rpy").write_text('label start:\n    "Hello"\n', encoding="utf-8")
+    (game / "gui" / "main.ttf").write_bytes(b"x")
+    noto = tmp_path / "NotoSansJP-Regular.otf"
+    noto.write_bytes(b"OTF")
+    info = er.analyze_game(tmp_path / "G", log=lambda s: None, language="Japanese")
+    info.tl_dir.mkdir(parents=True)
+    original = FontChecker._read_cmap
+    FontChecker._read_cmap = staticmethod(lambda p: set())
+    try:
+        er.enable_turkish(info, True, log=lambda s: None, fallback_font=noto)
+    finally:
+        FontChecker._read_cmap = original
+    script = info.support_file.read_text(encoding="utf-8")
+    assert "NotoSansJP-Regular.otf" in script and "DejaVu" not in script
+    assert (game / "NotoSansJP-Regular.otf").exists() and (info.tl_dir / "main.ttf").read_bytes() == b"OTF"
+
+
+def test_attention_flashes_only_when_in_background(monkeypatch):
+    import ocr
+    monkeypatch.setattr(ocr, "own_window", lambda title="Capri": 1234)
+    flashed = []
+    fake = type("U", (), {"GetForegroundWindow": staticmethod(lambda: 1234),
+                          "FlashWindowEx": staticmethod(lambda info: flashed.append(1)),
+                          "MessageBeep": staticmethod(lambda t: None)})
+    monkeypatch.setattr(ocr, "_user32", fake)
+    assert ocr.attention() is False and not flashed
+    fake.GetForegroundWindow = staticmethod(lambda: 99)
+    assert ocr.attention() is True and flashed

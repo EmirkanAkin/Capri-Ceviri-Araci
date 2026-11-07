@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Callable, Deque, Dict, Optional, Tuple
 
 # Başlangıç hızları: karakter/sn, tek iş parçacığı (Gemini: anahtar başına). Gerçek çevirilerden öğrenilip güncellenir.
-PRIOR_CPS = {"gemini": 400, "openai": 200, "anthropic": 200, "deepl": 1500, "ollama": 50, "opus": 2500, "nllb": 1500}
+PRIOR_CPS = {"gemini": 900, "openai": 200, "anthropic": 200, "deepl": 1500, "ollama": 50, "opus": 2500, "nllb": 1500}
 DEFAULT_CPS = 150
 CPU_PENALTY = 10            # yerel modeller GPU'suz yaklaşık bu kadar yavaş
 RATE_WINDOW = 90.0
@@ -92,6 +92,38 @@ def estimate(model: str, chars: int, workers: int = 1, gpu: bool = True,
         cps /= CPU_PENALTY
     seconds = chars / (cps * max(1, workers))
     return {"seconds": round(seconds, 1), "text": format_estimate(seconds), "basis": "learned" if learned else "prior"}
+
+
+# Yaklaşık fiyatlar (USD / 1M token; DeepL: / 1M karakter). Fiyatlar değişir; arayüzde "yaklaşık" yazar.
+PRICES = [
+    ("gpt-4o-mini", 0.15, 0.60), ("gpt-4.1-nano", 0.10, 0.40), ("gpt-4.1-mini", 0.40, 1.60), ("gpt-4.1", 2.00, 8.00),
+    ("gpt-4o", 2.50, 10.00), ("gpt-5-nano", 0.05, 0.40), ("gpt-5-mini", 0.25, 2.00), ("gpt-5", 1.25, 10.00),
+    ("claude-3-5-haiku", 0.80, 4.00), ("claude-haiku", 1.00, 5.00), ("claude-3-haiku", 0.25, 1.25),
+    ("claude-sonnet", 3.00, 15.00), ("claude-3-5-sonnet", 3.00, 15.00), ("claude-opus", 15.00, 75.00),
+]
+DEEPL_PER_MILLION_CHARS = 25.0
+CHARS_PER_TOKEN = 3.5
+OVERHEAD = 1.25    # sistem talimatı, JSON biçimi ve yeniden denemeler
+
+
+def estimate_cost(provider: str, model: str, chars: int) -> Optional[Dict[str, Any]]:
+    """Ücretli API'ler için yaklaşık maliyet; ücretsiz/yerel motorlar ve bilinmeyen modeller için None."""
+    if chars <= 0:
+        return None
+    if provider == "deepl":
+        usd = chars / 1_000_000 * DEEPL_PER_MILLION_CHARS
+    elif provider in ("openai", "anthropic"):
+        name = (model or "").lower()
+        match = next((p for p in sorted(PRICES, key=lambda p: -len(p[0])) if name.startswith(p[0])), None)
+        if not match:
+            return None
+        tokens_in = chars / CHARS_PER_TOKEN * OVERHEAD
+        tokens_out = chars * 1.2 / CHARS_PER_TOKEN
+        usd = (tokens_in * match[1] + tokens_out * match[2]) / 1_000_000
+    else:
+        return None
+    text = "1 sentten az" if usd < 0.01 else f"yaklaşık {usd:.2f} $".replace(".", ",")
+    return {"usd": round(usd, 4), "text": text}
 
 
 class LiveEta:

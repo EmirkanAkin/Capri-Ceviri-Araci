@@ -88,7 +88,8 @@ const HANDLERS = {
   toast: (d) => toast({ title: d.text, tone: d.tone }),
   notify: (n) => addNotif(n),
   progress: (d) => { S.progress = d; S.progressAt = Date.now(); renderProgress(); later(renderEngineCard); },
-  stage: (d) => { S.stage = d; S.progress = null; (S.stagesSeen = S.stagesSeen || new Set()).add(d.key); later(renderHero); },
+  notice: (d) => { S.notice = { text: d.text, at: Date.now() }; renderProgress(); },
+  stage: (d) => { S.stageAt = Date.now(); S.stage = d; S.progress = null; (S.stagesSeen = S.stagesSeen || new Set()).add(d.key); later(renderHero); },
   task_error: (d) => {
     if (d.label === "Analiz") { S.analysisError = d; later(renderAnalysis); return; }
     S.taskError = d; later(renderHero);
@@ -102,14 +103,14 @@ const HANDLERS = {
   busy: (d) => {
     const prevLabel = S.busyLabel;
     S.busy = d.busy; S.busyLabel = d.label || ""; S.cancelling = false; S.stage = null; S.progress = null;
-    if (d.busy) { S.taskStart = Date.now(); S.taskError = null; S.stagesSeen = new Set(); }
+    if (d.busy) { S.taskStart = Date.now(); S.taskError = null; S.stagesSeen = new Set(); S.notice = null; S.shownPct = 0; }
     renderHero(); renderEngineCard(); renderProgress(); renderModels(); renderAnalysis();
     if (!d.busy && $("#page-editor").classList.contains("active")) loadEditor(true);
     if (!d.busy && /BepInEx/.test(prevLabel) && activeProject()) call("analyze", true);
   },
   analysis: (d) => { S.analysis = d; S.analysisError = null; renderAnalysis(); renderHero(); },
   project: (p) => upsertProject(p),
-  gpu: (g) => { S.gpu = g; renderEngineCard(); },
+  gpu: (g) => { S.gpu = g; renderEngineCard(); renderGpu(); },
   stats: (st) => { S.stats = st; renderStats(); },
   models: (m) => { S.models = m; renderModels(); renderProviders(); },
   backups: (list) => renderBackups(list),
@@ -268,13 +269,14 @@ function heroActive(p) {
   const editor = `<button class="ghost" data-page="editor">${icon("edit")}Editör</button>`;
   const restore = `<button class="ghost" data-action="restore">${icon("undo")}Orijinale dön</button>`;
   const folder = `<button class="ghost" data-action="open-game">${icon("folder")}Oyun klasörü</button>`;
+  const play = `<button class="ghost" data-action="play-game">${icon("play")}Oyna</button>`;
   const reanalyze = `<button class="ghost" data-action="analyze">${icon("scan")}Yeniden analiz</button>`;
   const bx = S.analysis && S.analysis.bepinex;
   const bepinex = !bx || !bx.needed ? ""
     : !bx.installed ? `<button class="ghost" data-action="bepinex-install">${icon("download")}BepInEx kur</button>`
     : bx.managed ? `<button class="ghost" data-action="bepinex-uninstall">${icon("trash")}BepInEx'i kaldır</button>` : "";
-  const stop = S.cancelling ? `<button class="ghost danger" disabled>Durduruluyor…</button>`
-    : `<button class="ghost danger" data-action="cancel">${icon("stop")}Durdur</button>`;
+  const stop = S.cancelling ? `<button class="stop-btn" disabled><span class="spinner"></span>Durduruluyor…</button>`
+    : `<button class="stop-btn" data-action="cancel">${icon("stop")}Durdur</button>`;
 
   if (S.busy && S.busyLabel === "Çeviri") {
     return { tag: "Çeviri devam ediyor", tone: "run",
@@ -292,7 +294,8 @@ function heroActive(p) {
   }
   const err = S.taskError || (p.status === "error" ? p.last_error : null);
   if (err) {
-    const go = err.action && err.action.page ? `<button class="ghost" data-page="${esc(err.action.page)}">${esc(err.action.label)}</button>` : "";
+    const go = err.action && err.action.page ? `<button class="ghost" data-page="${esc(err.action.page)}">${esc(err.action.label)}</button>`
+      : err.action && err.action.update ? `<button class="ghost" data-action="update-open">${icon("download")}${esc(err.action.label)}</button>` : "";
     return { tag: p.status === "error" ? "Çeviri başarısız" : "İşlem yapılamadı", tone: "err", desc: "Çeviri durdu; şu an çalışan bir işlem yok.", error: err,
       actions: `<button class="cta" data-action="translate">${icon("undo")}Tekrar dene</button>${go}
         <button class="ghost" data-action="show-log">${icon("terminal")}Teknik günlük</button>${reanalyze}` };
@@ -304,7 +307,7 @@ function heroActive(p) {
     if (r.failed) parts.push(`${fmt(r.failed)} satır incelenmeli`);
     return { tag: "Çeviri tamamlandı", tone: "ok", desc: `${parts.join(" · ")}.`,
       actions: `<button class="cta is-done" disabled>${icon("check")}Çeviri tamamlandı</button>
-        <button class="ghost" data-action="translate">${icon("undo")}Baştan çevir</button>${editor}${folder}${bepinex}${restore}` };
+        ${play}<button class="ghost" data-action="translate">${icon("undo")}Baştan çevir</button>${editor}${folder}${bepinex}${restore}` };
   }
   if (p.status === "paused") {
     const pct = p.paused_total ? Math.round((p.paused_done / p.paused_total) * 100) : 0;
@@ -317,7 +320,7 @@ function heroActive(p) {
     : est && est.lines && !est.pending ? "Tüm satırlar önbellekte hazır; çeviri birkaç saniyede biter, API harcanmaz."
     : "Tek tıkla çevir; istediğin an durdur, düzelt ya da orijinal dosyalarına dön.";
   return { tag: p.status === "restored" ? "Orijinal dosyalar" : "Çeviriye hazır", tone: "", desc,
-    actions: `<button class="cta" data-action="translate">${icon("play")}Çeviriyi başlat</button>${bepinex}${reanalyze}${editor}${restore}` };
+    actions: `<button class="cta" data-action="translate">${icon("play")}Çeviriyi başlat</button>${bepinex}${reanalyze}${editor}${play}${restore}` };
 }
 
 const STEPS = [["backup", "Yedek"], ["prepare", "Hazırlık"], ["translate", "Çeviri"], ["write", "Yazma"]];
@@ -326,27 +329,45 @@ function progressFacts() {
   const pr = S.progress;
   const elapsed = (Date.now() - (S.taskStart || Date.now())) / 1000;
   const facts = [];
-  if (pr && pr.eta_s !== null && pr.eta_s !== undefined) {
+  const est = S.analysis && S.analysis.estimate;
+  const firstWait = (Date.now() - (S.stageAt || S.taskStart || Date.now())) / 1000;
+  if (pr && pr.done > 0 && pr.eta_s !== null && pr.eta_s !== undefined) {
     const left = Math.max(0, pr.eta_s - (Date.now() - S.progressAt) / 1000);
     facts.push(["Kalan süre", left < 2 ? "az kaldı" : `~${fmtDur(left)}`]);
   } else if (S.stage && S.stage.key === "translate") {
-    const est = S.analysis && S.analysis.estimate;
-    facts.push(["Kalan süre", est && est.seconds ? `${est.text} (tahmin)` : "hesaplanıyor…"]);
+    // İlk sonuç gelmeden: tahmin geri sayılır; aşılırsa bunu dürüstçe söyler
+    const left = est && est.seconds ? est.seconds - firstWait : null;
+    facts.push(["Kalan süre", left === null ? "hesaplanıyor…" : left > 5 ? `~${fmtDur(left)} (tahmin)` : "ilk sonuç bekleniyor"]);
   }
   if (pr && pr.rate) facts.push(["Hız", pr.rate]);
   if (S.busy) facts.push(["Geçen", fmtDur(elapsed)]);
   return facts;
 }
 
+/* Çubuk yalnızca ileri gider: parti arasında gerçek hıza göre ilerler, bir sonraki partiyi geçmez. */
+function shownPercent() {
+  const pr = S.progress;
+  if (!S.busy || !S.stage || S.stage.key !== "translate" || !pr || !pr.total) return pr ? pr.pct : null;
+  const elapsed = (Date.now() - (S.progressAt || Date.now())) / 1000;
+  const est = S.analysis && S.analysis.estimate;
+  const rate = pr.done > 0 && pr.eta_s ? (pr.total - pr.done) / Math.max(pr.eta_s, 1)
+    : est && est.seconds ? (est.pending || pr.total) / est.seconds : 0;
+  const ahead = Math.min(rate * elapsed, Math.max(pr.total * 0.08, 30) * 0.9);
+  const pct = Math.min(99, ((pr.done + ahead) / pr.total) * 100);
+  S.shownPct = Math.max(S.shownPct || 0, pct, pr.pct);
+  return S.shownPct;
+}
+
 function renderProgress() {
   const pr = S.progress;
+  const pct = shownPercent();
   for (const bar of [$("#heroBar"), $("#taskBar")]) {
-    bar.classList.toggle("indeterminate", !pr);
-    bar.firstElementChild.style.width = pr ? `${pr.pct}%` : "";
+    bar.classList.toggle("indeterminate", pct === null);
+    bar.firstElementChild.style.width = pct === null ? "" : `${pct}%`;
   }
   const translating = S.busy && S.busyLabel === "Çeviri";
   const label = S.analyzing && !S.busy ? "Analiz ediliyor" : (S.stage && S.stage.label) || (S.busy ? `${S.busyLabel || "İşlem"} sürüyor` : "");
-  setText($("#progPct"), pr ? `%${Math.floor(pr.pct)}` : `${label}…`);
+  setText($("#progPct"), pr && pr.done > 0 ? `%${Math.floor(pr.pct)}` : `${label}…`);
   setText($("#progMeta"), pr ? `${fmt(pr.done)} / ${fmt(pr.total)} ${pr.unit || ""}`.trim() : "");
   const current = translating && S.stage ? STEPS.findIndex(([k]) => k === S.stage.key) : -1;
   const seen = S.stagesSeen || new Set();
@@ -355,7 +376,8 @@ function renderProgress() {
     <b>${isDone(k, i) ? icon("check") : i + 1}</b>${name}</span>`).join("") : "");
   const facts = progressFacts();
   setHtml($("#progFacts"), facts.map(([k, v]) => `<span><em>${k}</em>${esc(v)}</span>`).join("")
-    + (translating && S.stage && S.stage.key === "translate" && !pr ? `<span class="hint">İlk parti işleniyor; sonuç gelince süre netleşir.</span>` : ""));
+    + (S.notice && Date.now() - S.notice.at < 20000 ? `<span class="hint warn">${esc(S.notice.text)}</span>`
+      : translating && S.stage && S.stage.key === "translate" && !(pr && pr.done) ? `<span class="hint">İlk sonuçlar bekleniyor; gelince süre netleşir.</span>` : ""));
   const ctaPct = $("#ctaPct");
   if (ctaPct) setText(ctaPct, pr ? `%${Math.floor(pr.pct)}` : "");
   const slide = S.slides[S.slide];
@@ -538,7 +560,8 @@ function renderAnalysis() {
     tiles += done ? tile("zap", "Süre", active.last_result && active.last_result.took ? fmtDur(active.last_result.took) : "Tamamlandı", "Son çevirinin süresi")
       : tile("zap", "Tahmini süre", est.pending ? esc(est.text || "—") : "Birkaç saniye",
         !est.pending ? "Tüm satırlar önbellekte"
-          : `${esc(est.model || "")}${est.workers > 1 ? ` · ${est.workers} anahtar` : ""}<br>${est.basis === "learned" ? "Önceki çevirilerindeki hızına göre" : "Ortalama hıza göre; çeviri başlayınca netleşir"}`);
+          : `${esc(est.model || "")}${est.workers > 1 ? ` · ${est.workers} anahtar` : ""}<br>${est.basis === "learned" ? "Önceki çevirilerindeki hızına göre" : "Ortalama hıza göre; çeviri başlayınca netleşir"}`
+            + (est.cost ? `<br>Maliyet: ${esc(est.cost.text)} (fiyatlar değişebilir)` : ""));
   } else {
     tiles += tile("lines", "Çevrilecek metin", "Bulunamadı", "Dosyalarda okunabilir metin yok", "warn");
   }
@@ -650,7 +673,7 @@ function renderScan() {
   const found = sc.found || [];
   const rows = found.slice(0, 30).map((g) => `<div class="list-row">
       <div class="list-icon">${icon("gamepad")}</div>
-      <div class="grow"><div class="title">${esc(g.title)} <span class="pill">${esc(g.engine_label)}</span></div>
+      <div class="grow"><div class="title">${esc(g.title)} <span class="pill">${esc(g.engine_label)}</span>${g.lines ? ` <span class="pill">~${fmt(g.lines)} satır</span>` : ""}</div>
         <div class="sub selectable">${esc(g.path)}</div></div>
       <button class="btn" data-action="scan-dismiss" data-path="${esc(g.path)}" title="Bu öneriyi gizle">${icon("x")}</button>
       <button class="btn lime" data-action="scan-add" data-path="${esc(g.path)}">${icon("plus")}Ekle</button></div>`).join("");
@@ -679,7 +702,7 @@ async function loadEditor(reset) {
   const box = $("#editorBody");
   const active = activeProject();
   $("#editorTitle").textContent = active ? active.title : "Çevirileri düzenle";
-  $("#qualityBtn").classList.toggle("hidden", !(active && active.engine === "renpy"));
+  $("#qualityBtn").classList.toggle("hidden", !active);
   if (!active) { box.innerHTML = `<div class="empty">Editörü kullanmak için önce kütüphaneden bir proje aç.</div>`; return; }
   const sources = (await call("editor_sources")) || [];
   const reviewTotal = sources.reduce((a, s) => a + s.review, 0);
@@ -1183,7 +1206,7 @@ function renderUpdate() {
   if (p) {
     const pct = p.total ? Math.min(100, (p.done / p.total) * 100) : 0;
     body = p.installing
-      ? `<div class="upd-state">${icon("check")}<div><b>Kuruluyor…</b><p>Capri kapanıp ${esc(u.latest || "yeni")} sürümüyle yeniden açılacak.</p></div></div>`
+      ? `<div class="upd-state"><span class="spinner"></span><div><b>Kuruluyor…</b><p>Capri birkaç saniye içinde ${esc(u.latest || "yeni")} sürümüyle yeniden açılacak. Ayarların ve çevirilerin korunur.</p></div></div>`
       : `<div class="upd-state"><div class="grow"><b>Capri ${esc(u.latest || "")} indiriliyor</b>
           <div class="bar upd-bar"><i style="width:${pct}%"></i></div><p class="num">${mb(p.done)} / ${p.total ? mb(p.total) : "?"} MB</p></div></div>`;
     actions = "";
@@ -1260,6 +1283,19 @@ document.addEventListener("click", async (ev) => {
       buildSlides(); renderHero(); renderLibraries();
       break;
     case "scan-now": call("scan_games", true); break;
+    case "play-game": call("play_game"); break;
+    case "glossary-export": call("glossary_export", S.glossary.kind, S.glossary.rows); break;
+    case "glossary-import": {
+      const rows = await call("glossary_import");
+      if (!rows) break;
+      const map = new Map(S.glossary.rows.map((r) => [r[0], r]));
+      for (const [a, b] of rows) map.set(a, [a, b]);
+      S.glossary.rows = [...map.values()];
+      renderGlossary();
+      $("#glossaryStatus").className = "status-msg ok";
+      $("#glossaryStatus").textContent = `${fmt(rows.length)} terim eklendi; kaydetmeyi unutma`;
+      break;
+    }
     case "scan-folder": { const r = await call("scan_pick_folder"); if (r) HANDLERS.scan(r); break; }
     case "scan-remove-folder": { const r = await call("scan_remove_folder", path); if (r) HANDLERS.scan(r); break; }
     case "scan-dismiss": { const r = await call("scan_dismiss", path); if (r) HANDLERS.scan(r); break; }

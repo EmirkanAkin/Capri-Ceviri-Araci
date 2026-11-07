@@ -83,7 +83,7 @@ def build(repo: str) -> Path:
     (build_dir / "build_info.json").write_text(json.dumps({"repo": repo, "version": version()}), encoding="utf-8")
     args = [sys.executable, "-m", "PyInstaller", f"--name={NAME}", "--onedir", "--windowed", "--noconfirm", "--clean",
             f"--icon={APP_DIR / 'assets' / 'capri.ico'}", f"--distpath={DIST}", f"--workpath={build_dir}",
-            f"--specpath={build_dir}", f"--paths={SRC}", "--collect-submodules=winrt", "--collect-submodules=rpycdec", "--collect-data=webview",
+            f"--specpath={build_dir}", f"--paths={SRC}", "--collect-submodules=winrt", "--collect-submodules=rpycdec", "--collect-all=UnityPy", "--collect-data=webview",
             "--copy-metadata=pywebview", f"--add-data={build_dir / 'build_info.json'};."]
     args += [f"--add-data={APP_DIR / item};{item}" for item in DATA]
     args += [f"--hidden-import={m}" for m in HIDDEN] + [f"--exclude-module={m}" for m in EXCLUDES]

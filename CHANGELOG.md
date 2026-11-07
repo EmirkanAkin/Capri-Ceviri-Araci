@@ -1,5 +1,28 @@
 # Capri — Değişim Günlüğü
 
+## [1.0.3] - 2026-11-08
+### Düzeltmeler
+- **Gemini çok yavaştı ve yarıda takılıyordu:** 15 sn zaman aşımı uzun partileri kesiyor, biten iş çöpe gidip başka modelle
+  baştan deneniyordu. Zaman aşımı 120 sn, parti 40 satır, anahtar başına 2 eşzamanlı istek, 2.5 Flash'ta "düşünme" kapalı.
+  Ölçüm: 300 satır 8 sn (saniyede ~37 satır, önce ~7). Günlük kota dolunca sonsuz deneme yerine açık bir hata.
+- **İlerleme:** çubuk yalnızca ileri gider ve partiler arasında gerçek hıza göre ilerler; ilk sonuç gelmeden tahmin geri sayılır,
+  aşılırsa bunu söyler; sağlayıcı hız sınırı gibi durumlar çubuğun altında yazar.
+- **Unity'de yazma adımı exe'de çöküyordu** (`UnityPy.resources` pakete girmemişti).
+- **Güncelleme:** artık bat dosyası ve konsol penceresi yok; yeni sürümün kendi exe'si dosyaları değiştirir, bir dosya
+  değiştirilemezse her şeyi geri alır, Capri yeniden açılınca sonucu bildirir.
+- GPU paneli "Algılanıyor…"da kalıyordu.
+- Eksik paket hatası "Yerel model ortamı eksik" olarak gösteriliyordu.
+### Yeni
+- Oyunu Capri'den açan **Oyna** düğmesi.
+- Sözlük **içe / dışa aktarma** (JSON, CSV).
+- Yama dışa aktarılınca **Toplulukla paylaş**: GitHub'da hazır bir konu açılır.
+- OpenAI, Claude ve DeepL için **tahmini maliyet**.
+- Çeviri biter ya da hata verirse, Capri arka plandaysa görev çubuğu yanıp söner.
+- **Kalite editörü** Ren'Py dışındaki motorlarda ve Türkçe dışındaki dillerde de çalışıyor.
+- Ren'Py'de Çince, Japonca, Korece için oyunun fontu yetmezse açık kaynak **Noto Sans** (onayla) indirilir.
+- Tarama önerilerinde Ren'Py ve RPG Maker oyunları için yaklaşık satır sayısı.
+- Yeni Durdur düğmesi.
+
 ## [1.0.2] - 2026-11-07
 ### Düzeltmeler
 - Güncelleme penceresi: notlar kısa ve düzgün liste olarak görünüyor, düğmeler hizalı.
