@@ -591,3 +591,12 @@ button:active:not(:disabled) { filter: brightness(.92); }
 
 .update-modal .row-actions { flex-wrap: nowrap; }
 #updActions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+
+/* ── Durdur düğmesi ───────────────────────────────────────────────────── */
+.stop-btn { height: 46px; padding: 0 18px; border-radius: 12px; display: inline-flex; align-items: center; gap: 9px; font-size: 14px; font-weight: 600;
+  color: #ffb3ad; background: transparent; border: 1.5px solid rgba(255, 128, 119, .45); transition: background .15s, border-color .15s; }
+.stop-btn:hover:not(:disabled) { background: rgba(255, 128, 119, .14); border-color: rgba(255, 128, 119, .75); }
+.stop-btn svg.i { width: 14px; height: 14px; fill: currentColor; }
+.stop-btn:disabled { opacity: .75; cursor: progress; }
+.stop-btn .spinner { width: 15px; height: 15px; border-top-color: #ffb3ad; }
+.prog-facts .hint.warn { color: var(--warn); }

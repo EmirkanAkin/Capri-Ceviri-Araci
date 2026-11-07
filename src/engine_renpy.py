@@ -2230,6 +2230,66 @@ QUALITY_SYSTEM_TR = (
 )
 
 
+def quality_system(target_lang: str = "tr") -> str:
+    """Kalite editörü talimatı; Türkçe dışındaki dillerde İngilizce yazılır (model dili daha iyi izler)."""
+    if target_lang == "tr":
+        return QUALITY_SYSTEM_TR
+    from languages import SUPPORTED_LANGUAGES
+    language = SUPPORTED_LANGUAGES.get(target_lang)
+    name = language.name_en if language else target_lang
+    return (
+        "You are an experienced video game localization editor. Each item has the English source ('en'), a draft "
+        f"{name} translation ('tr'), the speaking character ('speaker') and previous lines ('context').\n"
+        f"Fix the draft: meaning errors, untranslated English, unnatural or robotic {name}, and tone that does not fit the "
+        "character or the previous lines.\n"
+        "Rules: keep tags and variables such as {i}, [mc], {color=...}, \\C[1] exactly. Do not change a draft that is "
+        "already good. Do not add the speaker's name to the sentence. Do not censor.\n"
+        'Return ONLY a valid JSON array in this form: [{"id": 0, "tr": "corrected translation"}, ...]'
+    )
+
+
+def quality_edit_pairs(
+    sources: list[str],
+    translations: dict[str, str],
+    complete: Callable[[str, str], str],
+    target_lang: str = "tr",
+    log: LogFn = print,
+    progress: ProgressFn | None = None,
+    extra_instruction: str = "",
+    batch_size: int = 20,
+) -> dict[str, str]:
+    """
+    Ren'Py dışındaki motorlar için kalite editörü: sorunlu taslaklar (çevrilmemiş, İngilizce kalıntılı, boyu tutarsız)
+    oyundaki sıralarıyla, önceki iki satır bağlam olarak gönderilir. Yalnızca doğrulamadan geçen düzeltmeler döner.
+    """
+    system = quality_system(target_lang) + (f"\n\n{extra_instruction}" if extra_instruction else "")
+    entries = []
+    for index, source in enumerate(sources):
+        draft = translations.get(source)
+        if draft:
+            entry = QualityEntry(Path("."), index, source, draft, "", sources[max(0, index - 2):index], "")
+            if quality_entry_needs_edit(entry):
+                entries.append(entry)
+    log(f"Kalite editörü: {len(sources)} satır · düzeltme adayı {len(entries)}")
+    edits: dict[str, str] = {}
+    for start in range(0, len(entries), batch_size):
+        chunk = entries[start:start + batch_size]
+        payload = [{"id": n, "speaker": "", "context": e.previous, "en": e.source, "tr": e.draft} for n, e in enumerate(chunk)]
+        try:
+            parsed = parse_editor_json(complete(system, json.dumps(payload, ensure_ascii=False)))
+        except Exception as exc:
+            log(f"Kalite editörü uyarısı: {exc}")
+            parsed = {}
+        for n, entry in enumerate(chunk):
+            candidate = parsed.get(n)
+            if candidate and candidate != entry.draft and editor_candidate_valid(entry.source, entry.draft, candidate, "", ""):
+                edits[entry.source] = candidate
+        if progress:
+            progress(min(start + batch_size, len(entries)), len(entries))
+    log(f"Kalite editörü: {len(edits)} satır düzeltildi.")
+    return edits
+
+
 def quality_edit_with_llm(
     tl_dir: Path,
     cache_path: Path,
@@ -2239,6 +2299,7 @@ def quality_edit_with_llm(
     extra_instruction: str = "",
     batch_size: int = 20,
     only_flagged: bool = True,
+    target_lang: str = "tr",
 ) -> dict[str, int]:
     """
     Kalite editörü: Türkçe taslakları bağlamıyla (konuşmacı + önceki satırlar) bir sohbet modeline
@@ -2252,7 +2313,7 @@ def quality_edit_with_llm(
         qcache: dict[str, str] = json.loads(quality_path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         qcache = {}
-    system = QUALITY_SYSTEM_TR + (f"\n\n{extra_instruction}" if extra_instruction else "")
+    system = quality_system(target_lang) + (f"\n\n{extra_instruction}" if extra_instruction else "")
     resolved: dict[tuple[Path, int], str] = {}
     source_updates: dict[str, str] = {}
     pending = []
@@ -2402,6 +2463,7 @@ def translate_with_gemini(
         active_key_idx = [start_key % max(1, len(api_keys))]
         # Sadece GERÇEK 24 saatlik günlük kotası dolan modeller
         quota_exhausted: set[str] = set()
+        tried_keys: set[int] = set()
         # Geçici hata (dakikalık 15-RPM hız sınırı veya 503) — 15 sn sonra tekrar açılır
         temp_failed: dict[str, float] = {}
         _logged_exhausted: set[str] = set()
@@ -2414,26 +2476,23 @@ def translate_with_gemini(
                 and (m not in temp_failed or now - temp_failed[m] > 15)
             ]
 
+        no_thinking_config: set[str] = set()
+
+        def _body(items: list[str], model_name: str) -> bytes:
+            config = {"temperature": 0.2, "responseMimeType": "application/json"}
+            # 2.5 Flash varsayılan olarak "düşünür": çeviri için gereksiz ve yanıtı birkaç kat yavaşlatır
+            if "2.5-flash" in model_name and "lite" not in model_name and model_name not in no_thinking_config:
+                config["thinkingConfig"] = {"thinkingBudget": 0}
+            payload = {
+                "contents": [{"parts": [{"text": f"{system_instruction}\n\nİşte çevrilecek liste:\n{json.dumps(items, ensure_ascii=False)}"}]}],
+                "generationConfig": config,
+                "safetySettings": safety_settings,
+            }
+            return json.dumps(payload).encode("utf-8")
+
         def _call_gemini_api(items: list[str]) -> list[str] | None:
             if not items:
                 return []
-            payload = {
-                "contents": [
-                    {
-                        "parts": [
-                            {
-                                "text": f"{system_instruction}\n\nİşte çevrilecek liste:\n{json.dumps(items, ensure_ascii=False)}"
-                            }
-                        ]
-                    }
-                ],
-                "generationConfig": {
-                    "temperature": 0.2,
-                    "responseMimeType": "application/json",
-                },
-                "safetySettings": safety_settings,
-            }
-            data = json.dumps(payload).encode("utf-8")
 
             for attempt in range(4):
                 candidates = _get_candidates()
@@ -2446,27 +2505,28 @@ def translate_with_gemini(
                         temp_failed.clear()
                         candidates = [m for m in all_models if m not in quota_exhausted]
                         if not candidates:
-                            if len(api_keys) > 1:
+                            tried_keys.add(active_key_idx[0])
+                            if len(tried_keys) < len(api_keys):
                                 active_key_idx[0] = (active_key_idx[0] + 1) % len(api_keys)
                                 quota_exhausted.clear()
                                 temp_failed.clear()
-                                log(f"Bilgi: 24 saatlik kota doldu, {active_key_idx[0] + 1}. API anahtarına geçildi! Kotası sıfırlandı, roket gibi devam ediyor...")
+                                log(f"Bilgi: günlük kota doldu, {active_key_idx[0] + 1}. API anahtarına geçildi.")
                                 candidates = list(all_models)
                             else:
-                                return None
+                                raise GeminiQuotaExhausted("Gemini günlük kotası (RESOURCE_EXHAUSTED) tüm anahtarlarda doldu.")
 
                 for model_name in candidates:
                     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
                     req = urllib.request.Request(
                         url,
-                        data=data,
+                        data=_body(items, model_name),
                         headers={
                             "Content-Type": "application/json",
                             "x-goog-api-key": api_keys[active_key_idx[0]],
                         },
                     )
                     try:
-                        with urllib.request.urlopen(req, timeout=15) as resp:
+                        with urllib.request.urlopen(req, timeout=GEMINI_TIMEOUT) as resp:
                             res_data = json.loads(resp.read().decode("utf-8"))
                             parts = (
                                 res_data.get("candidates", [{}])[0]
@@ -2506,13 +2566,18 @@ def translate_with_gemini(
                                 _logged_exhausted.add(model_name)
                             continue
                         elif e.code == 429:
-                            # Dakikalık 15-RPM hız sınırı — modeli kalıcı öldürme, 10 sn nefes aldır
+                            # Dakikalık hız sınırı: modeli kalıcı öldürme, kısa nefes aldır
                             temp_failed[model_name] = time.monotonic()
+                            _notice("Gemini hız sınırına takıldı; birkaç saniye bekleyip devam ediyor.")
                             time.sleep(3)
                             continue
                         elif e.code in (503, 502, 500):
                             temp_failed[model_name] = time.monotonic()
                             time.sleep(2)
+                            continue
+                        elif e.code == 400 and "thinking" in body.lower() and model_name not in no_thinking_config:
+                            no_thinking_config.add(model_name)   # bu model düşünme ayarını tanımıyor: ayarsız tekrar dene
+                            candidates.insert(candidates.index(model_name) + 1, model_name)
                             continue
                         elif e.code in (400, 404):
                             # Model yok ya da bu isteği desteklemiyor → bu çalıştırmada bir daha deneme
@@ -2520,8 +2585,10 @@ def translate_with_gemini(
                             continue
                         else:
                             continue
-                    except Exception:
+                    except Exception as error:
                         temp_failed[model_name] = time.monotonic()
+                        if "timed out" in str(error).lower():
+                            _notice("Gemini geç yanıt veriyor; başka bir modelle deneniyor.")
                         continue
             return None
 
@@ -2552,6 +2619,8 @@ def translate_with_gemini(
                     s0 = str(items[0]) if items[0] is not None else ""
                     failed.add(s0)
                     return {s0: s0}
+            except GeminiQuotaExhausted:
+                raise
             except Exception as err:
                 log(f"Uyarı: Parça çevirisinde hata ({err}), kaynak metin korundu.")
                 failed.update(str(x) for x in items)
@@ -2559,12 +2628,14 @@ def translate_with_gemini(
 
         return _translate_subchunk
 
-    batch_size = 75
+    batch_size = GEMINI_BATCH
     done = 0
     total = len(missing)
     last_flush = time.monotonic()
     chunks = [missing[i : i + batch_size] for i in range(0, total, batch_size)]
-    workers = max(1, min(max_workers or len(api_keys) or 1, 4, len(chunks)))
+    workers = max(1, min(max_workers or (len(api_keys) or 1) * GEMINI_PER_KEY, 8, len(chunks)))
+    if progress:
+        progress(0, total)
 
     def _after_chunk(chunk: list[str], sub_results: dict[str, str]) -> None:
         nonlocal done, last_flush
@@ -2593,9 +2664,10 @@ def translate_with_gemini(
         import queue
         import threading
 
-        log(f"Paralel mod: {workers} API anahtarı aynı anda kullanılıyor.")
+        log(f"Paralel mod: {workers} istek aynı anda ({len(api_keys)} API anahtarı).")
         results: "queue.Queue[tuple[list[str], dict[str, str]] | None]" = queue.Queue()
         stop = threading.Event()
+        errors: list[BaseException] = []
 
         def _worker(index: int) -> None:
             try:
@@ -2605,6 +2677,9 @@ def translate_with_gemini(
                         break
                     results.put((chunk, translate_chunk(chunk)))
                     time.sleep(0.8)
+            except BaseException as error:   # kota doldu: tüm işçiler durur, hata çağırana iletilir
+                errors.append(error)
+                stop.set()
             finally:
                 results.put(None)
 
@@ -2622,6 +2697,9 @@ def translate_with_gemini(
         except BaseException:
             stop.set()
             raise
+        if errors:
+            _write_cache_file(cache, cache_path, failed)
+            raise errors[0]
 
     if failed:
         log(
@@ -2629,6 +2707,25 @@ def translate_with_gemini(
             "kaynak metinle bırakıldı; önbelleğe yazılmadı, bir sonraki çalıştırmada yeniden denenecek."
         )
     return done
+
+
+class GeminiQuotaExhausted(RuntimeError):
+    """Tüm anahtarların tüm modelleri günlük kotada: devam etmenin anlamı yok, çeviri durdurulur."""
+
+
+# Uygulamanın ilerleme paneline kısa durum notu iletir (ör. "hız sınırı: kısa bekleme")
+NOTICE: Callable[[str], None] | None = None
+GEMINI_TIMEOUT = 120      # sn: 40 satırlık parti çoğu zaman 5-20 sn sürer; erken kesmek bitmiş işi çöpe atar
+GEMINI_BATCH = 40         # küçük parti: ilerleme sık güncellenir, tek hata az iş kaybettirir
+GEMINI_PER_KEY = 2        # anahtar başına eşzamanlı istek (ücretsiz kotada dakikalık sınırın altında kalır)
+
+
+def _notice(text: str) -> None:
+    if NOTICE:
+        try:
+            NOTICE(text)
+        except Exception:
+            pass
 
 
 def translate_with_transformers(
@@ -2976,7 +3073,7 @@ def translate_templates(
     return written
 
 
-def enable_turkish(info: GameInfo, force: bool, log: LogFn = print):
+def enable_turkish(info: GameInfo, force: bool, log: LogFn = print, fallback_font: Path | None = None):
     """Çeviriyi oyunun varsayılan dili yapar (ad tarihsel: info.language hangi dilse o)."""
     from languages import NO_FONT_FALLBACK, SUPPORTED_LANGUAGES, code_for_renpy_name
     language = info.language
@@ -3006,10 +3103,12 @@ def enable_turkish(info: GameInfo, force: bool, log: LogFn = print):
     dejavu_src = info.root / "renpy" / "common" / "DejaVuSans.ttf"
     dejavu_bold_src = info.root / "renpy" / "common" / "DejaVuSans-Bold.ttf"
     tl_turkish = info.tl_dir
-    if code in NO_FONT_FALLBACK:   # DejaVu bu yazıyı içermez: yanlış fonta geçmek metni bozar
-        if bad_font_names:
+    if code in NO_FONT_FALLBACK and not (fallback_font and Path(fallback_font).exists()):
+        if bad_font_names:   # DejaVu bu yazıyı içermez: yanlış fonta geçmek metni bozar
             log(f"Uyarı: oyunun fontları {native} karakterlerini içermiyor; bu dil için font elle eklenmeli.")
         bad_font_names = []
+    elif fallback_font and Path(fallback_font).exists() and bad_font_names:
+        dejavu_src = dejavu_bold_src = Path(fallback_font)
     if tl_turkish.exists() and dejavu_src.exists():
         for bad_name in bad_font_names:
             target = tl_turkish / bad_name
@@ -3022,23 +3121,27 @@ def enable_turkish(info: GameInfo, force: bool, log: LogFn = print):
                     pass
 
     font_block = ""
+    regular = Path(fallback_font).name if fallback_font and code in NO_FONT_FALLBACK else "DejaVuSans.ttf"
+    if regular != "DejaVuSans.ttf" and bad_font_names:   # Ren'Py yazı tipini oyun klasöründe arar
+        shutil.copy2(fallback_font, info.game_dir / regular)
+    bold = regular if regular != "DejaVuSans.ttf" else "DejaVuSans-Bold.ttf"
     if bad_font_names:
         bad_fonts_repr = repr(bad_font_names)
         font_block = (
             "\n"
             f"translate {language} python:\n"
-            "    gui.text_font = \"DejaVuSans.ttf\"\n"
-            "    gui.name_text_font = \"DejaVuSans.ttf\"\n"
-            "    gui.interface_text_font = \"DejaVuSans.ttf\"\n"
-            "    gui.button_text_font = \"DejaVuSans.ttf\"\n"
-            "    gui.choice_button_text_font = \"DejaVuSans.ttf\"\n"
+            f"    gui.text_font = \"{regular}\"\n"
+            f"    gui.name_text_font = \"{regular}\"\n"
+            f"    gui.interface_text_font = \"{regular}\"\n"
+            f"    gui.button_text_font = \"{regular}\"\n"
+            f"    gui.choice_button_text_font = \"{regular}\"\n"
             "\n"
             "init 1503 python:\n"
             f"    for _orig in {bad_fonts_repr}:\n"
-            "        config.font_replacement_map[_orig, False, False] = (\"DejaVuSans.ttf\", False, False)\n"
-            "        config.font_replacement_map[_orig, True, False] = (\"DejaVuSans-Bold.ttf\", False, False)\n"
-            "        config.font_replacement_map[_orig, False, True] = (\"DejaVuSans.ttf\", False, True)\n"
-            "        config.font_replacement_map[_orig, True, True] = (\"DejaVuSans-Bold.ttf\", False, True)\n"
+            f"        config.font_replacement_map[_orig, False, False] = (\"{regular}\", False, False)\n"
+            f"        config.font_replacement_map[_orig, True, False] = (\"{bold}\", False, False)\n"
+            f"        config.font_replacement_map[_orig, False, True] = (\"{regular}\", False, True)\n"
+            f"        config.font_replacement_map[_orig, True, True] = (\"{bold}\", False, True)\n"
         )
 
     script = (
@@ -3115,6 +3218,7 @@ def enable_turkish(info: GameInfo, force: bool, log: LogFn = print):
         .replace('"Türkçe"', f'"{native}"').replace("_renptr_turkish_version", version_key)
     if code == "tr":
         script += names_block
+    script += font_block   # eksik harfli fontların yerine geçen yazı tipi (önceden hesaplanıp yazılmıyordu)
     support.write_text(script, encoding="utf-8")
     log(f"{native} varsayılan dil olarak etkinleştirildi.")
 

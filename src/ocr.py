@@ -416,6 +416,40 @@ def set_window_icon(title: str, ico_path) -> bool:
     return True
 
 
+def own_window(title: str = "Capri") -> int:
+    """Bu sürece ait ana pencere (aynı adlı başka Capri penceresi karışmaz)."""
+    import os
+    found: List[int] = []
+
+    def callback(hwnd, _):
+        pid = wt.DWORD()
+        _user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        if pid.value == os.getpid():
+            text = ctypes.create_unicode_buffer(64)
+            _user32.GetWindowTextW(hwnd, text, 64)
+            if text.value == title and _user32.IsWindowVisible(hwnd):
+                found.append(hwnd)
+        return True
+
+    _user32.EnumWindows(ctypes.WINFUNCTYPE(ctypes.c_bool, wt.HWND, wt.LPARAM)(callback), 0)
+    return found[0] if found else 0
+
+
+def attention(title: str = "Capri") -> bool:
+    """Capri arka plandaysa görev çubuğu düğmesini yanıp söndürür ve sistem sesi çalar (Windows bildirimi gibi)."""
+    hwnd = own_window(title)
+    if not hwnd or _user32.GetForegroundWindow() == hwnd:
+        return False
+
+    class FLASHWINFO(ctypes.Structure):
+        _fields_ = [("cbSize", wt.UINT), ("hwnd", wt.HWND), ("dwFlags", wt.DWORD), ("uCount", wt.UINT), ("dwTimeout", wt.DWORD)]
+
+    info = FLASHWINFO(ctypes.sizeof(FLASHWINFO), hwnd, 0x3 | 0xC, 0, 0)   # FLASHW_ALL | FLASHW_TIMERNOFG
+    _user32.FlashWindowEx(ctypes.byref(info))
+    _user32.MessageBeep(0x40)   # MB_ICONASTERISK
+    return True
+
+
 def prepare_overlay_window(title: str, exclude_from_capture: bool = True, rounded: bool = True) -> bool:
     """Kendi OCR pencerelerimiz ekran yakalamada görünmez → kendi yazımızı okumayız."""
     hwnd = find_window(title)
