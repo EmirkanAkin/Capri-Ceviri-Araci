@@ -4,9 +4,17 @@ name: Sürüm
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:     # var olan bir etiket için elle yeniden derleme
+    inputs:
+      tag:
+        description: "Sürüm etiketi (ör. v1.0.1)"
+        required: true
 
 permissions:
   contents: write
+
+env:
+  PYTHONUTF8: "1"   # derleme betiği Türkçe yazdırır; GitHub'ın Windows makinesi cp1252 kullanır
 
 jobs:
   release:
@@ -17,7 +25,7 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-      - run: python build_exe.py --check-tag ${{ github.ref_name }}
+      - run: python build_exe.py --check-tag ${{ inputs.tag || github.ref_name }}
       - run: pip install -r requirements-core.txt pytest pyinstaller
       - run: python -m pytest -m "not slow" -q
       - name: Sertifikayı hazırla (isteğe bağlı)
@@ -35,4 +43,4 @@ jobs:
       - name: Sürümü yayımla
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create ${{ github.ref_name }} dist/Capri-win64.zip --title "Capri ${{ github.ref_name }}" --notes-file notes.md
+        run: gh release create ${{ inputs.tag || github.ref_name }} dist/Capri-win64.zip --title "Capri ${{ inputs.tag || github.ref_name }}" --notes-file notes.md
