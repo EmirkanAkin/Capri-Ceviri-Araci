@@ -507,6 +507,7 @@ function syncSettingsUi() {
   $("#backupToggle").checked = !!S.settings.backup;
   $("#nsfwToggle").checked = !!S.settings.nsfw;
   $("#qualityToggle").checked = !!S.settings.quality_pass;
+  $("#soundToggle").checked = S.settings.sound !== false;
   const p = PROVIDERS.find((x) => x.id === S.settings.model);
   const [st] = providerStatus(S.settings.model);
   $("#modelHint").textContent = p ? `${p.tag} · ${st}` : "";
@@ -1496,6 +1497,7 @@ $("#modelSelect").addEventListener("change", (e) => updateSettings({ model: e.ta
 $("#backupToggle").addEventListener("change", (e) => updateSettings({ backup: e.target.checked }));
 $("#nsfwToggle").addEventListener("change", (e) => updateSettings({ nsfw: e.target.checked }));
 $("#qualityToggle").addEventListener("change", (e) => updateSettings({ quality_pass: e.target.checked }));
+$("#soundToggle").addEventListener("change", (e) => updateSettings({ sound: e.target.checked }));
 $("#updateBtn").addEventListener("click", () => openUpdate(!(S.update && S.update.available)));
 
 const search = $("#searchInput");

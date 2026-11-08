@@ -39,8 +39,9 @@ from progress import LiveEta, SpeedStore, estimate, estimate_cost, format_durati
 from languages import renpy_language_name
 from user_errors import describe_error
 
-APP_VERSION = "1.0.3"
-from paths import APP_DIR, FROZEN, GLOSSARY_DIR, ICON_FILE, WEB_DIR, seed_user_files
+APP_VERSION = "1.0.4"
+from paths import APP_DIR, FROZEN, GLOSSARY_DIR, ICON_FILE, RES_DIR, WEB_DIR, seed_user_files
+SOUNDS_DIR = RES_DIR / "assets"
 import gpu_runtime
 gpu_runtime.activate()  # exe sürümünde sonradan kurulan PyTorch ortamı
 DATA_DIR = APP_DIR / "portable_cache"
@@ -73,24 +74,25 @@ DEFAULT_SETTINGS = {
     "ocr_hotkey": "Ctrl+Shift+T", "pin_hotkey": "Ctrl+Shift+Y", "ocr_model": "",
     "ocr_interval": 350, "ocr_place": "below",
     "update_repo": "", "update_check": True,
-    "scan_on_start": True, "scan_folders": [], "scan_dismissed": [],
+    "scan_on_start": True, "scan_folders": [], "scan_dismissed": [], "sound": True,
 }
 # Güncelleme penceresinde gösterilir; ayrıntılar CHANGELOG.md'de
 WHATS_NEW = [
+    "Çeviri bitince Capri'ye özel ince bir ses (ayarlardan kapatılabilir)",
+    "Ren'Py: DLC/Live2D içeren oyunlarda \"translate komutu başarısız\" hatası düzeltildi",
+    "Ren'Py: Rusça, Japonca gibi dillerde yazılmış oyunların metin sayısı artık doğru",
+    "Ren'Py: oyunun paketli İngilizcesi varsa çeviri ondan yapılıyor",
     "Gemini çevirisi yaklaşık 5 kat hızlı; yarıda takılma düzeltildi",
     "İlerleme çubuğu sürekli ilerliyor, kalan süre gerçekçi",
     "Unity oyunlarında yazma hatası (UnityPy.resources) düzeltildi",
     "Güncelleme artık siyah pencere açmadan arayüzden kuruluyor",
     "GPU paneli \"Algılanıyor\"da kalmıyor; Durdur düğmesi yenilendi",
     "Oyna düğmesi, sözlük içe/dışa aktarma, yama paylaşma",
-    "Ücretli API'lerde tahmini maliyet; çeviri bitince görev çubuğu uyarısı",
-    "Kalite editörü tüm motorlarda ve dillerde",
-    "Çince, Japonca, Korece için otomatik yazı tipi (Ren'Py)",
 ]
 UI_PORT = 42001
 NOTO = "https://github.com/notofonts/noto-cjk/raw/main/Sans/SubsetOTF/{0}/NotoSans{0}-Regular.otf"
 NOTO_FONTS = {"ja": NOTO.format("JP"), "zh-CN": NOTO.format("SC"), "zh-TW": NOTO.format("TC"), "ko": NOTO.format("KR")}
-ANALYSIS_VERSION = 1     # analiz biçimi değişince eski kayıtlar yok sayılır
+ANALYSIS_VERSION = 2     # analiz biçimi değişince eski kayıtlar yok sayılır
 LEARN_MIN_LINES, LEARN_MIN_SECONDS = 20, 5.0
 OCR_TITLES = {"select": "Capri OCR Seçim", "popup": "Capri OCR Sonuç", "pin": "Capri OCR Sabit"}
 PATCH_SUFFIX = ".capripatch"
@@ -288,11 +290,40 @@ RENPY_SAY = re.compile(r'''^[ \t]*(?:[A-Za-z_]\w*[ \t]+)?"((?:[^"\\\n]|\\.)+)"''
 RPYC_BYTES_PER_LINE = 150      # yalnızca derlenmiş betik varsa kaba ölçek
 
 
+# tl dosyasındaki çeviri satırları: `e "..."`, `"..."`, `new "..."` — `old "..."` ve `# ...` (orijinal) hariç
+RENPY_TL_SOURCE = re.compile(r'''^[ \t]*(?!old[ \t])(?:[A-Za-z_]\w*[ \t]+)?"((?:[^"\\\n]|\\.)+)"''', re.MULTILINE)
+_MEDIA_FILE = re.compile(r"\.(?:ogg|mp3|wav|opus|flac|png|jpe?g|webp|webm|avi|mp4|ttf|otf)$", re.IGNORECASE)
+
+
+def _is_renpy_text(value: str) -> bool:
+    """Diyalog mu? Herhangi bir alfabede (Rusça, Japonca…) en az iki harf; dosya yolu değil."""
+    return bool(re.search(r"[^\W\d_]{2}", value)) and not _MEDIA_FILE.search(value.strip())
+
+
+def _renpy_english_lines(game_dir: Path) -> set:
+    """Oyunun hazır İngilizce çevirisi (tl/english, açık ya da RPA içinde) varsa onun diyalog + arayüz metinleri."""
+    from engine_renpy import language_reference
+    lines: set = set()
+    with language_reference(game_dir, "english", log=lambda _message: None) as folder:
+        if folder is None:
+            return lines
+        for path in folder.rglob("*.rpy"):
+            try:
+                text = path.read_text(encoding="utf-8-sig", errors="ignore")
+            except OSError:
+                continue
+            lines.update(m.group(1) for m in RENPY_TL_SOURCE.finditer(text) if _is_renpy_text(m.group(1)))
+    return lines
+
+
 def estimate_renpy_text(game_dir: Path) -> Dict[str, Any]:
     """Ren'Py'de kesin liste çeviri başlarken üretilir; analizde süre tahmini için diyalog sayısı kestirilir."""
     lines: set = set()
     for text in _renpy_script_texts(game_dir):
-        lines.update(m.group(1) for m in RENPY_SAY.finditer(text) if re.search(r"[A-Za-z]{2}", m.group(1)))
+        lines.update(m.group(1) for m in RENPY_SAY.finditer(text) if _is_renpy_text(m.group(1)))
+    english = _renpy_english_lines(game_dir)
+    if english and len(english) >= len(lines) * 0.5:
+        lines = english   # oyun başka dilde yazılmış, hazır İngilizcesi var: çeviri o metinlerden yapılır
     if lines:
         chars = sum(len(line) for line in lines)
         return {"unique": len(lines), "chars": chars, "words": sum(len(line.split()) for line in lines), "exact": False}
@@ -608,8 +639,11 @@ class CapriBridge:
         self._ui.emit("stage", {"key": key, "label": label})
         self._log(label)
 
-    def _attention(self) -> None:
-        from ocr import attention
+    def _attention(self, sound: str = "done") -> None:
+        """Çeviri bitti/başarısız: Capri'nin ince bildirim sesi; uygulama arka plandaysa görev çubuğu da yanıp söner."""
+        from ocr import attention, play_sound
+        if self._settings.get("sound", True):
+            play_sound(SOUNDS_DIR / f"{sound}.wav")
         attention("Capri")
 
     def _notice(self, text: str) -> None:
@@ -733,7 +767,7 @@ class CapriBridge:
             self._safely(lambda: self._emit_project(game["root"]))
         self._safely(lambda: self._ui.emit("task_error", {"label": label, **info}))
         if self._translating:
-            self._safely(self._attention)
+            self._safely(lambda: self._attention("error"))
         self._safely(lambda: self._status(info["title"], tone))
         self._safely(lambda: self._notify(info["title"], info["hint"], tone, "alert", info.get("action")))
 
@@ -1658,7 +1692,7 @@ class CapriBridge:
     def _translate_renpy(self, game: Dict[str, Any], failed: set) -> int:
         from engine_renpy import (
             analyze_game, augment_ui_string_templates, backup_translation, enable_turkish,
-            generate_templates, overlay_english_dialogue_sources, qa_translation,
+            generate_templates, language_reference, overlay_english_dialogue_sources, qa_translation,
             repair_safe_issues, repair_say_prefixes, restore_orphaned_translation_bytecode,
             translate_templates,
         )
@@ -1671,7 +1705,9 @@ class CapriBridge:
         tl_dir = generate_templates(info, self._log)
         restore_orphaned_translation_bytecode(info.game_dir, self._log)
         augment_ui_string_templates(info, tl_dir, self._log)
-        overlay_english_dialogue_sources(tl_dir, info.game_dir / "tl" / "english", False, self._log)
+        with language_reference(info.game_dir, "english", self._log) as english:   # RPA içindeyse geçici çıkarılır
+            if english is not None:
+                overlay_english_dialogue_sources(tl_dir, english, False, self._log)
         self._stage("translate", f"{MODEL_LABELS[s['model']]} çeviriyor")
         written = translate_templates(
             tl_dir=tl_dir,

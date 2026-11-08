@@ -1,5 +1,35 @@
 # Capri — Değişim Günlüğü
 
+## [1.0.4] - 2026-11-08
+### Yeni
+- Çeviri bitince Windows'un uyarı sesi yerine Capri'ye özel kısa, ince bir çan sesi; hata olursa daha kısık, alçalan bir ses.
+  Çeviri ayarlarındaki "Bitince ses çal" ile kapatılabilir.
+
+### Düzeltmeler
+- **Ren'Py "translate komutu başarısız: 1":** şablon üretilirken betik arşivleri geçici olarak gizleniyordu; aynı arşivde
+  resim/ses/Live2D modeli olan oyunlarda (ör. DLC arşivleri) bunlar da kayboluyor, oyunun açılış kodu çöküyordu.
+  Artık gizlenen arşivin yerine yalnızca betik dışı dosyaları içeren geçici bir arşiv konuyor; işlem sonunda orijinal
+  arşiv aynen geri geliyor.
+- **Ren'Py font yaması orijinal motordaki gibi:** 1.0.3'te Türkçe harfi eksik tek bir font bile olsa oyunun bütün
+  arayüz fontları DejaVu'ya zorlanıyordu. Artık yalnızca eksik font, `tl/<dil>/` içinde aynı adla değiştiriliyor
+  (Ren'Py onu sadece o dil seçiliyken kullanır); zorlama yalnızca Çince/Japonca/Korece'de, gerektiğinde yapılıyor.
+- **Ren'Py oyunu çeviriden sonra hâlâ İngilizce açılıyordu:** Türkçe yalnızca ilk açılışta bir kez seçiliyordu; kendi
+  dil seçim ekranı olan oyunlarda (ör. Knightly Passions: English/中文/Русский) oyuncunun seçimi bunu kalıcı olarak
+  eziyordu. Artık oyun, ayarlardaki Capri düğmesiyle başka dil seçilmedikçe her açılışta çeviri dilinde başlıyor.
+  "English" düğmesi de oyunun hazır İngilizcesi varsa ona geçiyor (eskiden orijinal dile, ör. Rusçaya dönüyordu).
+- **Gemini uzun oyunlarda çok yavaşlıyordu (18 bin satır 2 sa 22 dk):** hız sınırına takılınca anahtarın erişebildiği
+  21 modelin hepsine (yavaş "pro" ve "düşünen" modeller dahil) kayıyordu; içerik filtresine takılan tek bir satır da
+  40'lık partiyi 21 model × 4 tur denetip dakikalarca bekletiyordu. Artık orijinal motordaki gibi yalnızca hızlı
+  (lite) modeller kullanılıyor (ayarlardan seçilen model başta kalır); engellenen satır tek istekle ayrıştırılıyor.
+  Zaman aşımı 60 sn.
+- **Ollama Latin harfi olmayan satırları atlıyordu:** Rusça/Japonca gibi kaynak satırlar çevrilmeden kalıyordu.
+- **Ren'Py analizi bazı oyunlarda metinleri çok eksik sayıyordu:** yalnızca Latin harfli satırlar sayılıyordu, bu yüzden
+  Rusça/Japonca/Çince yazılmış oyunlarda diyalogların neredeyse hepsi atlanıyordu (ör. 17.500 yerine 1.357). Artık her
+  alfabe sayılıyor, ses/resim dosya yolları ayıklanıyor.
+- **Paketli İngilizce kaynak kullanılmıyordu:** oyunun İngilizce çevirisi `scripts.rpa` içinde (`tl/english`) duruyorsa
+  görülmüyor, çeviri oyunun orijinal dilinden yapılıyordu. Artık bu dosyalar geçici bir klasöre çıkarılıp kaynak olarak
+  kullanılıyor (oyun klasörüne yazılmaz); analiz de bu İngilizce metinleri sayıyor.
+
 ## [1.0.3] - 2026-11-08
 ### Düzeltmeler
 - **Gemini çok yavaştı ve yarıda takılıyordu:** 15 sn zaman aşımı uzun partileri kesiyor, biten iş çöpe gidip başka modelle

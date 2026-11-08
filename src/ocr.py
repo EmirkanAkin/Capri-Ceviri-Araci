@@ -435,8 +435,20 @@ def own_window(title: str = "Capri") -> int:
     return found[0] if found else 0
 
 
+def play_sound(path) -> bool:
+    """Capri'nin kendi bildirim sesini arka planda çalar; dosya yoksa sessiz kalır (Windows'un varsayılan sesine düşmez)."""
+    if not Path(path).is_file():
+        return False
+    try:
+        import winsound
+        winsound.PlaySound(str(path), winsound.SND_FILENAME | winsound.SND_ASYNC | winsound.SND_NODEFAULT)
+        return True
+    except (ImportError, RuntimeError):
+        return False
+
+
 def attention(title: str = "Capri") -> bool:
-    """Capri arka plandaysa görev çubuğu düğmesini yanıp söndürür ve sistem sesi çalar (Windows bildirimi gibi)."""
+    """Capri arka plandaysa görev çubuğu düğmesini yanıp söndürür."""
     hwnd = own_window(title)
     if not hwnd or _user32.GetForegroundWindow() == hwnd:
         return False
@@ -446,7 +458,6 @@ def attention(title: str = "Capri") -> bool:
 
     info = FLASHWINFO(ctypes.sizeof(FLASHWINFO), hwnd, 0x3 | 0xC, 0, 0)   # FLASHW_ALL | FLASHW_TIMERNOFG
     _user32.FlashWindowEx(ctypes.byref(info))
-    _user32.MessageBeep(0x40)   # MB_ICONASTERISK
     return True
 
 

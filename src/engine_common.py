@@ -1344,7 +1344,7 @@ class OllamaTranslationEngine:
                 results[src] = self.cache.get(src)
                 if tracker: tracker.advance()
                 continue
-            if not re.search(r"[A-Za-z]", src):
+            if not re.search(r"[^\W\d_]", src):   # harf yoksa (sayı/simge) çevrilmez; her alfabe sayılır
                 results[src] = src
                 if tracker: tracker.advance()
                 continue

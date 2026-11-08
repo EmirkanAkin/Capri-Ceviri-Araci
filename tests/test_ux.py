@@ -896,7 +896,10 @@ def test_gemini_uses_long_timeout_small_batches_and_parallel_requests(tmp_path, 
 
 
 def test_gemini_flash_runs_without_thinking(tmp_path, monkeypatch):
+    import providers
     er, calls = _fake_gemini(monkeypatch, lambda model, n: 429 if "lite" in model else "ok")
+    chosen = type("C", (), {"gemini_model": "gemini-2.5-flash"})()
+    monkeypatch.setattr(providers, "load_provider_config", lambda: chosen)   # kullanıcı Flash seçti
     er.translate_with_gemini(["a", "b"], {}, tmp_path / "c.json", "k1", log=lambda s: None)
     flash = [c for m, _n, _t, c in calls if m == "gemini-2.5-flash"]
     assert flash and flash[0]["thinkingConfig"] == {"thinkingBudget": 0}
@@ -991,9 +994,169 @@ def test_attention_flashes_only_when_in_background(monkeypatch):
     monkeypatch.setattr(ocr, "own_window", lambda title="Capri": 1234)
     flashed = []
     fake = type("U", (), {"GetForegroundWindow": staticmethod(lambda: 1234),
-                          "FlashWindowEx": staticmethod(lambda info: flashed.append(1)),
-                          "MessageBeep": staticmethod(lambda t: None)})
+                          "FlashWindowEx": staticmethod(lambda info: flashed.append(1))})
     monkeypatch.setattr(ocr, "_user32", fake)
     assert ocr.attention() is False and not flashed
     fake.GetForegroundWindow = staticmethod(lambda: 99)
     assert ocr.attention() is True and flashed
+
+
+
+def test_completion_plays_capri_sound_not_windows_beep(tmp_path, monkeypatch):
+    import wave
+    import ocr
+    for name in ("done", "error"):
+        with wave.open(str(app_modern.SOUNDS_DIR / f"{name}.wav")) as w:
+            seconds = w.getnframes() / w.getframerate()
+            assert 0.3 < seconds < 1.5 and w.getnchannels() == 1, "kısa ve hafif olmalı"
+    assert ocr.play_sound(tmp_path / "yok.wav") is False, "dosya yoksa Windows sesine düşmemeli"
+    played = []
+    monkeypatch.setattr(ocr, "play_sound", lambda path: played.append(Path(path).name) or True)
+    monkeypatch.setattr(ocr, "attention", lambda title="Capri": False)
+    bridge = make_bridge(tmp_path, monkeypatch)
+    bridge._attention("done")
+    bridge._attention("error")
+    bridge._settings["sound"] = False
+    bridge._attention("done")
+    assert played == ["done.wav", "error.wav"]
+
+
+def _write_rpa(path, files):
+    """Küçük RPA-3.0 arşivi (anahtar 0)."""
+    import pickle
+    import zlib
+    body, index, offset = b"", {}, 51
+    for name, data in files.items():
+        index[name] = [(offset + len(body), len(data))]
+        body += data
+    with open(path, "wb") as f:
+        f.write(f"RPA-3.0 {offset + len(body):016x} {0:08x}\n".encode().ljust(51, b" "))
+        f.write(body)
+        f.write(zlib.compress(pickle.dumps(index, protocol=2)))
+
+
+def test_renpy_estimate_counts_non_latin_original_and_packed_english(tmp_path):
+    """Rusça yazılmış, İngilizcesi scripts.rpa içinde tl/english olan oyun (ör. Knightly Passions) eksik sayılmamalı."""
+    game = tmp_path / "game"
+    game.mkdir()
+    russian = 'label start:\n    e "Привет, друг."\n    "Снаружи загремел гром."\n    voice "audio/v1.ogg"\n'
+    _write_rpa(game / "scripts.rpa", {"script.rpy": russian.encode()})
+    only_russian = app_modern.estimate_renpy_text(game)
+    assert only_russian["unique"] == 2, "Latin dışı alfabe de diyalogdur, ses dosyası değildir"
+    english = ('translate english start_1:\n    # e "Привет, друг."\n    e "Hello, friend."\n\n'
+               'translate english start_2:\n    # "Снаружи загремел гром."\n    "Thunder rumbled outside."\n\n'
+               'translate english strings:\n    old "Начать"\n    new "Start"\n')
+    _write_rpa(game / "scripts.rpa", {"script.rpy": russian.encode(), "tl/english/script.rpy": english.encode()})
+    stats = app_modern.estimate_renpy_text(game)
+    assert stats["unique"] == 3
+    assert stats["chars"] == len("Hello, friend.") + len("Thunder rumbled outside.") + len("Start")
+
+
+def test_packed_english_reference_is_extracted_without_touching_game(tmp_path):
+    import engine_renpy
+    game = tmp_path / "game"
+    game.mkdir()
+    _write_rpa(game / "scripts.rpa", {"tl/english/a.rpy": b'translate english x:\n    e "Hi"\n',
+                                      "tl/english/a.rpyc": b"compiled", "tl/english/b.rpyc": b"only compiled",
+                                      "tl/French/a.rpy": b"x"})
+    before = sorted(p.name for p in game.rglob("*"))
+    with engine_renpy.language_reference(game, "english", log=lambda m: None) as folder:
+        assert sorted(p.name for p in folder.rglob("*")) == ["a.rpy", "b.rpyc"], ".rpy varsa .rpyc alınmaz"
+        temporary = folder
+    assert not temporary.exists(), "geçici klasör silinmeli"
+    assert sorted(p.name for p in game.rglob("*")) == before, "oyun klasörüne yazılmamalı"
+    with engine_renpy.language_reference(game, "German", log=lambda m: None) as folder:
+        assert folder is None
+
+
+def test_hidden_script_archive_keeps_its_assets(tmp_path):
+    """DLC arşivi hem betik hem Live2D modeli içerir: gizlenince model kaybolmamalı (yoksa translate komutu çöker)."""
+    import engine_renpy
+    game = tmp_path / "game"
+    game.mkdir()
+    model = b'{"Version": 3}' * 50
+    _write_rpa(game / "dlc.rpa", {"DLC/live2d.rpy": b'image k = Live2D("DLC/k.model3.json")\n',
+                                  "DLC/live2d.rpyc": b"compiled", "DLC/k.model3.json": model, "DLC/bg.png": b"PNG"})
+    _version, entries = engine_renpy.read_rpa_index(game / "dlc.rpa")
+    kept = engine_renpy.write_asset_archive(game / "dlc.rpa", entries, tmp_path / "assets.rpa")
+    assert kept == 2
+    _version, index = engine_renpy.read_rpa_index(tmp_path / "assets.rpa")
+    assert sorted(index) == ["DLC/bg.png", "DLC/k.model3.json"], "betikler gizli kalmalı"
+    target = tmp_path / "out.json"
+    engine_renpy.extract_entry(tmp_path / "assets.rpa", index["DLC/k.model3.json"], target)
+    assert target.read_bytes() == model
+    only_scripts = {k: v for k, v in entries.items() if k.endswith(".rpy")}
+    assert engine_renpy.write_asset_archive(game / "dlc.rpa", only_scripts, tmp_path / "none.rpa") == 0
+    assert not (tmp_path / "none.rpa").exists()
+
+
+def test_turkish_font_patch_matches_original_engine(tmp_path):
+    """Orijinal motor gibi: eksik harfli font yalnızca tl/Turkish içinde DejaVu ile değişir, arayüz fontları zorlanmaz."""
+    import engine_renpy as er
+    from engine_common import FontChecker
+    game = _renpy_game(tmp_path / "G")
+    (game / "gui").mkdir()
+    (game / "gui" / "fancy.ttf").write_bytes(b"x")
+    common = tmp_path / "G" / "renpy" / "common"
+    common.mkdir(parents=True)
+    (common / "DejaVuSans.ttf").write_bytes(b"DEJAVU")
+    info = er.analyze_game(tmp_path / "G", log=lambda s: None)
+    info.tl_dir.mkdir(parents=True)
+    original = FontChecker._read_cmap
+    FontChecker._read_cmap = staticmethod(lambda p: set())
+    try:
+        er.enable_turkish(info, True, log=lambda s: None)
+    finally:
+        FontChecker._read_cmap = original
+    assert (info.tl_dir / "fancy.ttf").read_bytes() == b"DEJAVU"
+    script = info.support_file.read_text(encoding="utf-8")
+    assert "font_replacement_map" not in script and "gui.text_font" not in script
+
+
+def test_gemini_uses_only_fast_models_like_original_engine():
+    import engine_renpy as er
+    many = ["gemini-flash-lite-latest", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-2.5-flash-lite",
+            "gemini-flash-latest", "gemini-3.7-flash", "gemini-pro-latest", "gemini-3.1-pro-preview", "gemma-4-31b-it"]
+    fast = er.fast_gemini_models(many)
+    assert len(fast) <= 4 and all("lite" in m for m in fast), "hız sınırında yavaş pro/düşünen modele kaymamalı"
+    assert er.fast_gemini_models(many, "gemini-2.5-flash")[0] == "gemini-2.5-flash", "kullanıcının seçtiği model başta"
+
+
+def test_gemini_blocked_line_is_isolated_without_trying_every_model(tmp_path, monkeypatch):
+    """İçerik filtresine takılan tek satır 40'lık partiyi dakikalarca bekletmemeli (eskiden 21 model × 4 tur)."""
+    import json as _json
+    er, calls = _fake_gemini(monkeypatch, lambda model, n: "ok")
+    inner = er.urllib.request.urlopen
+
+    def urlopen(req, timeout):
+        items = _json.loads(_json.loads(req.data)["contents"][0]["parts"][0]["text"].split("liste:\n", 1)[1])
+        if "BAD" in items:
+            calls.append(("blocked", len(items), timeout, {}))
+            reply = {"promptFeedback": {"blockReason": "PROHIBITED_CONTENT"}}
+            return type("R", (), {"read": lambda self: _json.dumps(reply).encode(),
+                                  "__enter__": lambda self: self, "__exit__": lambda self, *a: False})()
+        return inner(req, timeout)
+
+    monkeypatch.setattr(er.urllib.request, "urlopen", urlopen)
+    failed = set()
+    lines = [f"line {i}" for i in range(39)] + ["BAD"]
+    cache = {}
+    er.translate_with_gemini(lines, cache, tmp_path / "c.json", "k1", log=lambda s: None, failed_out=failed)
+    assert failed == {"BAD"} and cache["line 0"] == "TR line 0"
+    assert sum(1 for c in calls if c[0] == "blocked") <= 8, "engellenen satır için her model denenmemeli"
+
+
+def test_renpy_turkish_survives_games_own_language_picker(tmp_path):
+    """Oyunun kendi dil ekranı (English/中文/Русский) Türkçeyi ezmemeli; English düğmesi gerçek İngilizceye gitmeli."""
+    import engine_renpy as er
+    game = _renpy_game(tmp_path / "G")
+    info = er.analyze_game(tmp_path / "G", log=lambda s: None)
+    er.enable_turkish(info, True, log=lambda s: None)
+    script = info.support_file.read_text(encoding="utf-8")
+    assert 'persistent._capri_language in (None, "Turkish") and preferences.language != "Turkish"' in script
+    assert "_renptr_turkish_version" not in script, "Türkçe tek seferlik değil, her açılışta korunmalı"
+    assert 'Language(None)]' in script, "İngilizce paketi yoksa oyunun orijinal diline döner"
+    (game / "tl" / "english").mkdir(parents=True)
+    (game / "tl" / "english" / "s.rpy").write_text('translate english strings:\n', encoding="utf-8")
+    er.enable_turkish(info, True, log=lambda s: None)
+    assert 'Language("english")]' in info.support_file.read_text(encoding="utf-8")
