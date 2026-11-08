@@ -19,6 +19,7 @@ import urllib.error
 import urllib
 import zipfile
 import zlib
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Callable
@@ -404,6 +405,43 @@ def safe_archive_member(name: str) -> PurePosixPath:
     return member
 
 
+SCRIPT_SUFFIXES = (".rpy", ".rpyc")
+
+
+def write_asset_archive(source: Path, entries: dict, target: Path) -> int:
+    """Arşivdeki betik dışı dosyaları (resim, ses, Live2D modeli…) yeni bir RPA-3.0 arşivine kopyalar.
+
+    Şablon üretimi sırasında betik arşivi gizlenir; aynı arşivdeki varlıklar da kaybolursa oyunun açılış kodu
+    (ör. `Live2D("…model3.json")`) çöker. Bu arşiv gizlenen arşivin yerine konur, sonra orijinal geri gelir."""
+    keep = {name: chunks for name, chunks in entries.items() if not name.lower().endswith(SCRIPT_SUFFIXES)}
+    if not keep:
+        return 0
+    need = sum(length for chunks in keep.values() for _offset, length, _prefix in chunks)
+    if shutil.disk_usage(target.parent).free < need + (200 << 20):
+        raise RuntimeError(f"Diskte yer yok: {source.name} için geçici olarak {need >> 20} MB boş alan gerekiyor.")
+    index = {}
+    with source.open("rb") as handle, target.open("wb") as output:
+        output.write(b" " * 51)                      # başlık sonda yazılır
+        for name, chunks in keep.items():
+            start = output.tell()
+            for offset, length, prefix in chunks:
+                output.write(prefix)
+                handle.seek(offset)
+                remaining = length - len(prefix)       # Ren'Py'de uzunluk ön eki de kapsar
+                while remaining > 0:
+                    block = handle.read(min(remaining, 1 << 20))
+                    if not block:
+                        raise RuntimeError(f"Arşiv okunamadı: {source.name} / {name}")
+                    output.write(block)
+                    remaining -= len(block)
+            index[name] = [(start, output.tell() - start)]
+        index_offset = output.tell()
+        output.write(zlib.compress(pickle.dumps(index, protocol=2)))
+        output.seek(0)
+        output.write(f"RPA-3.0 {index_offset:016x} {0:08x}\n".encode("ascii"))
+    return len(keep)
+
+
 def extract_entry(archive: Path, chunks, target: Path):
     target.parent.mkdir(parents=True, exist_ok=True)
     with archive.open("rb") as handle, target.open("wb") as output:
@@ -411,6 +449,63 @@ def extract_entry(archive: Path, chunks, target: Path):
             output.write(prefix)
             handle.seek(offset)
             output.write(handle.read(length))
+
+
+def packed_language_entries(game_dir: Path, language: str) -> list[tuple[Path, str, object]]:
+    """RPA arşivlerindeki tl/<language>/ dosyaları (.rpy varsa onu, yoksa .rpyc'yi): (arşiv, iç yol, parçalar)."""
+    wanted = language.casefold()
+    found: dict[str, tuple[Path, str, object]] = {}
+    for archive in sorted(game_dir.glob("*.rpa")):
+        try:
+            _version, index = read_rpa_index(archive)
+        except Exception:
+            continue
+        for raw_name, chunks in index.items():
+            parts = raw_name.replace("\\", "/").split("/")
+            if len(parts) < 3 or parts[0] != "tl" or parts[1].casefold() != wanted:
+                continue
+            relative = "/".join(parts[2:])
+            stem, dot, suffix = relative.rpartition(".")
+            if suffix not in ("rpy", "rpyc"):
+                continue
+            key = stem.casefold()
+            if key in found and found[key][1].endswith(".rpy"):
+                continue
+            found[key] = (archive, raw_name, chunks)
+    return list(found.values())
+
+
+def english_language_name(game_dir: Path) -> str | None:
+    """Oyunun hazır İngilizce çevirisinin Ren'Py dil adı ("english", "English"…): açık klasör ya da RPA içinde."""
+    tl = game_dir / "tl"
+    if tl.is_dir():
+        for folder in tl.iterdir():
+            if folder.is_dir() and folder.name.casefold() == "english" and any(folder.rglob("*.rpy*")):
+                return folder.name
+    for _archive, raw_name, _chunks in packed_language_entries(game_dir, "english"):
+        return raw_name.replace("\\", "/").split("/")[1]
+    return None
+
+
+@contextmanager
+def language_reference(game_dir: Path, language: str = "english", log: LogFn = print):
+    """Oyunun hazır bir dil çevirisinin (çoğunlukla İngilizce) okunabilir klasörü: açıksa kendisi, RPA içindeyse
+    geçici bir klasöre çıkarılmış kopyası, hiç yoksa None. Oyun klasörüne hiçbir şey yazılmaz."""
+    loose = game_dir / "tl" / language
+    if loose.is_dir() and any(loose.rglob("*.rpy*")):
+        yield loose
+        return
+    entries = packed_language_entries(game_dir, language)
+    if not entries:
+        yield None
+        return
+    with tempfile.TemporaryDirectory(prefix="capri_lang_") as temporary:
+        output = Path(temporary)
+        for archive, raw_name, chunks in entries:
+            member = safe_archive_member(raw_name)
+            extract_entry(archive, chunks, output.joinpath(*member.parts[2:]))
+        log(f"Paketli {language} çevirisi kaynak olarak kullanılıyor ({len(entries)} dosya)")
+        yield output
 
 
 def backup_translation(info: GameInfo, log: LogFn = print) -> Path | None:
@@ -666,6 +761,10 @@ def generate_templates(info: GameInfo, log: LogFn = print):
                 )
             archive.path.replace(hidden_path)
             hidden.append((archive.path, hidden_path))
+            # Betikler gizlenir ama aynı arşivdeki resim/ses/Live2D dosyaları yerinde kalır
+            kept = write_asset_archive(hidden_path, archive.entries, archive.path)
+            if kept:
+                log(f"{archive.path.name}: {kept} görsel/ses dosyası oyun açılabilsin diye yerinde bırakıldı")
 
         command = [
             str(info.executable),
@@ -2448,13 +2547,14 @@ def translate_with_gemini(
     # API'den geçerli yanıt alınamayan satırlar: bellekte kaynak metinle
     # doldurulur ama diske yazılmaz, böylece sonraki çalıştırmada tekrar denenir.
     failed: set[str] = failed_out if failed_out is not None else set()
-    # Sabit modelde kalma: anahtarın erişebildiği tüm uygun modeller hız sırasıyla denenir
     try:
         from providers import gemini_model_order, load_provider_config
-        model_order = gemini_model_order(load_provider_config().gemini_model, api_keys[0] if api_keys else "")
+        preferred = load_provider_config().gemini_model
+        model_order = fast_gemini_models(gemini_model_order(preferred, api_keys[0] if api_keys else ""), preferred)
     except Exception:
-        model_order = ["gemini-flash-lite-latest", "gemini-2.5-flash-lite", "gemini-flash-latest", "gemini-2.5-flash"]
-    log(f"Gemini model sırası ({len(model_order)}): {', '.join(model_order[:5])}{' …' if len(model_order) > 5 else ''}")
+        model_order = fast_gemini_models([], "auto")
+    log(f"Gemini modelleri: {', '.join(model_order)}")
+    _logged_exhausted: set[str] = set()   # "kota doldu" her model için bir kez yazılır (iş parçacığı başına değil)
 
     def _make_worker(start_key: int):
         """Her iş parçacığı kendi anahtarı, model sırası ve kota durumuyla çalışır."""
@@ -2466,7 +2566,6 @@ def translate_with_gemini(
         tried_keys: set[int] = set()
         # Geçici hata (dakikalık 15-RPM hız sınırı veya 503) — 15 sn sonra tekrar açılır
         temp_failed: dict[str, float] = {}
-        _logged_exhausted: set[str] = set()
 
         def _get_candidates() -> list[str]:
             now = time.monotonic()
@@ -2494,6 +2593,7 @@ def translate_with_gemini(
             if not items:
                 return []
 
+            bad_answers = 0
             for attempt in range(4):
                 candidates = _get_candidates()
                 if not candidates:
@@ -2528,24 +2628,24 @@ def translate_with_gemini(
                     try:
                         with urllib.request.urlopen(req, timeout=GEMINI_TIMEOUT) as resp:
                             res_data = json.loads(resp.read().decode("utf-8"))
-                            parts = (
-                                res_data.get("candidates", [{}])[0]
-                                .get("content", {})
-                                .get("parts", [])
-                            )
-                            if parts and "text" in parts[0]:
-                                parsed = json.loads(parts[0]["text"])
-                                if isinstance(parsed, list) and len(parsed) == len(items):
-                                    # Çalışan modeli listenin başına al (ve diğer çevirilerle paylaş)
-                                    try:
-                                        from providers import note_gemini_success
-                                        note_gemini_success(model_name)
-                                    except Exception:
-                                        pass
-                                    if model_name in all_models and all_models[0] != model_name:
-                                        all_models.remove(model_name)
-                                        all_models.insert(0, model_name)
-                                    return [str(x) if x is not None else "" for x in parsed]
+                        translated = gemini_answer(res_data, len(items))
+                        if translated is not None:
+                            # Çalışan modeli listenin başına al (ve diğer çevirilerle paylaş)
+                            try:
+                                from providers import note_gemini_success
+                                note_gemini_success(model_name)
+                            except Exception:
+                                pass
+                            if model_name in all_models and all_models[0] != model_name:
+                                all_models.remove(model_name)
+                                all_models.insert(0, model_name)
+                            return translated
+                        # Yanıt geldi ama kullanılamıyor: içerik filtresine takılan satırı başka model de
+                        # çevirmez. Parti ikiye bölünür, sorunlu satır ayrışır (eskiden 21 model × 4 tur denenirdi).
+                        bad_answers += 1
+                        if gemini_blocked(res_data) or bad_answers >= 2:
+                            return None
+                        continue
                     except urllib.error.HTTPError as e:
                         body = ""
                         try:
@@ -2709,13 +2809,46 @@ def translate_with_gemini(
     return done
 
 
+def fast_gemini_models(order: list[str], preferred: str = "auto") -> list[str]:
+    """Orijinal motordaki gibi yalnızca hızlı (lite) modeller. Hız sınırına takılınca yavaş "pro" ya da
+    "düşünen" modellere kaymak bir partiyi dakikalarca bekletiyordu. Kullanıcı ayarlardan bir model seçtiyse
+    o model başta kalır."""
+    picked = [preferred] if preferred and preferred != "auto" else []
+    picked += [name for name in order if "lite" in name.lower()]
+    picked += ["gemini-flash-lite-latest", "gemini-2.5-flash-lite"]
+    unique = list(dict.fromkeys(name for name in picked if name))
+    return unique[:GEMINI_FAST_MODELS]
+
+
+def gemini_answer(res_data: dict, count: int) -> list[str] | None:
+    """Yanıttaki JSON listesi; satır sayısı tutmuyorsa ya da biçim bozuksa None."""
+    try:
+        parts = res_data["candidates"][0]["content"]["parts"]
+        parsed = json.loads(parts[0]["text"])
+    except (KeyError, IndexError, TypeError, ValueError):
+        return None
+    if not isinstance(parsed, list) or len(parsed) != count:
+        return None
+    return [str(x) if x is not None else "" for x in parsed]
+
+
+def gemini_blocked(res_data: dict) -> bool:
+    """İçerik filtresi yanıtı engellediyse True (aynı metni başka model de çevirmez)."""
+    if (res_data.get("promptFeedback") or {}).get("blockReason"):
+        return True
+    candidates = res_data.get("candidates") or []
+    return bool(candidates) and (candidates[0] or {}).get("finishReason") in {
+        "SAFETY", "PROHIBITED_CONTENT", "BLOCKLIST", "SPII", "RECITATION"}
+
+
 class GeminiQuotaExhausted(RuntimeError):
     """Tüm anahtarların tüm modelleri günlük kotada: devam etmenin anlamı yok, çeviri durdurulur."""
 
 
 # Uygulamanın ilerleme paneline kısa durum notu iletir (ör. "hız sınırı: kısa bekleme")
 NOTICE: Callable[[str], None] | None = None
-GEMINI_TIMEOUT = 120      # sn: 40 satırlık parti çoğu zaman 5-20 sn sürer; erken kesmek bitmiş işi çöpe atar
+GEMINI_TIMEOUT = 60       # sn: hızlı modellerde 40 satırlık parti 2-10 sn sürer; 15 sn bazen bitmiş işi kesiyordu
+GEMINI_FAST_MODELS = 4    # en fazla bu kadar hızlı model denenir (orijinal motor 3 model kullanıyordu)
 GEMINI_BATCH = 40         # küçük parti: ilerleme sık güncellenir, tek hata az iş kaybettirir
 GEMINI_PER_KEY = 2        # anahtar başına eşzamanlı istek (ücretsiz kotada dakikalık sınırın altında kalır)
 
@@ -3150,10 +3283,11 @@ def enable_turkish(info: GameInfo, force: bool, log: LogFn = print, fallback_fon
         "    config.default_language = \"Turkish\"\n"
         "\n"
         "init 1501 python:\n"
+        "    # Oyuncu Capri'nin dil düğmesiyle başka bir dil seçmediyse oyun hep çeviri dilinde açılır; oyunun\n"
+        "    # kendi dil seçim ekranı bunu ezemez (eskiden yalnızca ilk açılışta bir kez ayarlanıyordu).\n"
         "    def _renptr_start_in_turkish():\n"
-        "        if (getattr(persistent, \"_renptr_turkish_version\", None) or 0) < 5:\n"
+        "        if persistent._capri_language in (None, \"Turkish\") and preferences.language != \"Turkish\":\n"
         "            renpy.change_language(\"Turkish\", force=True)\n"
-        "            persistent._renptr_turkish_version = 5\n"
         "    if _renptr_start_in_turkish not in config.start_interact_callbacks:\n"
         "        config.start_interact_callbacks.append(_renptr_start_in_turkish)\n"
         "    try:\n"
@@ -3169,8 +3303,10 @@ def enable_turkish(info: GameInfo, force: bool, log: LogFn = print, fallback_fon
         "            yalign 0.98\n"
         "            hbox:\n"
         "                spacing 12\n"
-        "                textbutton \"English\" action Language(None)\n"
-        "                textbutton \"Türkçe\" action Language(\"Turkish\")\n"
+        "                textbutton \"English\" action [SetField(persistent, \"_capri_language\", \"__source__\"), "
+        "Language(__SOURCE_LANGUAGE__)]\n"
+        "                textbutton \"Türkçe\" action [SetField(persistent, \"_capri_language\", \"Turkish\"), "
+        "Language(\"Turkish\")]\n"
         "\n"
         "init 999 python:\n"
         "    if \"renptr_language_switcher\" not in config.overlay_screens:\n"
@@ -3213,12 +3349,18 @@ def enable_turkish(info: GameInfo, force: bool, log: LogFn = print, fallback_fon
         "    if _renptr_fix_characters not in config.start_interact_callbacks:\n"
         "        config.start_interact_callbacks.append(_renptr_fix_characters)\n"
     )
-    version_key = "_renptr_turkish_version" if language == "Turkish" else f"_renptr_{language.lower()}_version"
     script = script.replace('"Turkish"', f'"{language}"').replace('"tr", "Türkçe"', f'"{code}", "{native}"') \
-        .replace('"Türkçe"', f'"{native}"').replace("_renptr_turkish_version", version_key)
+        .replace('"Türkçe"', f'"{native}"')
+    # "English" düğmesi: oyunun hazır İngilizcesi varsa ona (ör. Rusça yazılmış oyunlar), yoksa orijinal dile döner
+    english = english_language_name(info.game_dir)
+    script = script.replace("__SOURCE_LANGUAGE__", f'"{english}"' if english else "None")
     if code == "tr":
         script += names_block
-    script += font_block   # eksik harfli fontların yerine geçen yazı tipi (önceden hesaplanıp yazılmıyordu)
+    # Latin alfabeli dillerde (Türkçe dahil) orijinal motor gibi yalnızca tl/<dil>/ içine aynı adla DejaVu konur:
+    # Ren'Py onu sadece o dil seçiliyken kullanır, oyunun diğer fontları ve görünümü bozulmaz. Arayüzün tamamını
+    # yeni fonta zorlayan blok yalnızca Çince/Japonca/Korece'de gerekir (oyunun fontunda o alfabe hiç yoktur).
+    if code in NO_FONT_FALLBACK:
+        script += font_block
     support.write_text(script, encoding="utf-8")
     log(f"{native} varsayılan dil olarak etkinleştirildi.")
 
