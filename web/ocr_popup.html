@@ -24,6 +24,7 @@
       <button class="btn lime" id="pin" title="Bu alanı canlı çeviri için sabitle"><svg class="i" viewBox="0 0 24 24"><path d="M12 17v5M9 3h6l-1 6 4 4H6l4-4z"/></svg>Sabitle</button>
     </div>
   </div>
+  <script src="i18n.js"></script>
   <script>
     "use strict";
     const $ = (s) => document.querySelector(s);
@@ -57,6 +58,10 @@
       setTimeout(() => { $("#copy").lastChild.textContent = "Kopyala"; }, 1200);
     }));
     addEventListener("keydown", (e) => { if (e.key === "Escape") api().ocr_hide("popup"); });
+    // Arayüz dili: ana pencereyle aynı sözlük (dil değişince Python tarafı yeniden gönderir)
+    const loadUiLanguage = () => api() && api().ui_dictionary && api().ui_dictionary()
+      .then((r) => r && window.I18N && I18N.set(r.language, r.dict)).catch(() => {});
+    if (api()) loadUiLanguage(); else addEventListener("pywebviewready", loadUiLanguage);
   </script>
 </body>
 </html>

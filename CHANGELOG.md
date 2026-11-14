@@ -1,5 +1,39 @@
 # Capri — Değişim Günlüğü
 
+## [1.0.5] - 2026-11-14
+### Yeni
+- **Utage desteği (Unity):** Japon görsel roman motoru Utage'nin senaryo kitapları IL2CPP oyunlarda da (tip bilgisi
+  olmadan) okunup yazılıyor; yalnızca değişen metin hücrelerinin baytları değişir. Çeviri oyunun İngilizce sütununa
+  yazılır, oyunda English seçilince görünür. BepInEx gerekmez.
+- **I2 Localization desteği (Unity):** Yaygın yerelleştirme eklentisinin `I2Languages` kaynağındaki metin terimleri
+  çevriliyor; resim/ses terimlerine (ör. logo) dokunulmuyor.
+- **Çok dilli tablolar:** `Key / Japanese / English` gibi başlıklı TextAsset tablolarının İngilizce sütunu çevriliyor;
+  `sharedassets` dosyaları da taranıyor.
+- **TextMeshPro font kontrolü:** Oyunun TMP fontlarında olmayan harfler (ör. ğ ş ı İ) oyuna yazılırken en yakın harfle
+  değiştiriliyor (ğ→g, ş→s, ı→i), böylece kutu olarak görünmüyorlar. Analiz bunu açıkça gösteriyor.
+- **Arayüz dili:** Üst çubuktaki dil seçiciyle 17 dil. Türkçe ve İngilizce hazır gelir; diğer diller ilk seçildiğinde
+  bulut motoruyla bir kez çevrilip saklanır. Seçilen dil çeviri hedefi de olur. İlk açılışta Windows'un dili kullanılır.
+- **Topluluk yamaları:** Kütüphane ve Editör'deki "Topluluk yamaları" ile GitHub'da paylaşılmış yamaları ara, indir
+  ve açık oyuna uygula (yalnızca GitHub konu eklerinden indirilir). Paylaşırken GitHub'ın kabul ettiği `.zip` kopyası
+  da hazırlanır.
+- **Ortak çeviri belleği:** Kısa arayüz metinleri ("Save", "Load Game") bir oyunda çevrilince diğer oyunlarda
+  API'ye gitmeden kullanılır; dile göre ayrı tutulur, oyunun kendi çevirisini ezmez.
+- **Windows bildirimi:** Capri arka plandayken çeviri bitince ya da hata olunca bildirim (ayarlardan kapatılabilir).
+- **Tek pencere:** Aynı Capri ikinci kez açılınca açık pencere öne gelir.
+- **Tarama tahmini:** Bulunan Unity ve Unreal (açık .locres) oyunlarında da satır sayısı gösteriliyor.
+- **Görev çubuğu ilerlemesi:** Çeviri sürerken Capri'nin görev çubuğu simgesi ilerlemeyi gösteriyor; hazırlık
+  adımlarında kayan çubuk, durdurulunca sarı, hata olunca kırmızı (kısa süre sonra kaybolur).
+### Değişiklikler
+- Çeviri ayarları tek bir "Seçenekler" kartında toplandı; dar pencerede kartlar üst üste binmiyor.
+- Kod temizliği: hiçbir yerden çağrılmayan eski yardımcılar (eski yedek/geri yükleme ve QA fonksiyonları, kullanılmayan
+  RPG Maker/Unreal yardımcıları) ve kullanılmayan importlar kaldırıldı; davranış değişmedi.
+### Düzeltmeler
+- Unity: yazma sırasında UnityPy dosyayı açık tuttuğu için Windows'ta "Erişim engellendi" hatası oluşabiliyordu.
+- Arayüz dili: analiz notları, uyarılar, onay pencereleri, hata ve sağlayıcı mesajları, simgeli düğmeler ("Projeyi aç"),
+  "…" ile biten durum etiketleri ve ekran çevirisi pencereleri Türkçe kalıyordu. Tarih, yüzde ve binlik ayırıcı da
+  seçilen dile göre yazılıyor. Bir test, Python'dan ekrana giden her mesajın İngilizce karşılığı olduğunu denetliyor.
+- Eski sürümden kalan analiz sonuçları yok sayılıyor: 1.0.4'te "metin bulunamadı" denen Utage oyunları yeniden analiz edilir.
+
 ## [1.0.4] - 2026-11-08
 ### Yeni
 - Çeviri bitince Windows'un uyarı sesi yerine Capri'ye özel kısa, ince bir çan sesi; hata olursa daha kısık, alçalan bir ses.

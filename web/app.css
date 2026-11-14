@@ -304,6 +304,20 @@ textarea.input.code { font-family: var(--mono); font-size: 12.5px; }
 .field-hint { color: var(--muted); font-size: 12.5px; margin-top: 8px; line-height: 1.45; }
 .toggle-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; cursor: pointer; }
 .toggle-title { font-weight: 600; font-size: 14.5px; margin-top: 6px; }
+/* Seçenekler: tüm açma/kapama ayarları tek kartta, düzenli satırlar (eski dağınık kart ızgarası yerine) */
+.field.options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 28px; row-gap: 4px; }
+.field.options > .field-label { grid-column: 1 / -1; margin-bottom: 4px; }
+.opt-group { display: flex; flex-direction: column; min-width: 0; }
+.opt-head { color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; margin: 8px 0 2px; }
+.opt { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 12px 0;
+       border-top: 1px solid var(--line-soft); cursor: pointer; }
+.opt-icon { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; background: var(--surface-2, rgba(255,255,255,.04)); color: var(--muted); }
+.opt-icon svg.i { width: 15px; height: 15px; }
+.opt-text { display: flex; flex-direction: column; min-width: 0; }
+.opt-text .toggle-title { margin-top: 0; font-size: 14px; }
+.opt-text .field-hint { margin-top: 3px; }
+.opt .switch { margin-top: 0; }
+.opt:hover .toggle-title { color: var(--text, #fff); }
 .switch { position: relative; width: 40px; height: 22px; flex-shrink: 0; margin-top: 2px; }
 .switch input { opacity: 0; width: 0; height: 0; position: absolute; }
 .switch i { position: absolute; inset: 0; border-radius: 999px; background: #34353a; transition: background .2s; }
@@ -464,6 +478,7 @@ textarea.input.code { font-family: var(--mono); font-size: 12.5px; }
   .poster, .demo { display: none; }
   .hero-body { padding-right: 48px; }
   .config { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .field.options { grid-template-columns: 1fr; }
   .stats, .engines-intro { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .toplinks { display: none; }
 }
@@ -600,3 +615,32 @@ button:active:not(:disabled) { filter: brightness(.92); }
 .stop-btn:disabled { opacity: .75; cursor: progress; }
 .stop-btn .spinner { width: 15px; height: 15px; border-top-color: #ffb3ad; }
 .prog-facts .hint.warn { color: var(--warn); }
+
+/* Topluluk yamaları */
+.community-modal { width: 640px; }
+.cm-search { position: relative; margin-top: 18px; }
+.cm-search svg.i { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); width: 15px; height: 15px; color: var(--muted); }
+.cm-search .input { padding-left: 36px; width: 100%; }
+.cm-body { margin-top: 12px; max-height: 52vh; overflow: auto; display: flex; flex-direction: column; gap: 8px; }
+.cm-item { display: flex; gap: 14px; align-items: center; padding: 12px 14px; border-radius: 12px; background: var(--surface-2); }
+.cm-item .title { font-weight: 600; }
+.cm-item .chips { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+.cm-item .meta { color: var(--muted); font-size: 12px; margin-top: 6px; }
+.cm-actions { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+.cm-nofile { color: var(--muted); font-size: 12px; }
+.cm-game { color: var(--muted); font-size: 12.5px; }
+
+/* Arayüz dili seçici */
+.lang-pick { position: relative; }
+.lang-btn { width: auto !important; padding: 0 12px; gap: 6px; display: inline-flex; align-items: center; font-weight: 600; font-size: 12.5px; }
+.lang-btn.loading svg.i { animation: spin 1s linear infinite; }
+.lang-menu { position: absolute; right: 0; top: calc(100% + 8px); width: 220px; max-height: 60vh; overflow: auto; z-index: 70;
+             background: #1c1d20; border: 1px solid var(--line); border-radius: 14px; padding: 6px; box-shadow: 0 20px 60px rgba(0, 0, 0, .5); }
+.lang-head { color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; padding: 8px 10px 6px; }
+.lang-menu button { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 10px;
+                    border-radius: 9px; color: var(--text); font-size: 13.5px; text-align: left; }
+.lang-menu button:hover { background: var(--surface-2); }
+.lang-menu button.on { color: var(--lime); }
+.lang-menu button svg.i { width: 15px; height: 15px; }
+
+.toplinks button { white-space: nowrap; }

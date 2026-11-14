@@ -8,27 +8,19 @@ Unreal Engine oyunlarında yer alan .locres (Localization Resource),
 from __future__ import annotations
 
 import json
-import os
 import re
-import shutil
-import struct
-import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
+from typing import Dict, List, Optional, Union
 
-from pylocres import LocresFile, Namespace, Entry, LocresVersion
+from pylocres import LocresFile
 
 from engine_common import (
-    BackupManager,
     Glossary,
     LogFn,
     ProgressFn,
     ProgressTracker,
-    QAChecker,
     TranslationCache,
-    cache_file_for,
-    load_glossary,
 )
 
 # Unreal Engine metinlerindeki etiketler ve format belirteçleri
@@ -282,57 +274,6 @@ def extract_texts_unreal(
     return items
 
 
-def backup_unreal_assets(info: UnrealGameInfo, log: LogFn = print) -> Optional[Path]:
-    """Değiştirilecek Unreal Engine dosyalarının yedeğini alır."""
-    backup_root = info.root / "_turkish_backups"
-    backup_root.mkdir(parents=True, exist_ok=True)
-    timestamp = time.strftime("%Y%m%d_%H%M%S")
-    backup_dir = backup_root / f"unreal_backup_{timestamp}"
-    backup_dir.mkdir(parents=True, exist_ok=True)
-
-    backed_up = 0
-    for locres in info.locres_files:
-        rel = locres.relative_to(info.root)
-        dest = backup_dir / rel
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(locres, dest)
-        backed_up += 1
-
-    log(f"Unreal Engine yedekleme oluşturuldu: {backup_dir.name} ({backed_up} dosya)")
-    return backup_dir
-
-
-def restore_unreal_backup(info: UnrealGameInfo, log: LogFn = print) -> bool:
-    """En son alınan Unreal Engine yedeğini geri yükler."""
-    backup_root = info.root / "_turkish_backups"
-    if not backup_root.exists():
-        log("Geri yüklenecek yedek klasörü bulunamadı.")
-        return False
-
-    backups = sorted(
-        [d for d in backup_root.iterdir() if d.is_dir() and d.name.startswith("unreal_backup_")],
-        key=lambda d: d.name,
-        reverse=True,
-    )
-    if not backups:
-        log("Geri yüklenecek geçerli bir Unreal Engine yedeği bulunamadı.")
-        return False
-
-    latest = backups[0]
-    log(f"Yedek geri yükleniyor: {latest.name}")
-    restored = 0
-    for f in latest.rglob("*"):
-        if f.is_file():
-            rel = f.relative_to(latest)
-            target = info.root / rel
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(f, target)
-            restored += 1
-
-    log(f"Geri yükleme tamamlandı. Toplam {restored} dosya eski haline getirildi.")
-    return True
-
-
 def translate_texts_unreal(
     unique_sources: List[str],
     cache_path: Path,
@@ -500,50 +441,3 @@ def write_translations_unreal(
 
     return modified_count
 
-
-def qa_unreal_translation(
-    translations: Dict[str, str],
-    log: LogFn = print,
-) -> Dict[str, int]:
-    """Unreal Engine çevirilerinde etiket ve değişken koruma testi."""
-    qa_results = {
-        "checked": 0,
-        "empty": 0,
-        "tag_mismatch": 0,
-        "valid": 0,
-    }
-
-    for orig, trans in translations.items():
-        qa_results["checked"] += 1
-        if not trans or not trans.strip():
-            qa_results["empty"] += 1
-            continue
-
-        orig_tags = PROTECTED_UNREAL.findall(orig)
-        trans_tags = PROTECTED_UNREAL.findall(trans)
-        if len(orig_tags) != len(trans_tags):
-            qa_results["tag_mismatch"] += 1
-        else:
-            qa_results["valid"] += 1
-
-    return qa_results
-
-
-def create_unreal_mod_pak(
-    info: UnrealGameInfo,
-    mod_files_dir: Path,
-    mod_name: str = "TurkishLanguage_P",
-    log: LogFn = print,
-) -> Optional[Path]:
-    """
-    Unreal Engine için otomatik '_P.pak' mod paketi oluşturma rehberi / aracı.
-    Unreal Engine, 'Paks/' klasöründeki '*_P.pak' (Patch PAK) dosyalarını
-    orijinal oyun dosyalarının üzerine otomatik olarak bindirir!
-    """
-    if not info.paks_dir or not info.paks_dir.exists():
-        log("Paks klasörü bulunamadı.")
-        return None
-
-    pak_target = info.paks_dir / f"{mod_name}.pak"
-    log(f"Unreal Engine Patch PAK hedefi: {pak_target}")
-    return pak_target

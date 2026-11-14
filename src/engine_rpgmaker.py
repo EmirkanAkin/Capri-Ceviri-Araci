@@ -1,30 +1,14 @@
 import json
-import os
 import re
-import struct
-import shutil
 import io
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Union
 
 # engine_common modülünden gerekli içe aktarımlar
 from engine_common import (
-    TranslationCache,
-    Glossary,
     QAChecker,
-    ProgressTracker,
-    FontChecker,
-    BackupManager,
-    LogFn,
-    ProgressFn,
-    BUILTIN_GLOSSARY,
-    mask_text,
-    unmask_text,
-    protected_content_valid,
-    load_glossary,
-    encode_literal,
-    decode_literal
+    LogFn
 )
 
 # RPG Maker kontrol kodları
@@ -339,14 +323,7 @@ class MarshalParser:
         except EOFError:
             return None
 
-def parse_rvdata2(data: bytes) -> Any:
-    """Ruby Marshal (.rvdata2) formatını Python objelerine çevirir."""
-    parser = MarshalParser(data)
-    return parser.parse()
 
-def serialize_rvdata2(obj: Any) -> bytes:
-    """Python objelerini tekrar Ruby Marshal formatına çevirir."""
-    raise NotImplementedError("Tam serialization şu an için desteklenmiyor. Metin değişimi JSON üzerinden yapılmalıdır.")
 
 @dataclass
 class ExtractedText:
@@ -709,101 +686,7 @@ def qa_rpgmaker_translation(data_dir: Path, engine_type: str) -> Dict[str, int]:
     errors = {'missing_control_codes': 0, 'length_ratio_violation': 0}
     return errors
 
-def scan_rpgmaker_image_ui(game_info: RPGMakerGameInfo) -> dict:
-    """Çevrilemeyen resim bazlı UI öğelerini tarar."""
-    img_dir = game_info.root / "img" if game_info.engine_type in ['mv', 'mz'] else game_info.root / "Graphics"
-    found_images = []
-    
-    if img_dir.exists():
-        for ext in ['*.png', '*.jpg']:
-            for img in img_dir.rglob(ext):
-                if 'system' in img.parent.name.lower() or 'menu' in img.parent.name.lower():
-                    found_images.append(str(img.relative_to(game_info.root)))
-                    
-    return {"ui_images_found": len(found_images), "paths": found_images}
 
-def translate_rpgmaker_game(
-    selected: Union[str, Path],
-    model_dir: Path,
-    cache_path: Path,
-    glossary_path: Optional[Path] = None,
-    log: LogFn = print,
-    progress: Optional[ProgressFn] = None,
-    model_kind: str = 'opus',
-    backup: bool = True,
-) -> Dict[str, int]:
-    """Tam RPG Maker çeviri akışı."""
-    game_info = detect_rpgmaker_game(selected)
-    log(f"Oyun tespit edildi: {game_info.version_label}")
-    
-    if backup:
-        bm = BackupManager()
-        backup_path = bm.create_backup(game_info.data_dir, game_info.root / "Backup", "pre_translate")
-        log(f"Yedek oluşturuldu: {backup_path}")
-        
-    cache = TranslationCache(cache_path)
-    cache.load()
-    
-    glos = Glossary()
-    glos.entries.update(BUILTIN_GLOSSARY)
-    glos.entries.update(RPGM_BUILTIN_GLOSSARY)
-    if glossary_path:
-        glos.entries.update(load_glossary(glossary_path, {}))
-        
-    if game_info.engine_type in ['mv', 'mz']:
-        extracted = extract_texts_mv_mz(game_info.data_dir, log)
-    else:
-        extracted = extract_texts_vxace(game_info.data_dir, log)
-        
-    if not extracted:
-        log("Çevrilecek metin bulunamadı.")
-        return {"extracted": 0, "translated": 0, "changed": 0, "qa_errors": 0}
-
-    # Benzersiz metinleri topla
-    unique_texts = list(dict.fromkeys(
-        item.original for item in extracted if item.original.strip()
-    ))
-    log(f"Toplam {len(extracted)} metin, {len(unique_texts)} benzersiz → çeviri motoru başlatılıyor...")
-
-    # TranslationEngine'i RPG Maker pattern'iyle başlat
-    engine = TranslationEngine(
-        model_dir=model_dir,
-        model_kind=model_kind,
-        cache=cache,
-        glossary=glos,
-        protected_pattern=PROTECTED_RPGM,
-        log=log,
-    )
-
-    tracker = ProgressTracker()
-
-    def _progress_cb(done: int, total: int) -> None:
-        if progress:
-            progress(done, total)
-
-    # Toplu çeviri yap
-    translations = engine.translate_batch(
-        unique_texts,
-        progress=_progress_cb,
-        tracker=tracker,
-    )
-    cache.save()
-
-    log(f"{len(translations)} metin çevrildi. Dosyalara yazılıyor...")
-
-    if game_info.engine_type in ['mv', 'mz']:
-        changed = write_translations_mv_mz(game_info.data_dir, translations, log)
-    else:
-        changed = write_translations_vxace(game_info.data_dir, translations, log)
-        
-    qa_results = qa_rpgmaker_translation(game_info.data_dir, game_info.engine_type)
-    
-    return {
-        "extracted": len(extracted),
-        "translated": len(translations),
-        "changed": changed,
-        "qa_errors": qa_results.get('missing_control_codes', 0)
-    }
 
 
 if __name__ == "__main__":

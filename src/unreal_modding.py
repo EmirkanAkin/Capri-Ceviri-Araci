@@ -7,14 +7,10 @@ Unreal Engine oyunlarında:
 """
 from __future__ import annotations
 
-import json
-import os
-import shutil
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 
 from engine_common import LogFn
-from engine_unreal import UnrealGameInfo, detect_unreal_game
+from engine_unreal import UnrealGameInfo
 
 
 def setup_unreal_mods_folder(info: UnrealGameInfo, log: LogFn = print) -> Path:
@@ -31,40 +27,6 @@ def setup_unreal_mods_folder(info: UnrealGameInfo, log: LogFn = print) -> Path:
     target.mkdir(parents=True, exist_ok=True)
     log(f"Unreal Engine ~mods klasörü hazır: {target}")
     return target
-
-
-def stage_unreal_localization_mod(
-    info: UnrealGameInfo,
-    locres_data: bytes,
-    target_lang: str = "tr",
-    log: LogFn = print,
-) -> Path:
-    """
-    Çevrilen .locres dosyasını Unreal Engine mod yapısına uygun şekilde hazırlar.
-    Oyun doğrudan açık dosya okuyabiliyorsa Content/Localization/... altına yerleştirir.
-    """
-    # Standart yol: Content/Localization/Game/{target_lang}/Game.locres
-    target_loc_dir = info.content_dir / "Localization" / info.game_project_name / target_lang
-    target_loc_dir.mkdir(parents=True, exist_ok=True)
-    out_file = target_loc_dir / f"{info.game_project_name}.locres"
-    out_file.write_bytes(locres_data)
-    log(f"Lokalizasyon modu hazırlandı: {out_file}")
-    return out_file
-
-
-def is_ue4ss_installed(info: UnrealGameInfo) -> bool:
-    """Oyunda UE4SS kurulu olup olmadığını kontrol eder."""
-    bin_dir = info.root / info.game_project_name / "Binaries" / "Win64"
-    if not bin_dir.exists():
-        bin_dir = info.root / "Binaries" / "Win64"
-    if not bin_dir.exists():
-        return False
-
-    return (
-        (bin_dir / "UE4SS.dll").exists()
-        or (bin_dir / "dwmapi.dll").exists()
-        or (bin_dir / "dxgi.dll").exists()
-    )
 
 
 def generate_ue4ss_translation_config(

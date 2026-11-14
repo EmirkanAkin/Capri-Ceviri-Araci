@@ -13,7 +13,6 @@ import difflib
 import hashlib
 import io
 import json
-import os
 import re
 import shutil
 import struct
@@ -885,14 +884,6 @@ NLLB_LANG_CODES = {
 }
 
 
-def model_weights_file(model_dir: Path) -> Path | None:
-    """Model ağırlık dosyası: fp16 safetensors (küçültülmüş) ya da orijinal pytorch_model.bin."""
-    for name in ("model.safetensors", "pytorch_model.bin"):
-        if (model_dir / name).is_file():
-            return model_dir / name
-    return None
-
-
 class TranslationEngine:
     """
     Yerel çeviri motoru — OPUS veya NLLB modeli ile toplu çeviri.
@@ -1409,11 +1400,4 @@ class OllamaTranslationEngine:
             self.cache.save()
         return results
 
-    def check_model_available(self) -> bool:
-        available = ollama_list_models()
-        return any(
-            self.model_name == m
-            or self.model_name.split(":")[0] == m.split(":")[0]
-            for m in available
-        )
 

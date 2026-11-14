@@ -18,6 +18,7 @@ import os
 import queue
 import re
 import socket
+import shutil
 import sys
 import threading
 import time
@@ -34,12 +35,13 @@ import providers as prov
 from backup_system import create_game_backup, list_game_backups, restore_game_backup
 from engine_common import Glossary, TranslationCache, TranslationCancelled, cache_file_for
 from languages import get_all_source_languages, get_all_target_languages
+TARGET_CODES = {c for _l, c in get_all_target_languages()}
 from library import ProjectLibrary, resolve_art
 from progress import LiveEta, SpeedStore, estimate, estimate_cost, format_duration, format_rate
 from languages import renpy_language_name
 from user_errors import describe_error
 
-APP_VERSION = "1.0.4"
+APP_VERSION = "1.0.5"
 from paths import APP_DIR, FROZEN, GLOSSARY_DIR, ICON_FILE, RES_DIR, WEB_DIR, seed_user_files
 SOUNDS_DIR = RES_DIR / "assets"
 import gpu_runtime
@@ -74,25 +76,24 @@ DEFAULT_SETTINGS = {
     "ocr_hotkey": "Ctrl+Shift+T", "pin_hotkey": "Ctrl+Shift+Y", "ocr_model": "",
     "ocr_interval": 350, "ocr_place": "below",
     "update_repo": "", "update_check": True,
-    "scan_on_start": True, "scan_folders": [], "scan_dismissed": [], "sound": True,
+    "scan_on_start": True, "scan_folders": [], "scan_dismissed": [], "sound": True, "notify": True, "memory": True, "ui_language": None,
 }
 # Güncelleme penceresinde gösterilir; ayrıntılar CHANGELOG.md'de
 WHATS_NEW = [
-    "Çeviri bitince Capri'ye özel ince bir ses (ayarlardan kapatılabilir)",
-    "Ren'Py: DLC/Live2D içeren oyunlarda \"translate komutu başarısız\" hatası düzeltildi",
-    "Ren'Py: Rusça, Japonca gibi dillerde yazılmış oyunların metin sayısı artık doğru",
-    "Ren'Py: oyunun paketli İngilizcesi varsa çeviri ondan yapılıyor",
-    "Gemini çevirisi yaklaşık 5 kat hızlı; yarıda takılma düzeltildi",
-    "İlerleme çubuğu sürekli ilerliyor, kalan süre gerçekçi",
-    "Unity oyunlarında yazma hatası (UnityPy.resources) düzeltildi",
-    "Güncelleme artık siyah pencere açmadan arayüzden kuruluyor",
-    "GPU paneli \"Algılanıyor\"da kalmıyor; Durdur düğmesi yenilendi",
-    "Oyna düğmesi, sözlük içe/dışa aktarma, yama paylaşma",
+    "Unity: Utage ve I2 Localization oyunları artık doğrudan çevriliyor (BepInEx gerekmeden)",
+    "Unity: oyunun fontunda olmayan harfler kutu yerine en yakın harfle yazılıyor (ğ→g)",
+    "Arayüz dili: 17 dil, hata mesajları dahil; seçtiğin dil çeviri hedefi de olur",
+    "Topluluk yamaları: paylaşılan çevirileri uygulama içinden bul, indir ve uygula",
+    "Ortak çeviri belleği: \"Save\", \"Options\" gibi metinler her oyunda yeniden çevrilmez",
+    "Görev çubuğunda çeviri ilerlemesi; bitince Windows bildirimi (arka plandayken)",
+    "Capri ikinci kez açılınca yeni pencere açılmaz, açık olan öne gelir",
+    "Taramada Unity ve Unreal oyunlarının satır sayısı da görünüyor",
+    "Çeviri ayarları sadeleştirildi; dar pencerede üst üste binmiyor",
 ]
 UI_PORT = 42001
 NOTO = "https://github.com/notofonts/noto-cjk/raw/main/Sans/SubsetOTF/{0}/NotoSans{0}-Regular.otf"
 NOTO_FONTS = {"ja": NOTO.format("JP"), "zh-CN": NOTO.format("SC"), "zh-TW": NOTO.format("TC"), "ko": NOTO.format("KR")}
-ANALYSIS_VERSION = 2     # analiz biçimi değişince eski kayıtlar yok sayılır
+ANALYSIS_VERSION = 3     # analiz biçimi değişince eski kayıtlar yok sayılır (3: Utage/I2/TMP tabloları)
 LEARN_MIN_LINES, LEARN_MIN_SECONDS = 20, 5.0
 OCR_TITLES = {"select": "Capri OCR Seçim", "popup": "Capri OCR Sonuç", "pin": "Capri OCR Sabit"}
 PATCH_SUFFIX = ".capripatch"
@@ -176,9 +177,23 @@ def parse_glossary_file(path: Path) -> List[List[str]]:
     return [[str(a), str(b)] for a, b in items if not str(a).startswith("_") and str(a).strip() and str(b).strip()]
 
 
+MEMORY_LIMIT = 20_000
+_UI_TEXT = re.compile(r"[A-Za-z][A-Za-z'&\- ]*")
+
+
+def is_ui_text(source: str) -> bool:
+    """Oyunlar arası paylaşılabilecek kısa arayüz metni mi? ("Save", "Load Game", "Start Day")
+    Cümle, noktalama, etiket ve değişken içerenler bağlama göre değişebileceğinden paylaşılmaz."""
+    text = source.strip()
+    return (text == source and 2 <= len(text) <= 24 and len(text.split()) <= 3
+            and bool(_UI_TEXT.fullmatch(text)) and text[0].isupper())
+
+
 def quick_line_count(game: Dict[str, Any]) -> Optional[int]:
-    """Tarama önerileri için ucuz satır tahmini: Ren'Py betikleri ve RPG Maker MV/MZ verisi (Unity/Unreal analizde)."""
+    """Tarama önerileri için satır tahmini (salt okunur). Unity'de açık metin tabloları, Utage ve I2 okunur;
+    Unreal'da yalnızca açık .locres dosyaları (paketli olanlar dış araç gerektirir, analizde sayılır)."""
     root = Path(game["path"])
+    quiet = lambda s: None   # noqa: E731
     if game["engine"] == "renpy":
         game_dir = root / "game" if (root / "game").is_dir() else root
         return estimate_renpy_text(game_dir).get("unique") or None
@@ -186,7 +201,17 @@ def quick_line_count(game: Dict[str, Any]) -> Optional[int]:
         from engine_rpgmaker import detect_rpgmaker_game, extract_texts_mv_mz
         info = detect_rpgmaker_game(root)
         if info.engine_type in ("mv", "mz"):
-            return len({t.original for t in extract_texts_mv_mz(info.data_dir, log=lambda s: None)}) or None
+            return len({t.original for t in extract_texts_mv_mz(info.data_dir, log=quiet)}) or None
+    if game["engine"] == "unity":
+        from engine_unity import detect_unity_game, extract_texts_unity
+        info = detect_unity_game(root)
+        if info is not None:
+            return len({t.original for t in extract_texts_unity(info, log=quiet) if t.original.strip()}) or None
+    if game["engine"] == "unreal":
+        from engine_unreal import detect_unreal_game, extract_texts_unreal
+        info = detect_unreal_game(root)
+        if info is not None and info.locres_files:
+            return len({t.original for t in extract_texts_unreal(info, log=quiet) if t.original.strip()}) or None
     return None
 
 
@@ -374,7 +399,7 @@ def _write_json(path: Path, data: Any, indent: Any = 2) -> None:
 
 
 def _n(value: Any) -> str:
-    """Türkçe binlik ayırıcı: 21529 → 21.529"""
+    """Türkçe binlik ayırıcı: 21529 → 21.529 (arayüz başka dildeyse i18n.js sayıyı o dilin biçimine çevirir)"""
     return f"{int(value or 0):,}".replace(",", ".")
 
 
@@ -394,7 +419,14 @@ def _resolve_shortcut(path: str) -> Optional[str]:
 def load_settings() -> Dict[str, Any]:
     settings = dict(DEFAULT_SETTINGS)
     settings["model"] = prov.load_provider_config().active_provider or "gemini"
+    first_run = not SETTINGS_FILE.exists()
     settings.update(_read_json(SETTINGS_FILE, {}))
+    if not settings.get("ui_language"):
+        # Yeni kullanıcı: arayüz ve hedef dil Windows'un dilinden. Mevcut kullanıcı Türkçe kullanıyordu: değişmez.
+        import i18n
+        settings["ui_language"] = i18n.system_language() if first_run else "tr"
+        if first_run and settings["ui_language"] in TARGET_CODES:
+            settings["target"] = settings["ui_language"]
     return settings
 
 
@@ -553,6 +585,7 @@ class CapriBridge:
         self._library = ProjectLibrary()
         self._library.recover_interrupted()
         self._settings = load_settings()
+        self._ui_dict: Dict[str, str] = {}      # arayüz dili sözlüğü (Windows bildirimleri de çevrilir)
         self._speeds = SpeedStore(DATA_DIR / "speeds_v2.json")   # v2: Gemini hızlandı, eski ölçümler geçersiz
         self._editor_cache: Optional[Tuple[Tuple[str, int], Dict[str, str], Dict[str, bool]]] = None
         self._analysis_thread: Optional[threading.Thread] = None
@@ -565,6 +598,9 @@ class CapriBridge:
         self._cancel = threading.Event()
         self._eta = LiveEta()
         self._eta_prior: Optional[float] = None    # saniye/satır: ilk parti bitene kadarki tahmin
+        from taskbar import TaskbarProgress
+        from ocr import own_window
+        self._taskbar = TaskbarProgress(lambda: own_window("Capri"))   # görev çubuğu simgesindeki ilerleme
         self._progress_unit = "satır"
         self._confirms: Dict[str, Tuple[threading.Event, List[bool]]] = {}
         self._art: Dict[str, Dict[str, Any]] = {}
@@ -621,6 +657,7 @@ class CapriBridge:
         if done <= 0 or self._eta.total != max(total, 1) or done < self._eta.done:
             self._eta.start(total)
         self._eta.update(done)
+        self._taskbar.value(done, total)
         eta = self._eta.eta_seconds(self._eta_prior)
         self._ui.progress({
             "done": done,
@@ -636,14 +673,20 @@ class CapriBridge:
     def _stage(self, key: str, label: str) -> None:
         """Çevirinin hangi adımda olduğunu arayüze bildirir (Yedek · Hazırlık · Çeviri · Yazma)."""
         self._ui.clear_progress()
+        self._taskbar.busy()
         self._ui.emit("stage", {"key": key, "label": label})
         self._log(label)
 
-    def _attention(self, sound: str = "done") -> None:
-        """Çeviri bitti/başarısız: Capri'nin ince bildirim sesi; uygulama arka plandaysa görev çubuğu da yanıp söner."""
-        from ocr import attention, play_sound
+    def _attention(self, sound: str = "done", title: str = "", text: str = "") -> None:
+        """Çeviri bitti/başarısız: Capri'nin ince bildirim sesi; uygulama arka plandaysa görev çubuğu yanıp söner
+        ve (ayarlarda açıksa) Windows bildirimi gösterilir."""
+        from ocr import attention, balloon, play_sound
         if self._settings.get("sound", True):
             play_sound(SOUNDS_DIR / f"{sound}.wav")
+        if title and self._settings.get("notify", True):
+            import i18n
+            lang = self._settings.get("ui_language") or "tr"
+            balloon(i18n.translate_text(title, self._ui_dict, lang), i18n.translate_text(text, self._ui_dict, lang), ICON_FILE)
         attention("Capri")
 
     def _notice(self, text: str) -> None:
@@ -718,22 +761,28 @@ class CapriBridge:
         except Exception:
             pass
         self._ui.emit("busy", {"busy": True, "label": label})
+        self._taskbar.busy()
 
         def work():
+            outcome = self._taskbar.clear
             try:
                 fn()
             except TranslationCancelled:
+                outcome = self._taskbar.paused
                 self._task_cancelled(label)
             except UserError as exc:
+                outcome = self._taskbar.error
                 self._task_failed(label, {"title": f"{label} yapılamadı", "hint": str(exc), "detail": "",
                                           "action": getattr(exc, "action", None)}, "warn")
             except Exception as exc:
+                outcome = self._taskbar.error
                 self._safely(lambda: self._log(traceback.format_exc()))
                 self._task_failed(label, describe_error(exc), "error")
             finally:
                 self._translating = False
                 with self._busy_lock:
                     self._busy = False
+                self._safely(outcome)
                 self._ui.emit("busy", {"busy": False})
 
         threading.Thread(target=work, daemon=True, name=label).start()
@@ -767,7 +816,7 @@ class CapriBridge:
             self._safely(lambda: self._emit_project(game["root"]))
         self._safely(lambda: self._ui.emit("task_error", {"label": label, **info}))
         if self._translating:
-            self._safely(lambda: self._attention("error"))
+            self._safely(lambda: self._attention("error", info["title"], info.get("hint", "")))
         self._safely(lambda: self._status(info["title"], tone))
         self._safely(lambda: self._notify(info["title"], info["hint"], tone, "alert", info.get("action")))
 
@@ -794,6 +843,44 @@ class CapriBridge:
     def _cache_path(self, model: Optional[str] = None) -> Path:
         game = self._require_game()
         return cache_path_for(Path(game["root"]), game["type"], model or self._settings["model"], self._settings["target"])
+
+    # ── Oyunlar arası ortak çeviri belleği (kısa arayüz metinleri) ─────────────────────────
+    def _memory_file(self) -> Path:
+        return DATA_DIR / "memory" / f"ui_{self._settings['target']}.json"
+
+    def _seed_memory(self, cache_path: Path) -> int:
+        """Başka oyunlarda çevrilmiş arayüz metinlerini bu oyunun önbelleğine ekler (var olanlara dokunmaz)."""
+        if not self._settings.get("memory", True):
+            return 0
+        memory = _read_json(self._memory_file(), {})
+        if not isinstance(memory, dict) or not memory:
+            return 0
+        cache = _read_json(cache_path, {})
+        if not isinstance(cache, dict):
+            return 0
+        added = {source: text for source, text in memory.items() if source not in cache}
+        if added:
+            cache.update(added)
+            _write_json(cache_path, cache)
+            self._log(f"Ortak çeviri belleği: {_n(len(added))} arayüz metni hazır (başka oyunlarda çevrilmişti)")
+        return len(added)
+
+    def _learn_memory(self, cache_path: Path) -> int:
+        """Bu oyunda çevrilen kısa arayüz metinlerini ortak belleğe ekler."""
+        if not self._settings.get("memory", True):
+            return 0
+        cache = _read_json(cache_path, {})
+        memory = _read_json(self._memory_file(), {})
+        if not isinstance(cache, dict) or not isinstance(memory, dict):
+            return 0
+        new = {s: t for s, t in cache.items()
+               if isinstance(t, str) and t and t != s and s not in memory and is_ui_text(s)}
+        if new:
+            memory.update(new)
+            if len(memory) > MEMORY_LIMIT:            # en eskiler düşer
+                memory = dict(list(memory.items())[-MEMORY_LIMIT:])
+            _write_json(self._memory_file(), memory)
+        return len(new)
 
     def _record_review(self, cache_path: Path, failed: set) -> None:
         """Geçerli çeviri alınamayan satırları editörde incelenmek üzere kaydeder."""
@@ -844,6 +931,7 @@ class CapriBridge:
             },
             "models": {k: prov.get_offline_model_status(k) for k in ("opus", "nllb")},
             "whats_new": WHATS_NEW,
+            "ui": self._ui_payload(),
             "scan": self._scan_payload(),
             "model_labels": MODEL_LABELS,
             "full_models": list(FULL_TRANSLATION_MODELS),
@@ -896,6 +984,97 @@ class CapriBridge:
         uses_local = self._ocr_model() in LOCAL_MODELS or self._settings["model"] in LOCAL_MODELS
         if self._gpu["cuda"] and self._settings.get("gpu_auto") and uses_local:
             self.optimize_gpu(preload=True, silent=True)
+
+    # ── Arayüz dili ──────────────────────────────────────────────────────────
+    def _ui_dictionaries(self):
+        import i18n
+        return i18n.Dictionaries(DATA_DIR / "ui_lang")
+
+    def _ui_payload(self) -> Dict[str, Any]:
+        """Arayüz dili ve sözlüğü. Henüz üretilmemiş bir dilse İngilizce gönderilir ve "pending" işaretlenir."""
+        import i18n
+        code = self._settings.get("ui_language") or "tr"
+        dictionary = self._ui_dictionaries().get(code)
+        self._ui_dict = dictionary if dictionary is not None else dict(i18n.EN)
+        return {"language": code, "languages": i18n.ui_languages(), "dict": self._ui_dict, "pending": dictionary is None}
+
+    def ui_dictionary(self) -> Dict[str, Any]:
+        """Ekran çevirisi pencereleri ana pencereyle aynı arayüz dilini kullanır."""
+        code = self._settings.get("ui_language") or "tr"
+        return {"language": code, "dict": getattr(self, "_ui_dict", None) or {}}
+
+    def _tr(self, text: str) -> str:
+        """Python tarafında doğrudan ekrana yazılan (çeviriden muaf alanlardaki) metinler için arayüz dili."""
+        import i18n
+        return i18n.translate_text(text, getattr(self, "_ui_dict", None) or {}, self._settings.get("ui_language") or "tr")
+
+    def _push_ui_language(self) -> None:
+        """Açık ekran çevirisi pencerelerine yeni sözlüğü gönderir."""
+        payload = json.dumps(self.ui_dictionary(), ensure_ascii=False)
+        for win in (getattr(self, "_ocr_win", None) or {}).values():
+            try:
+                win.evaluate_js(f"(function(r){{ if (window.I18N) I18N.set(r.language, r.dict); }})({payload})")
+            except Exception:
+                pass
+
+    def _ui_translator(self, code: str):
+        """Arayüz metinlerini İngilizceden hedef dile çeviren bulut motoru (anahtarı olan ilk sağlayıcı)."""
+        from engine_renpy import load_gemini_api_key, translate_with_gemini
+        cfg = prov.load_provider_config()
+        keys = {"gemini": bool(cfg.gemini_keys or load_gemini_api_key()), "openai": bool(cfg.openai_key),
+                "anthropic": bool(cfg.anthropic_key), "deepl": bool(cfg.deepl_key)}
+        order = [self._settings["model"]] + ["gemini", "openai", "anthropic", "deepl"]
+        provider = next((p for p in order if keys.get(p)), None)
+        if provider is None:
+            return None
+        cache_path = DATA_DIR / "ui_lang" / f"_{code}_cache.json"
+        engine = "software user interface (buttons, menus, short messages)"
+
+        def run(lines: List[str]) -> Dict[str, str]:
+            cache: Dict[str, str] = {}
+            if provider == "gemini":
+                translate_with_gemini(lines, cache, cache_path, load_gemini_api_key(), log=self._log,
+                                      target_lang=code, source_lang="en", game_engine=engine)
+            else:
+                prov.translate_with_cloud(provider, lines, cache, cache_path, log=self._log, game_engine=engine,
+                                          target_lang=code, source_lang="en")
+            return cache
+        return run
+
+    def set_ui_language(self, code: str) -> Dict[str, Any]:
+        """Arayüz dilini değiştirir; hedef dil de (destekleniyorsa) aynı dile geçer: ENG → Almanca gibi."""
+        import i18n
+        code = i18n.normalize(code) or "en"
+        self._settings["ui_language"] = code
+        target_changed = code in TARGET_CODES and self._settings.get("target") != code
+        if target_changed:
+            self._settings["target"] = code
+            if self._settings.get("source") == code:
+                self._settings["source"] = "auto"
+        save_settings(self._settings)
+        error = None
+        dictionaries = self._ui_dictionaries()
+        dictionary = dictionaries.get(code)
+        if dictionary is None:
+            translator = self._ui_translator(code)
+            if translator is None:
+                error = ("Bu dilin arayüzü için bir bulut çeviri anahtarı gerekiyor (Gemini, OpenAI, Claude veya DeepL). "
+                         "Şimdilik İngilizce gösteriliyor.")
+            else:
+                self._status("Arayüz çevriliyor…")
+                try:
+                    dictionary, failed = dictionaries.build(code, translator)
+                    self._log(f"Arayüz dili {code}: {len(dictionary) - failed}/{len(dictionary)} metin çevrildi")
+                except Exception as exc:
+                    self._log(f"Arayüz çevrilemedi: {exc}")
+                    error = describe_error(exc)["title"]
+        self._ui_dict = dictionary if dictionary is not None else dict(i18n.EN)
+        threading.Thread(target=self._push_ui_language, daemon=True, name="ui-lang").start()
+        if target_changed and self._game and self._game.get("analysis"):
+            game = self._game
+            threading.Thread(target=lambda: self._emit_estimate(game), daemon=True, name="estimate").start()
+        return {"ok": error is None, "error": error, "language": code, "dict": self._ui_dict,
+                "settings": self._settings, "target_changed": target_changed}
 
     def update_settings(self, patch: Dict[str, Any]) -> Dict[str, Any]:
         hotkeys_changed = any(k in patch and patch[k] != self._settings.get(k) for k in ("ocr_hotkey", "pin_hotkey"))
@@ -1139,6 +1318,11 @@ class CapriBridge:
         kind = game["type"]
         if kind == "unity":
             paths = [info.resources_assets_path, Path(info.root) / "BepInEx", info.streaming_assets_dir]
+            try:   # Utage/I2 tabloları sharedassets/level dosyalarında olabilir
+                from engine_unity import _table_asset_files
+                paths += list(_table_asset_files(info))
+            except Exception:
+                pass
         elif kind == "unreal":
             import unreal_pak
             paths = [*info.pak_files, *info.locres_files, unreal_pak.repak_path()]
@@ -1281,8 +1465,12 @@ class CapriBridge:
             f"Çevrilebilir metin: {_n(len(texts))} satır ({_n(unique)} benzersiz)",
         ]
         import bepinex_installer
-        needed = not texts or info.runtime == "IL2CPP"
+        utage = sum(1 for t in texts if t.format_type == "utage")
+        needed = not texts or (info.runtime == "IL2CPP" and not utage)
         installed = bepinex_installer.is_installed(info.root)
+        if utage:
+            notes.append(f"Utage senaryosu dosyada açık: {_n(utage)} satır doğrudan çevrilir (BepInEx gerekmez). "
+                         "Oyunda dil olarak English seçilince Türkçe görünür.")
         if needed:
             notes.append("Metinler dosyada açık değil: çeviri BepInEx + XUnity.AutoTranslator ile uygulanır"
                          + (" (kurulu)." if installed else " — tek tıkla kurulabilir."))
@@ -1296,7 +1484,13 @@ class CapriBridge:
             "advice": ([{"tone": "info", "text": "Metinler oyun dosyalarında açık değil. Çeviri, oyun içinde BepInEx aracılığıyla gösterilir"
                                                  + ("; BepInEx bu oyunda kurulu." if installed else "; kurulum için çeviri sırasında iznin istenir.")}]
                        if needed else [])
-                      + ([{"tone": "warn", "text": "Oyunun fontunda bazı Türkçe harfler yok; bu harfler oyunda boş ya da farklı görünebilir."}]
+                      + ([{"tone": "info", "text": "Utage senaryosu bulundu: çeviri oyunun İngilizce metninin yerine yazılır. "
+                                                   "Oyunda dil seçeneğinden English'i seçince Türkçe görünür."}] if utage else [])
+                      + ([{"tone": "warn", "text": (
+                            f"Oyunun fontunda {' '.join(info.missing_font_chars)} harfleri yok. Kutu olarak görünmesinler diye "
+                            "Capri bunları en yakın harfle yazar (ğ→g, ş→s, ı→i); diğer harfler olduğu gibi kalır."
+                            if info.tmp_glyphs else
+                            "Oyunun fontunda bazı Türkçe harfler yok; bu harfler oyunda boş ya da farklı görünebilir.")}]
                          if not info.font_turkish_support else []),
             "bepinex": {"needed": needed, "installed": installed,
                         "managed": bepinex_installer.manifest_file(Path(info.root)) is not None},
@@ -1482,10 +1676,12 @@ class CapriBridge:
                 self._eta_prior = plan["seconds"] / plan["pending"] if plan["pending"] else None
             started = time.monotonic()
             failed: set = set()
+            self._seed_memory(self._cache_path())          # başka oyunlarda çevrilmiş arayüz metinleri
             written = getattr(self, f"_translate_{game['type']}")(game, failed)
             took = int(time.monotonic() - started)
             self._learn_speed(game)
             self._record_review(self._cache_path(), failed)
+            self._safely(lambda: self._learn_memory(self._cache_path()))
             note = game.pop("result_note", None)
             if note and not written:     # köprü kuruldu ama henüz yazılacak satır yok: "tamamlandı" denmez
                 self._library.upsert(game["root"], status="analyzed", last_action="BepInEx kuruldu", last_action_at=time.time())
@@ -1511,7 +1707,7 @@ class CapriBridge:
             message = f"{_n(written)} satır oyuna yazıldı · {format_duration(max(took, 1))}"
             self._status(message, "ok")
             self._notify("Çeviri tamamlandı", f"{game['title']} · {message}", "ok", "check")
-            self._safely(self._attention)
+            self._safely(lambda: self._attention("done", "Çeviri tamamlandı", f"{game['title']} · {message}"))
             self._ui.emit("done", {"written": written, "failed": len(failed), "took": took})
             self._emit_stats()
 
@@ -1748,7 +1944,9 @@ class CapriBridge:
         unique = sorted({t.original for t in texts if t.original.strip()})
         # İzin çeviriden önce istenir: "hayır" denirse boşuna API harcanmaz
         use_bridge = False
-        if not texts or info.runtime == "IL2CPP":
+        # Utage gibi senaryosu dosyada açık oyunlar IL2CPP olsa da köprüye ihtiyaç duymaz
+        scenario_in_files = any(t.format_type == "utage" for t in texts)
+        if not texts or (info.runtime == "IL2CPP" and not scenario_in_files):
             import bepinex_installer
             installed = is_bepinex_installed(info.root)
             use_bridge = self._ask("BepInEx köprüsü", (
@@ -1765,6 +1963,7 @@ class CapriBridge:
             files = {info.root / t.source_file for t in texts if t.format_type == "tsv_file"}
             if info.resources_assets_path and any(t.source_file == "resources.assets" for t in texts):
                 files.add(info.resources_assets_path)
+            files |= {info.data_dir / t.source_file for t in texts if t.format_type in ("utage", "tsv_col", "i2")}
             if files:
                 self._stage("backup", "Orijinal dosyalar yedekleniyor")
                 create_game_backup(info.root, "unity", sorted(files), log=self._log)
@@ -2278,13 +2477,17 @@ class CapriBridge:
         with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as archive:
             archive.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
             archive.writestr("translations.json", json.dumps(cache, ensure_ascii=False))
-        import updater
         repo = self._update_repo()
         if repo:   # topluluk: yamayı GitHub'da bir konu olarak paylaş (dosyayı sayfaya sürükleyip bırakmak yeter)
             import urllib.parse
+            # GitHub konulara .capripatch eklemeye izin vermez; aynı içerik .zip olarak yanına konur
+            shared = target if target.suffix.lower() == ".zip" else target.with_name(target.name + ".zip")
+            if shared != target:
+                shutil.copy2(target, shared)
             query = urllib.parse.urlencode({"title": f"Yama: {game['title']} ({self._settings['target']})", "labels": "yama",
                                             "body": f"Oyun: {game['title']}\nMotor: {ENGINE_LABELS.get(game['type'], game['type'])}\n"
-                                                    f"Satır: {len(cache)}\n\n{target.name} dosyasını buraya sürükleyip bırak."})
+                                                    f"Dil: {self._settings['target']}\nSatır: {len(cache)}\n\n"
+                                                    f"{shared.name} dosyasını buraya sürükleyip bırak."})
             action = {"label": "Toplulukla paylaş", "url": f"https://github.com/{repo}/issues/new?{query}"}
         else:
             action = {"label": "Klasörü aç", "path": str(target.parent)}
@@ -2300,8 +2503,12 @@ class CapriBridge:
                                                  file_types=("Capri yaması (*.capripatch;*.omnipatch;*.zip)",)) if self._window else None
         if not result:
             return False
+        return self._apply_patch_file(Path(result[0]))
+
+    def _apply_patch_file(self, path: Path) -> bool:
+        """Yama dosyasındaki çevirileri açık oyunun önbelleğine ekler (oyuna yazmak için çeviri başlatılır)."""
         try:
-            with zipfile.ZipFile(result[0]) as archive:
+            with zipfile.ZipFile(path) as archive:
                 manifest = json.loads(archive.read("manifest.json"))
                 translations = json.loads(archive.read("translations.json"))
         except (OSError, KeyError, ValueError, zipfile.BadZipFile):
@@ -2321,6 +2528,34 @@ class CapriBridge:
                      "bu satırlar için API harcanmaz.", "ok", "archive")
         self._ui.emit("stats", self.get_stats())
         return True
+
+    # ── Topluluk yamaları ────────────────────────────────────────────────────
+    def community_patches(self, query: str = "") -> Dict[str, Any]:
+        """GitHub'da paylaşılmış Capri yamalarını arar."""
+        import community
+        repo = self._update_repo()
+        if not repo:
+            return {"ok": False, "error": "Topluluk deposu ayarlı değil.", "items": []}
+        try:
+            items = community.search(repo, query)
+        except Exception as error:
+            self._log(f"Topluluk yamaları alınamadı: {error}")
+            return {"ok": False, "error": "GitHub'a ulaşılamadı. İnternet bağlantını kontrol edip tekrar dene.", "items": []}
+        return {"ok": True, "items": items, "repo": repo,
+                "game": {"title": self._game["title"], "engine": ENGINE_LABELS.get(self._game["type"], "")} if self._game else None}
+
+    def download_community_patch(self, url: str) -> bool:
+        """Topluluk yamasını indirip açık oyuna uygular (yalnızca GitHub konu ekleri indirilir)."""
+        import community
+        if not self._game:
+            self._toast("Önce yamanın ait olduğu oyunu aç.", "warn")
+            return False
+        try:
+            path = community.download(url, DATA_DIR / "patches")
+        except Exception as error:
+            self._notify("Yama indirilemedi", str(error), "error", "alert")
+            return False
+        return self._apply_patch_file(path)
 
     # ── Canlı önizleme ───────────────────────────────────────────────────────
     def translate_text(self, text: str, source: str = "", target: str = "", model: str = "") -> Dict[str, Any]:
@@ -2631,7 +2866,7 @@ class CapriBridge:
         self._ocr_anchor["pin_width"] = width
         win = self._ocr_win["pin"]
         win.evaluate_js("OCRPIN.update(%s)" % json.dumps({
-            "place": "over" if over else "below", "translation": "Alan izleniyor…", "state": "live", "meta": ""}))
+            "place": "over" if over else "below", "translation": self._tr("Alan izleniyor…"), "state": "live", "meta": ""}))
         self._place("pin", width, 96)
         win.show()
         self._pin_watcher = RegionWatcher(rect, self._settings["source"], self._pin_on_text, self._pin_on_state,
@@ -3093,6 +3328,10 @@ class CapriBridge:
 
 
 def main() -> None:
+    import single_instance
+    if not single_instance.acquire(APP_DIR, DATA_DIR):   # aynı Capri zaten açık: onu öne getir, ikinciyi açma
+        single_instance.focus_existing(DATA_DIR)
+        return
     html_file = WEB_DIR / "index.html"
     import webview
     if os.environ.get("CAPRI_DEBUG_PORT"):   # geliştirme: exe'nin arayüzünü dışarıdan test etmek için
@@ -3116,6 +3355,7 @@ def main() -> None:
         easy_drag=False,
         text_select=True,
         background_color="#0c0d0f",
+        hidden=bool(os.environ.get("CAPRI_HIDDEN")),   # yalnızca otomatik testler: pencere ekranda görünmez
     )
     bridge.set_window(window)
 

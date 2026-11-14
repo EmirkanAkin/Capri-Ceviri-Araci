@@ -6,35 +6,22 @@ font uyumluluk denetimi ve varlık (asset) yamalama modülü.
 """
 from __future__ import annotations
 
-import csv
-import io
 import json
-import os
 import re
-import shutil
 import tempfile
-import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
+from typing import Any, Dict, List, Optional, Set, Union
 
 import UnityPy
 
 from engine_common import (
-    BUILTIN_GLOSSARY,
-    BackupManager,
     FontChecker,
     Glossary,
     LogFn,
     ProgressFn,
     ProgressTracker,
-    QAChecker,
     TranslationCache,
-    cache_file_for,
-    load_glossary,
-    mask_text,
-    unmask_text,
-    protected_content_valid,
 )
 
 # Unity metinlerindeki etiketler ve değişkenler (korunacak desenler)
@@ -132,6 +119,8 @@ class UnityGameInfo:
     font_turkish_support: bool = True
     missing_font_chars: List[str] = field(default_factory=list)
     scanned: bool = False          # varlık/font taraması yapıldı mı (bkz. scan_unity_assets)
+    tmp_fonts: List[str] = field(default_factory=list)      # TextMeshPro font varlıkları
+    tmp_glyphs: Set[int] = field(default_factory=set)       # bu fontların içerdiği karakterler (birleşim)
 
 
 def detect_unity_game(selected: Union[str, Path]) -> Optional[UnityGameInfo]:
@@ -283,12 +272,14 @@ def extract_texts_unity(info: UnityGameInfo, log: LogFn = print) -> List[UnityTe
     Öncelikle resources.assets ve StreamingAssets içindeki TSV/CSV/JSON dosyalarını tarar.
     """
     items: List[UnityTextItem] = []
+    loaded: Dict[str, Any] = {}
 
     # 1. resources.assets içindeki TextAsset'leri tara
     if info.resources_assets_path and info.resources_assets_path.exists():
         log(f"Varlıklar taranıyor: {info.resources_assets_path.name}")
         try:
             env = UnityPy.load(str(info.resources_assets_path))
+            loaded[info.resources_assets_path.name] = env   # tablo taraması yeniden yüklemesin
             if not info.scanned:
                 scan_unity_assets(info, log, env)
             for obj in env.objects:
@@ -369,55 +360,297 @@ def extract_texts_unity(info: UnityGameInfo, log: LogFn = print) -> List[UnityTe
                 except Exception as e:
                     log(f"StreamingAssets dosyası okuma hatası {text_file.name}: {e}")
 
+    # 3. Utage senaryo kitapları ve çok dilli tablolar (sharedassets dahil; IL2CPP'de de okunur)
+    items.extend(extract_asset_tables(info, log, loaded))
+    if info.tmp_glyphs:   # TextMeshPro atlaslarında olmayan Türkçe harfler (TTF taraması bunları göremez)
+        absent = [c for c in "ğĞşŞıİçÇöÖüÜ" if ord(c) not in info.tmp_glyphs]
+        if absent:
+            info.font_turkish_support = False
+            info.missing_font_chars = sorted(set(info.missing_font_chars) | set(absent))
+            log(f"TextMeshPro fontlarında eksik harfler: {''.join(absent)} (en yakın harfle yazılacak)")
+
     log(f"Toplam çıkarılan metin girdisi: {len(items)}")
     return items
 
 
-def backup_unity_assets(info: UnityGameInfo, log: LogFn = print) -> Optional[Path]:
-    """Değiştirilecek Unity varlıklarının yedeğini alır."""
-    backup_root = info.root / "_turkish_backups"
-    backup_root.mkdir(parents=True, exist_ok=True)
-    timestamp = time.strftime("%Y%m%d_%H%M%S")
-    backup_dir = backup_root / f"unity_backup_{timestamp}"
-    backup_dir.mkdir(parents=True, exist_ok=True)
-
-    backed_up = 0
-    if info.resources_assets_path and info.resources_assets_path.exists():
-        target = backup_dir / info.resources_assets_path.name
-        shutil.copy2(info.resources_assets_path, target)
-        backed_up += 1
-
-    log(f"Unity yedekleme oluşturuldu: {backup_dir.name} ({backed_up} dosya)")
-    return backup_dir
+# ─── Utage kitapları ve çok dilli tablolar ────────────────────────────────────
+TABLE_FORMATS = ("utage", "tsv_col", "i2")
 
 
-def restore_unity_backup(info: UnityGameInfo, log: LogFn = print) -> bool:
-    """En son alınan Unity yedeğini geri yükler."""
-    backup_root = info.root / "_turkish_backups"
-    if not backup_root.exists():
-        log("Geri yüklenecek yedek klasörü bulunamadı.")
-        return False
+def _table_asset_files(info: UnityGameInfo) -> List[Path]:
+    files = [info.resources_assets_path] if info.resources_assets_path else []
+    files += [p for p in info.sharedassets_files if p.suffix == ".assets"]
+    return [p for p in files if p and p.exists()]
 
-    backups = sorted(
-        [d for d in backup_root.iterdir() if d.is_dir() and d.name.startswith("unity_backup_")],
-        key=lambda d: d.name,
-        reverse=True,
-    )
-    if not backups:
-        log("Geri yüklenecek geçerli bir Unity yedeği bulunamadı.")
-        return False
 
-    latest = backups[0]
-    log(f"Yedek geri yükleniyor: {latest.name}")
-    restored = 0
-    for f in latest.iterdir():
-        target = info.data_dir / f.name
-        shutil.copy2(f, target)
-        restored += 1
-        log(f"Geri yüklendi: {f.name}")
+def _english_tsv_column(script: str) -> Optional[int]:
+    """İlk satırı "Key<TAB>Japanese<TAB>English" gibi bir başlıksa İngilizce sütunun sırası."""
+    header = script.lstrip("﻿").split("\n", 1)[0].rstrip("\r").split("\t")
+    lowered = [h.strip().casefold() for h in header]
+    if len(header) >= 2 and "english" in lowered and lowered.index("english") > 0:
+        return lowered.index("english")
+    return None
 
-    log(f"Geri yükleme tamamlandı. Toplam {restored} dosya eski haline getirildi.")
-    return True
+
+def _tmp_font_name(obj: Any) -> str:
+    """TextMeshPro font varlıkları geleneksel olarak "<Font> SDF" adını taşır."""
+    try:
+        name = obj.peek_name() or ""
+    except Exception:
+        return ""
+    return name if name.endswith(" SDF") or " SDF " in name else ""
+
+
+def tmp_character_table(raw: bytes) -> Set[int]:
+    """TMP_FontAsset ham verisindeki karakter tablosu: her kayıt (unicode, glif no, ölçek=1.0) üçlüsüdür."""
+    import struct
+
+    count = len(raw) // 4
+    values = struct.unpack_from(f"<{count}I", raw[:count * 4])
+    one = 0x3F800000
+    table = {values[i] for i in range(count - 2)
+             if values[i + 2] == one and 32 <= values[i] < 0x110000 and values[i + 1] < 1_000_000}
+    # Gerçek bir karakter tablosunda en azından Latin harflerin çoğu bulunur; yoksa yanlış eşleşmedir
+    return table if sum(1 for c in "abcdefghijklmnopqrstuvwxyz" if ord(c) in table) >= 20 else set()
+
+
+# Fontta olmayan harfler için en yakın karşılık (ayrıştırılamayanlar); diğerleri aksan atılarak bulunur
+_GLYPH_FALLBACK = {"ı": "i", "İ": "I", "ß": "ss", "ø": "o", "Ø": "O", "ł": "l", "Ł": "L", "đ": "d", "Đ": "D",
+                   "æ": "ae", "Æ": "AE", "œ": "oe", "Œ": "OE"}
+
+
+def glyph_fallback(text: str, glyphs: Set[int]) -> str:
+    """Oyunun fontunda olmayan harfleri en yakın harfle değiştirir (ğ→g, ş→s, ı→i); diğer her şey aynen kalır."""
+    import unicodedata
+
+    if not glyphs:
+        return text
+    out = []
+    for char in text:
+        if ord(char) < 128 or ord(char) in glyphs or not char.isalpha():
+            out.append(char)
+            continue
+        alternative = _GLYPH_FALLBACK.get(char) or unicodedata.normalize("NFKD", char)[0]
+        usable = all(ord(a) < 128 or ord(a) in glyphs for a in alternative)
+        out.append(alternative if usable else char)
+    return "".join(out)
+
+
+def _text_asset_script(data: Any) -> str:
+    script = getattr(data, "m_Script", "")
+    return script if isinstance(script, str) else bytes(script).decode("utf-8", "ignore")
+
+
+def extract_asset_tables(info: UnityGameInfo, log: LogFn = print, loaded: Optional[Dict[str, Any]] = None) -> List[UnityTextItem]:
+    """Utage senaryo kitapları, I2 Localization kaynakları ve İngilizce sütunlu sekmeli tablolar."""
+    import unity_i2
+    import unity_utage
+
+    items: List[UnityTextItem] = []
+    for path in _table_asset_files(info):
+        try:
+            env = (loaded or {}).get(path.name) or UnityPy.load(str(path))
+        except Exception as error:
+            log(f"{path.name} okunamadı: {error}")
+            continue
+        books = rows_found = 0
+        for obj in env.objects:
+            kind = obj.type.name
+            try:
+                if kind == "MonoBehaviour" and getattr(obj, "byte_size", 0) >= 256:
+                    raw = obj.get_raw_data()
+                    font_name = _tmp_font_name(obj)
+                    if font_name:
+                        glyphs = tmp_character_table(raw)
+                        if glyphs:
+                            info.tmp_fonts.append(font_name)
+                            info.tmp_glyphs |= glyphs
+                        continue
+                    if unity_i2.looks_like_source("", raw[:256]):
+                        try:
+                            source = unity_i2.parse_source(raw)
+                        except unity_utage.UtageFormatError as error:
+                            log(f"I2 dil kaynağı okunamadı ({path.name} #{obj.path_id}): {error}; dokunulmadı")
+                            continue
+                        column = source.column("English")
+                        if column is None and len(source.languages) <= 1:
+                            column = 0
+                        if column is None:
+                            log(f"I2 dil kaynağında İngilizce yok ({', '.join(source.languages)}); atlandı")
+                            continue
+                        terms = 0
+                        for index, cells in enumerate(source.cells):
+                            # Resim/ses terimlerinin değeri dosya adıdır; çevrilirse oyun logoyu/resmi bulamaz
+                            if not source.is_text(index):
+                                continue
+                            if len(cells) > column and re.search(r"[^\W\d_]", cells[column].text):
+                                terms += 1
+                                items.append(UnityTextItem(
+                                    source_file=path.name, asset_name=f"i2:{obj.path_id}", line_index=index,
+                                    key_id=str(column), original=cells[column].text, format_type="i2"))
+                        log(f"I2 Localization: {path.name} — {terms} terim ({source.languages[column] if source.languages else 'tek dil'})")
+                        continue
+                    if not unity_utage.looks_like_book(raw):
+                        continue
+                    try:
+                        grids = unity_utage.parse_book(raw)
+                    except unity_utage.UtageFormatError as error:
+                        log(f"Utage kitabı okunamadı ({path.name} #{obj.path_id}): {error}; dokunulmadı")
+                        continue
+                    for number, grid in enumerate(grids):
+                        column = unity_utage.text_column(grid)
+                        if column is None:
+                            continue
+                        books += 1
+                        for row in grid.rows:
+                            if len(row) > column and row[column].text.strip():
+                                rows_found += 1
+                                items.append(UnityTextItem(
+                                    source_file=path.name, asset_name=f"utage:{obj.path_id}",
+                                    line_index=row[column].row, key_id=f"{number}:{column}",
+                                    original=row[column].text, format_type="utage"))
+                elif kind == "TextAsset":
+                    data = obj.read()
+                    script = _text_asset_script(data)
+                    column = _english_tsv_column(script)
+                    if column is None:
+                        continue
+                    name = getattr(data, "m_Name", "")
+                    for index, line in enumerate(script.lstrip("﻿").split("\n")[1:], start=1):
+                        parts = line.rstrip("\r").split("\t")
+                        if len(parts) > column and re.search(r"[A-Za-z]", parts[column]):
+                            items.append(UnityTextItem(
+                                source_file=path.name, asset_name=name, line_index=index,
+                                key_id=str(column), original=parts[column], format_type="tsv_col"))
+            except Exception as error:
+                log(f"{path.name} #{obj.path_id} atlandı: {error}")
+        if books:
+            log(f"Utage senaryosu: {path.name} — {books} tablo, {rows_found} satır")
+    tables = sum(1 for i in items if i.format_type == "tsv_col")
+    if tables:
+        log(f"Çok dilli tablolardan {tables} arayüz metni")
+    return items
+
+
+def _replace_file(path: Path, data: bytes) -> None:
+    """Önce geçici dosyaya yazıp yerine taşır. UnityPy'nin döngüsel referansları dosyayı çöp toplanana kadar
+    açık tutabildiğinden önce çöp toplanır; Windows yine izin vermezse dosyanın üzerine doğrudan yazılır."""
+    import gc
+
+    temporary = path.with_suffix(path.suffix + ".capri-tmp")
+    temporary.write_bytes(data)
+    gc.collect()
+    try:
+        temporary.replace(path)
+    except PermissionError:
+        with open(path, "r+b") as handle:
+            handle.write(data)
+            handle.truncate()
+        temporary.unlink(missing_ok=True)
+
+
+def write_asset_tables(info: UnityGameInfo, translations: Dict[str, str], items: List[UnityTextItem],
+                       log: LogFn = print) -> int:
+    """Utage kitaplarına, I2 kaynaklarına ve sekmeli tablolara çevirileri yazar; yalnızca değişen hücreler değişir."""
+    import unity_i2
+    import unity_utage
+
+    by_file: Dict[str, List[UnityTextItem]] = {}
+    for item in items:
+        if item.format_type in TABLE_FORMATS:
+            by_file.setdefault(item.source_file, []).append(item)
+    written = 0
+    for file_name, file_items in by_file.items():
+        path = info.data_dir / file_name
+        # Bellekten yüklenir: UnityPy diskteki dosyayı açık tutarsa Windows yerine yazmaya izin vermez
+        env = UnityPy.load(path.read_bytes())
+        changed_any = False
+        books: Dict[int, List[UnityTextItem]] = {}
+        tables: Dict[str, List[UnityTextItem]] = {}
+        sources: Dict[int, List[UnityTextItem]] = {}
+        for item in file_items:
+            if item.format_type == "utage":
+                books.setdefault(int(item.asset_name.split(":", 1)[1]), []).append(item)
+            elif item.format_type == "i2":
+                sources.setdefault(int(item.asset_name.split(":", 1)[1]), []).append(item)
+            else:
+                tables.setdefault(item.asset_name, []).append(item)
+        for obj in env.objects:
+            if obj.path_id in sources and obj.type.name == "MonoBehaviour":
+                raw = obj.get_raw_data()
+                source = unity_i2.parse_source(raw)
+                cells = {c.start: c for row in source.cells for c in row}
+                replacements = {}
+                for item in sources[obj.path_id]:
+                    column = int(item.key_id)
+                    row = source.cells[item.line_index] if item.line_index < len(source.cells) else []
+                    if row and not source.is_text(item.line_index):
+                        continue
+                    new = translations.get(item.original)
+                    if len(row) <= column or row[column].text != item.original or not new or new == item.original:
+                        continue
+                    replacements[row[column].start] = new
+                if replacements:
+                    obj.set_raw_data(unity_utage.rewrite(raw, replacements, cells))
+                    changed_any = True
+                    written += len(replacements)
+                    log(f"I2 Localization güncellendi: {len(replacements)} terim")
+            elif obj.path_id in books and obj.type.name == "MonoBehaviour":
+                raw = obj.get_raw_data()
+                grids = unity_utage.parse_book(raw)
+                cells = {}
+                lookup = {}
+                for number, grid in enumerate(grids):
+                    for row in grid.rows:
+                        for cell in row:
+                            cells[cell.start] = cell
+                            lookup[(number, cell.column, cell.row)] = cell
+                replacements = {}
+                for item in books[obj.path_id]:
+                    number, column = (int(x) for x in item.key_id.split(":"))
+                    cell = lookup.get((number, column, item.line_index))
+                    new = translations.get(item.original)
+                    if cell is None or cell.text != item.original or not new or new == item.original:
+                        continue
+                    replacements[cell.start] = new
+                if replacements:
+                    obj.set_raw_data(unity_utage.rewrite(raw, replacements, cells))
+                    changed_any = True
+                    written += len(replacements)
+                    log(f"Utage senaryosu güncellendi: {len(replacements)} satır")
+            elif obj.type.name == "TextAsset" and tables:
+                data = obj.read()
+                name = getattr(data, "m_Name", "")
+                if name not in tables:
+                    continue
+                script = _text_asset_script(data)
+                bom = "﻿" if script.startswith("﻿") else ""
+                lines = script[len(bom):].split("\n")
+                changed = 0
+                for item in tables[name]:
+                    column = int(item.key_id)
+                    if item.line_index >= len(lines):
+                        continue
+                    body = lines[item.line_index]
+                    ending = "\r" if body.endswith("\r") else ""
+                    parts = body[:len(body) - len(ending)].split("\t")
+                    new = translations.get(item.original)
+                    if len(parts) <= column or parts[column] != item.original or not new or new == item.original:
+                        continue
+                    parts[column] = new.replace("\t", " ").replace("\n", " ")
+                    lines[item.line_index] = "\t".join(parts) + ending
+                    changed += 1
+                if changed:
+                    data.m_Script = bom + "\n".join(lines)
+                    data.save()
+                    changed_any = True
+                    written += changed
+                    log(f"Güncellendi: {name} ({changed} satır)")
+        if changed_any:
+            data_bytes = env.file.save()
+            _replace_file(path, data_bytes)
+            log(f"Kaydedildi: {file_name}")
+    return written
 
 
 def translate_texts_unity(
@@ -546,16 +779,24 @@ def write_translations_unity(
 
     log("Unity varlıklarına çeviriler işleniyor...")
     modified_count = 0
+    if info.tmp_glyphs:   # oyunun TextMeshPro fontunda olmayan harfler kutu olarak görünmesin
+        adjusted = {source: glyph_fallback(text, info.tmp_glyphs) for source, text in translations.items()}
+        replaced = sorted({c for source, text in translations.items() for c in text
+                           if c not in adjusted[source] and c.isalpha()})
+        if replaced:
+            log(f"Oyunun fontunda olmayan harfler en yakın harfle yazıldı: {''.join(replaced)}")
+        translations = adjusted
 
-    # 1. resources.assets içindeki TextAsset'leri güncelle
-    if info.resources_assets_path and info.resources_assets_path.exists():
+    # 1. resources.assets içindeki TextAsset'leri güncelle (yalnızca bu tür metin varsa açılır)
+    legacy = any(i.source_file == "resources.assets" and i.format_type in ("tsv", "raw") for i in extracted_items)
+    if legacy and info.resources_assets_path and info.resources_assets_path.exists():
         try:
-            env = UnityPy.load(str(info.resources_assets_path))
+            env = UnityPy.load(info.resources_assets_path.read_bytes())   # dosya açık kalmasın
             assets_modified = False
 
             by_asset: Dict[str, List[UnityTextItem]] = {}
             for item in extracted_items:
-                if item.source_file == "resources.assets":
+                if item.source_file == "resources.assets" and item.format_type in ("tsv", "raw"):
                     by_asset.setdefault(item.asset_name, []).append(item)
 
             for obj in env.objects:
@@ -641,32 +882,7 @@ def write_translations_unity(
             modified_count += changed
             log(f"Güncellendi: {path.name} ({changed} satır)")
 
+    # 3. Utage senaryo kitapları ve çok dilli tablolar
+    modified_count += write_asset_tables(info, translations, extracted_items, log)
     return modified_count
 
-
-def qa_unity_translation(
-    translations: Dict[str, str],
-    log: LogFn = print,
-) -> Dict[str, int]:
-    """Çeviriler üzerinde etiket ve kalite kontrolü (QA) yapar."""
-    qa_results = {
-        "checked": 0,
-        "empty": 0,
-        "tag_mismatch": 0,
-        "valid": 0,
-    }
-
-    for orig, trans in translations.items():
-        qa_results["checked"] += 1
-        if not trans or not trans.strip():
-            qa_results["empty"] += 1
-            continue
-
-        orig_tags = PROTECTED_UNITY.findall(orig)
-        trans_tags = PROTECTED_UNITY.findall(trans)
-        if len(orig_tags) != len(trans_tags):
-            qa_results["tag_mismatch"] += 1
-        else:
-            qa_results["valid"] += 1
-
-    return qa_results
