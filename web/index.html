@@ -110,6 +110,10 @@
           <button data-page="guide"><svg class="i"><use href="#i-book"/></svg>Rehber</button>
         </nav>
         <div class="topright">
+          <div class="lang-pick" id="langPick">
+            <button class="round lang-btn" id="langBtn" title="Arayüz dili"><svg class="i"><use href="#i-globe"/></svg><span id="langCode">TR</span></button>
+            <div class="lang-menu hidden" id="langMenu"></div>
+          </div>
           <button class="round" id="openFolderBtn" title="Oyun klasörünü aç"><svg class="i"><use href="#i-folder"/></svg></button>
           <button class="round" id="updateBtn" title="Güncellemeler"><svg class="i"><use href="#i-download"/></svg><span class="dot hidden" id="updateDot"></span></button>
           <button class="round" id="bellBtn" title="Bildirimler"><svg class="i"><use href="#i-bell"/></svg><span class="badge hidden" id="bellBadge"></span></button>
@@ -195,38 +199,51 @@
                 <select class="input" id="modelSelect"></select>
                 <div class="field-hint" id="modelHint"></div>
               </div>
-              <label class="field toggle-row">
-                <div>
-                  <div class="field-label"><svg class="i"><use href="#i-shield"/></svg>Güvenlik</div>
-                  <div class="toggle-title">Çeviri öncesi yedek al</div>
-                  <div class="field-hint">Değişen dosyalar tek tıkla orijinaline döner.</div>
+              <div class="field span-all options">
+                <div class="field-label"><svg class="i"><use href="#i-sparkle"/></svg>Seçenekler</div>
+                <div class="opt-group">
+                  <div class="opt-head">Çeviri</div>
+                  <label class="opt">
+                    <span class="opt-icon"><svg class="i"><use href="#i-shield"/></svg></span>
+                    <span class="opt-text"><span class="toggle-title">Çeviri öncesi yedek al</span>
+                      <span class="field-hint">Değişen dosyalar tek tıkla orijinaline döner.</span></span>
+                    <span class="switch"><input type="checkbox" id="backupToggle"><i></i></span>
+                  </label>
+                  <label class="opt">
+                    <span class="opt-icon"><svg class="i"><use href="#i-edit"/></svg></span>
+                    <span class="opt-text"><span class="toggle-title">Kalite editörü geçişi</span>
+                      <span class="field-hint">Sorunlu taslakları (İngilizce kalıntı, robotik ifade) bağlamıyla bir sohbet modeline düzelttirir.</span></span>
+                    <span class="switch"><input type="checkbox" id="qualityToggle"><i></i></span>
+                  </label>
+                  <label class="opt">
+                    <span class="opt-icon"><svg class="i"><use href="#i-flame"/></svg></span>
+                    <span class="opt-text"><span class="toggle-title">Yetişkin (NSFW) sözlüğü</span>
+                      <span class="field-hint">Argo ve yetişkin sahneleri doğal günlük dille aktarır.</span></span>
+                    <span class="switch"><input type="checkbox" id="nsfwToggle"><i></i></span>
+                  </label>
+                  <label class="opt">
+                    <span class="opt-icon"><svg class="i"><use href="#i-layers"/></svg></span>
+                    <span class="opt-text"><span class="toggle-title">Ortak çeviri belleği</span>
+                      <span class="field-hint">"Save", "Options" gibi arayüz metinleri bir oyunda çevrilince diğer oyunlarda yeniden çevrilmez.</span></span>
+                    <span class="switch"><input type="checkbox" id="memoryToggle"><i></i></span>
+                  </label>
                 </div>
-                <span class="switch"><input type="checkbox" id="backupToggle"><i></i></span>
-              </label>
-              <label class="field toggle-row">
-                <div>
-                  <div class="field-label"><svg class="i"><use href="#i-flame"/></svg>Sözlük</div>
-                  <div class="toggle-title">Yetişkin (NSFW) sözlüğü</div>
-                  <div class="field-hint">Argo ve yetişkin sahneleri doğal günlük dille aktarır.</div>
+                <div class="opt-group">
+                  <div class="opt-head">Bitince</div>
+                  <label class="opt">
+                    <span class="opt-icon"><svg class="i"><use href="#i-bell"/></svg></span>
+                    <span class="opt-text"><span class="toggle-title">Ses çal</span>
+                      <span class="field-hint">Çeviri bitince ya da durunca kısa, yumuşak bir ses.</span></span>
+                    <span class="switch"><input type="checkbox" id="soundToggle"><i></i></span>
+                  </label>
+                  <label class="opt">
+                    <span class="opt-icon"><svg class="i"><use href="#i-chat"/></svg></span>
+                    <span class="opt-text"><span class="toggle-title">Windows bildirimi göster</span>
+                      <span class="field-hint">Capri arka plandayken çeviri bitince ekranın köşesinde bildirim çıkar.</span></span>
+                    <span class="switch"><input type="checkbox" id="notifyToggle"><i></i></span>
+                  </label>
                 </div>
-                <span class="switch"><input type="checkbox" id="nsfwToggle"><i></i></span>
-              </label>
-              <label class="field toggle-row">
-                <div>
-                  <div class="field-label"><svg class="i"><use href="#i-bell"/></svg>Bildirim</div>
-                  <div class="toggle-title">Bitince ses çal</div>
-                  <div class="field-hint">Çeviri bitince ya da durunca kısa, yumuşak bir ses.</div>
-                </div>
-                <span class="switch"><input type="checkbox" id="soundToggle"><i></i></span>
-              </label>
-              <label class="field toggle-row span2">
-                <div>
-                  <div class="field-label"><svg class="i"><use href="#i-edit"/></svg>Kalite</div>
-                  <div class="toggle-title">Kalite editörü geçişi</div>
-                  <div class="field-hint">Çeviriden sonra sorunlu taslaklar (İngilizce kalıntı, robotik ifade) konuşmacı ve önceki satırlarla birlikte bir sohbet modeline düzelttirilir. Gemini, OpenAI, Claude veya Ollama kullanır.</div>
-                </div>
-                <span class="switch"><input type="checkbox" id="qualityToggle"><i></i></span>
-              </label>
+              </div>
               <div class="field span-all">
                 <div class="field-label"><svg class="i"><use href="#i-scan"/></svg>Analiz</div>
                 <div id="analysisPanel"></div>
@@ -250,6 +267,7 @@
             <span class="eyebrow">Kütüphane</span>
             <div class="section-head"><h2 class="section-title">Tüm projeler</h2>
               <div class="row-actions" style="margin:0">
+                <button class="btn" data-action="community"><svg class="i"><use href="#i-globe"/></svg>Topluluk yamaları</button>
                 <button class="btn" data-action="import-patch"><svg class="i"><use href="#i-download"/></svg>Yama içe aktar</button>
                 <button class="btn lime" data-action="pick"><svg class="i"><use href="#i-plus"/></svg>Oyun ekle</button>
               </div>
@@ -268,6 +286,7 @@
               <div class="row-actions" style="margin:0">
                 <button class="btn hidden" data-action="quality-pass" id="qualityBtn"><svg class="i"><use href="#i-sparkle"/></svg>Kalite editörü</button>
                 <button class="btn" data-action="export-patch"><svg class="i"><use href="#i-upload"/></svg>Yamayı dışa aktar</button>
+                <button class="btn" data-action="community"><svg class="i"><use href="#i-globe"/></svg>Topluluk yamaları</button>
                 <button class="btn" data-action="import-patch"><svg class="i"><use href="#i-download"/></svg>Yama içe aktar</button>
               </div>
             </div>
@@ -506,6 +525,7 @@
   </div>
 
   <div class="toasts" id="toasts"></div>
+  <script src="i18n.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

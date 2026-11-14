@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import io
 from dataclasses import dataclass, field
-from typing import Any, Iterator, List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 
 @dataclass
@@ -401,20 +401,3 @@ def dumps(obj: Any) -> bytes:
     writer.write(obj)
     return writer.out.getvalue()
 
-
-def walk_strings(obj: Any) -> Iterator[RString]:
-    """Tüm iç içe RString düğümlerini dolaşır."""
-    stack = [obj]
-    while stack:
-        node = stack.pop()
-        if isinstance(node, RString):
-            yield node
-        elif isinstance(node, RArray):
-            stack.extend(reversed(node.items))
-        elif isinstance(node, RHash):
-            for k, v in reversed(node.pairs):
-                stack.extend((v, k))
-        elif isinstance(node, (RObject, RStruct)):
-            stack.extend(v for _, v in reversed(node.attrs if isinstance(node, RObject) else node.members))
-        elif isinstance(node, (RUserMarshal, RExtended, RUserClass)):
-            stack.append(node.value)

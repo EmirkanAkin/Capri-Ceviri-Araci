@@ -79,11 +79,6 @@ def capture(left: int, top: int, width: int, height: int) -> Shot:
     return Shot(bytes(raw.bgra), raw.width, raw.height, left, top)
 
 
-def capture_monitor(index: int = 1) -> Shot:
-    m = monitor_rect(index)
-    return capture(m["left"], m["top"], m["width"], m["height"])
-
-
 def signature_diff(a: Optional[bytes], b: Optional[bytes]) -> float:
     """Belirgin biçimde (>24 gri ton) değişen piksellerin yüzdesi; küçük yazı değişimlerini de yakalar."""
     if not a or not b or len(a) != len(b):
@@ -458,6 +453,51 @@ def attention(title: str = "Capri") -> bool:
 
     info = FLASHWINFO(ctypes.sizeof(FLASHWINFO), hwnd, 0x3 | 0xC, 0, 0)   # FLASHW_ALL | FLASHW_TIMERNOFG
     _user32.FlashWindowEx(ctypes.byref(info))
+    return True
+
+
+class NOTIFYICONDATAW(ctypes.Structure):
+    _fields_ = [("cbSize", wt.DWORD), ("hWnd", wt.HWND), ("uID", wt.UINT), ("uFlags", wt.UINT),
+                ("uCallbackMessage", wt.UINT), ("hIcon", wt.HICON), ("szTip", wt.WCHAR * 128),
+                ("dwState", wt.DWORD), ("dwStateMask", wt.DWORD), ("szInfo", wt.WCHAR * 256),
+                ("uVersion", wt.UINT), ("szInfoTitle", wt.WCHAR * 64), ("dwInfoFlags", wt.DWORD),
+                ("guidItem", ctypes.c_byte * 16), ("hBalloonIcon", wt.HICON)]
+
+
+def balloon(title: str, text: str, icon_file=None, seconds: float = 10.0, window_title: str = "Capri") -> bool:
+    """
+    Capri arka plandaysa Windows bildirimi gösterir (bildirim alanı balonu; Windows 10/11'de normal bildirim olarak
+    görünür, uygulama kaydı gerekmez). Simge birkaç saniye sonra kaldırılır. Capri öndeyse hiçbir şey yapmaz.
+    """
+    hwnd = own_window(window_title)
+    if not hwnd or _user32.GetForegroundWindow() == hwnd:
+        return False
+    shell32 = ctypes.windll.shell32
+    icon = 0
+    if icon_file and Path(icon_file).is_file():
+        _user32.LoadImageW.restype = wt.HANDLE
+        icon = _user32.LoadImageW(None, str(icon_file), 1, 0, 0, 0x10 | 0x40)   # IMAGE_ICON, LOADFROMFILE|DEFAULTSIZE
+    data = NOTIFYICONDATAW()
+    data.cbSize = ctypes.sizeof(NOTIFYICONDATAW)
+    data.hWnd = hwnd
+    data.uID = 0xCA91
+    data.uFlags = 0x2 | 0x4 | 0x10                 # NIF_ICON | NIF_TIP | NIF_INFO
+    data.hIcon = icon
+    data.szTip = "Capri"
+    data.szInfoTitle = title[:63]
+    data.szInfo = text[:255]
+    data.dwInfoFlags = (0x4 | 0x20) if icon else 0x1  # NIIF_USER | NIIF_LARGE_ICON, simge yoksa NIIF_INFO
+    data.hBalloonIcon = icon
+    if not shell32.Shell_NotifyIconW(0, ctypes.byref(data)):          # NIM_ADD
+        return False
+
+    def remove():
+        time.sleep(seconds)
+        shell32.Shell_NotifyIconW(2, ctypes.byref(data))              # NIM_DELETE
+        if icon:
+            _user32.DestroyIcon(icon)
+
+    threading.Thread(target=remove, daemon=True).start()
     return True
 
 

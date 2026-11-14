@@ -6,10 +6,8 @@ Unity oyunları için tek tıkla BepInEx ve XUnity.AutoTranslator köprüsü kur
 """
 from __future__ import annotations
 
-import os
-import shutil
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Dict, Tuple
 
 from engine_common import LogFn
 

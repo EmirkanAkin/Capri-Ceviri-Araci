@@ -15,6 +15,7 @@
     <span id="hintText">Çevrilecek alanı sürükleyerek seç</span>
     <kbd>Esc</kbd><span style="color:var(--muted)">iptal</span>
   </div>
+  <script src="i18n.js"></script>
   <script>
     "use strict";
     const $ = (s) => document.querySelector(s);
@@ -68,6 +69,10 @@
     });
     addEventListener("contextmenu", (e) => e.preventDefault());
     addEventListener("keydown", (e) => { if (e.key === "Escape") cancel(); });
+    // Arayüz dili: ana pencereyle aynı sözlük (dil değişince Python tarafı yeniden gönderir)
+    const loadUiLanguage = () => api() && api().ui_dictionary && api().ui_dictionary()
+      .then((r) => r && window.I18N && I18N.set(r.language, r.dict)).catch(() => {});
+    if (api()) loadUiLanguage(); else addEventListener("pywebviewready", loadUiLanguage);
   </script>
 </body>
 </html>

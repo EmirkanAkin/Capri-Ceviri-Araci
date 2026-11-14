@@ -991,7 +991,6 @@ def translate_single_text(
 OPENAI_URL = "https://api.openai.com/v1/chat/completions"
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 DEEPL_URLS = {"free": "https://api-free.deepl.com/v2/translate", "pro": "https://api.deepl.com/v2/translate"}
-CLOUD_PROVIDERS = ("openai", "anthropic", "deepl")
 CLOUD_FLUSH_INTERVAL = 5.0
 
 # Oyun etiketleri / değişkenleri: çeviride birebir korunmaları gerekir

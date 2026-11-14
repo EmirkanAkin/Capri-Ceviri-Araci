@@ -42,6 +42,8 @@ Ren'Py · Unity · Unreal Engine · RPG Maker · JSON — artı oyun ekranını 
   paketleri için gereken araç, sana sorulduktan sonra kurulur.
 - **Otomatik oyun bulma:** Steam, Epic, GOG ve oyun klasörlerindeki çevrilebilir oyunlar kütüphanede öneri olarak çıkar.
 - **Çevrimdışı mod:** OPUS-MT ve NLLB-200 ekran kartında, internetsiz ve kotasız çalışır.
+- **17 arayüz dili:** Üst çubuktan dili seç; çeviri hedefi de o dile geçer.
+- **Topluluk yamaları:** Başkalarının paylaştığı çevirileri uygulama içinden bul ve tek tıkla uygula.
 
 ## İndir ve çalıştır
 1. **[Capri-win64.zip](https://github.com/EmirkanAkin/Capri-Ceviri-Araci/releases/latest/download/Capri-win64.zip)** dosyasını indir
@@ -66,7 +68,7 @@ Ren'Py · Unity · Unreal Engine · RPG Maker · JSON — artı oyun ekranını 
 | Motor | Ne çevrilir | Notlar |
 | --- | --- | --- |
 | **Ren'Py** | `.rpy`, `.rpyc`, `.rpa` | 17 hedef dil, diyalog sırasıyla bağlamlı çeviri, Türkçede kalite turu, otomatik font yaması |
-| **Unity** | `resources.assets` TextAsset, StreamingAssets | BepInEx + XUnity.AutoTranslator otomatik kurulumu (Mono / IL2CPP) |
+| **Unity** | `resources.assets` / `sharedassets` TextAsset, StreamingAssets, **Utage** senaryoları, **I2 Localization** | IL2CPP'de de doğrudan; dosyada metni olmayan oyunlarda BepInEx + XUnity.AutoTranslator otomatik kurulumu |
 | **Unreal Engine 4/5** | `.locres` (açık, `.pak` ya da `.utoc` içinde) | Paketler `repak` / `retoc` ile okunur, çeviri `Paks/~mods` altına yama paketi olur; şifreli oyunlarda AES anahtarı girilebilir |
 | **RPG Maker MV / MZ** | `data/*.json` | Diyalog, seçenekler, veritabanı, sistem terimleri |
 | **RPG Maker XP / VX / VX Ace** | `Data/*.rxdata / .rvdata / .rvdata2` | Değişmeyen her bayt korunur; şifreli arşivler otomatik açılır ve yedeklenir |
@@ -143,7 +145,8 @@ build_exe.py         Taşınabilir sürüm derleme
 src/                 Uygulama kaynak kodu
   app_modern.py        Arayüz köprüsü ve çeviri iş akışları (giriş noktası)
   engine_renpy.py      Ren'Py (rpy/rpyc/rpa, şablonlar, Gemini, font yaması)
-  engine_unity.py      Unity (TextAsset, StreamingAssets) · unity_bepinex.py, bepinex_installer.py
+  engine_unity.py      Unity (TextAsset, StreamingAssets, TMP fontları) · unity_utage.py, unity_i2.py,
+                       unity_bepinex.py, bepinex_installer.py
   engine_unreal.py     Unreal (.locres) · unreal_pak.py (.pak / repak), unreal_modding.py (~mods)
   engine_rpgmaker.py   RPG Maker MV/MZ ve XP/VX/VX Ace · rgss_marshal.py, rgss_archive.py
   engine_json.py       Motor bağımsız JSON çevirici
@@ -153,12 +156,14 @@ src/                 Uygulama kaynak kodu
   gpu_runtime.py       Yerel model ortamı (PyTorch) kurulumu
   game_scanner.py      Bilgisayardaki oyunları bulma
   ocr.py               Ekran çevirisi: yakalama, Windows OCR, canlı izleyici, kısayollar
-  library.py           Proje kütüphanesi ve Steam kapak görselleri
+  library.py           Proje kütüphanesi ve Steam kapak görselleri · community.py (topluluk yamaları)
   backup_system.py     Yedekleme / geri yükleme
   secrets_store.py     Windows Kimlik Bilgisi Yöneticisi
-  updater.py           Uygulama içi güncelleme
+  updater.py           Uygulama içi güncelleme · single_instance.py (tek pencere)
+  i18n.py              Arayüz dilleri · i18n_en.py (İngilizce sözlük; diğer diller bundan üretilir)
+  taskbar.py           Görev çubuğu simgesindeki ilerleme
   paths.py             Kaynak kod / exe klasör düzeni
-web/                 Arayüz: index.html, app.css, app.js, OCR pencereleri, fontlar
+web/                 Arayüz: index.html, app.css, app.js, i18n.js, OCR pencereleri, fontlar
 data/                Varsayılan sözlükler (genel, RPG Maker, yetişkin, terimler)
 assets/              Logo ve uygulama simgesi
 docs/                README görselleri ve yol haritası

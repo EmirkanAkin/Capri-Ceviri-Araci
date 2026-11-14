@@ -5,7 +5,7 @@ const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const icon = (name) => `<svg class="i"><use href="#i-${name}"/></svg>`;
-const fmt = (n) => Number(n || 0).toLocaleString("tr-TR");
+const fmt = (n) => Number(n || 0).toLocaleString(window.I18N ? I18N.locale : "tr-TR");
 /* İçerik değişmediyse DOM'a dokunulmaz: düğmeler titremez, tıklamalar kaybolmaz, görseller yeniden çözülmez. */
 function setHtml(el, html) { if (el.__html !== html) { el.innerHTML = html; el.__html = html; } }
 function setText(el, text) { if (el.textContent !== text) el.textContent = text; }
@@ -134,6 +134,9 @@ async function boot(api) {
   Object.assign(S, { state: st, settings: st.settings, projects: st.projects || [], providers: st.providers,
     models: st.models, gpu: st.gpu, busy: st.busy, gpuOpt: st.gpu_opt, ocr: st.ocr, scan: st.scan });
   S.provSel = S.settings.model;
+  S.ui = st.ui || { language: "tr", languages: [], dict: {} };
+  I18N.set(S.ui.language, S.ui.dict);
+  renderLangMenu();
   renderSelects();
   buildSlides();
   renderHero();
@@ -150,6 +153,7 @@ async function boot(api) {
   renderOcr();
   renderDrawer();
   appendLog([`Capri ${st.version} hazır.`]);
+  if (S.ui.pending) setUiLanguage(S.ui.language, true);   // bu dilin arayüzü henüz üretilmemiş: arka planda hazırla
 }
 
 /* ── Gezinme ───────────────────────────────────────────────────────── */
@@ -508,6 +512,8 @@ function syncSettingsUi() {
   $("#nsfwToggle").checked = !!S.settings.nsfw;
   $("#qualityToggle").checked = !!S.settings.quality_pass;
   $("#soundToggle").checked = S.settings.sound !== false;
+  $("#notifyToggle").checked = S.settings.notify !== false;
+  $("#memoryToggle").checked = S.settings.memory !== false;
   const p = PROVIDERS.find((x) => x.id === S.settings.model);
   const [st] = providerStatus(S.settings.model);
   $("#modelHint").textContent = p ? `${p.tag} · ${st}` : "";
@@ -1072,7 +1078,7 @@ function relTime(ts) {
   if (s < 45) return "az önce";
   if (s < 3600) return `${Math.round(s / 60)} dk önce`;
   if (s < 86400) return `${Math.round(s / 3600)} sa önce`;
-  return new Date(ts * 1000).toLocaleDateString("tr-TR", { day: "numeric", month: "short" });
+  return new Date(ts * 1000).toLocaleDateString(window.I18N ? I18N.locale : "tr-TR", { day: "numeric", month: "short" });
 }
 
 function addNotif(n) {
@@ -1137,7 +1143,7 @@ function lineNode(entry) {
 }
 
 function appendLog(lines) {
-  const time = new Date().toLocaleTimeString("tr-TR");
+  const time = new Date().toLocaleTimeString(window.I18N ? I18N.locale : "tr-TR");
   const entries = lines.map((text) => ({ time, text }));
   S.log.push(...entries);
   if (S.log.length > 4000) S.log.splice(0, S.log.length - 4000);
@@ -1230,6 +1236,100 @@ function renderUpdate() {
   }
   $("#updBody").innerHTML = body;
   $("#updActions").innerHTML = actions;
+}
+
+/* ── Arayüz dili ───────────────────────────────────────────────────── */
+function renderLangMenu() {
+  const ui = S.ui || { language: "tr", languages: [] };
+  $("#langCode").textContent = (ui.language || "tr").split("-")[0].toUpperCase();
+  $("#langMenu").innerHTML = `<div class="lang-head">Arayüz dili</div>` + ui.languages.map((l) =>
+    `<button data-lang="${esc(l.code)}" class="${l.code === ui.language ? "on" : ""}" data-no-i18n>
+      <span>${esc(l.label)}</span>${l.code === ui.language ? icon("check") : ""}</button>`).join("");
+}
+
+async function setUiLanguage(code, silent) {
+  const btn = $("#langBtn");
+  btn.classList.add("loading");
+  if (!silent && !["tr", "en"].includes(code)) toast({ title: "Arayüz çevriliyor…", tone: "info", icon: "globe" });
+  const res = await call("set_ui_language", code);
+  btn.classList.remove("loading");
+  if (!res) return;
+  S.ui.language = res.language;
+  I18N.set(res.language, res.dict);
+  Object.assign(S.settings, res.settings);
+  syncSettingsUi(); renderEngineCard(); renderHero(); renderAnalysis(); renderStats(); renderLangMenu();
+  if (!res.ok && res.error) toast({ title: res.error, tone: "warn", icon: "alert" });
+  else if (res.target_changed && !silent) {
+    const target = (S.state.target_languages || []).find((l) => l.code === res.settings.target);
+    toast({ title: `Hedef dil de ${target ? target.label : res.settings.target} yapıldı.`, tone: "ok", icon: "check" });
+  }
+}
+
+$("#langBtn").addEventListener("click", (ev) => { ev.stopPropagation(); $("#langMenu").classList.toggle("hidden"); });
+$("#langMenu").addEventListener("click", (ev) => {
+  const item = ev.target.closest("[data-lang]");
+  if (!item) return;
+  $("#langMenu").classList.add("hidden");
+  if (item.dataset.lang !== S.ui.language) setUiLanguage(item.dataset.lang);
+});
+document.addEventListener("click", (ev) => { if (!ev.target.closest("#langPick")) $("#langMenu").classList.add("hidden"); });
+
+/* ── Topluluk yamaları ─────────────────────────────────────────────── */
+function openCommunity() {
+  if (!$("#communityModal")) {
+    const wrap = document.createElement("div");
+    wrap.className = "modal-wrap";
+    wrap.id = "communityModal";
+    wrap.innerHTML = `<div class="modal community-modal">
+      <div class="upd-head"><span class="brand-mark">${icon("globe")}</span>
+        <div><h3>Topluluk yamaları</h3><div class="upd-current">Başkalarının paylaştığı çeviriler. Uygulanan satırlar için API harcanmaz.</div></div></div>
+      <div class="cm-search">${icon("search")}<input class="input" id="cmQuery" placeholder="Oyun adıyla ara"></div>
+      <div id="cmBody" class="cm-body"></div>
+      <div class="row-actions"><span class="cm-game" id="cmGame"></span><span class="grow"></span><button class="btn" data-cm="close">Kapat</button></div></div>`;
+    wrap.addEventListener("click", async (ev) => {
+      if (ev.target === wrap || ev.target.closest("[data-cm='close']")) { wrap.remove(); return; }
+      const page = ev.target.closest("[data-cm-page]");
+      if (page) { call("open_url", page.dataset.cmPage); return; }
+      const get = ev.target.closest("[data-cm-get]");
+      if (get && !get.disabled) {
+        get.disabled = true;
+        get.innerHTML = `<span class="spinner"></span>İndiriliyor`;
+        const ok = await call("download_community_patch", get.dataset.cmGet);
+        get.disabled = false;
+        get.innerHTML = ok ? `${icon("check")}Uygulandı` : `${icon("download")}İndir ve uygula`;
+        if (ok) loadEditor(true);
+      }
+    });
+    let timer = null;
+    $("#cmQuery", wrap).addEventListener("input", (e) => { clearTimeout(timer); timer = setTimeout(() => loadCommunity(e.target.value), 450); });
+    document.body.appendChild(wrap);
+  }
+  loadCommunity("");
+}
+
+async function loadCommunity(query) {
+  const body = $("#cmBody");
+  if (!body) return;
+  body.innerHTML = `<div class="upd-state"><span class="spinner"></span><div><b>Yamalar aranıyor…</b></div></div>`;
+  const res = (await call("community_patches", query)) || { ok: false, items: [] };
+  if (!$("#cmBody")) return;
+  $("#cmGame").textContent = res.game ? `Açık oyun: ${res.game.title} · ${res.game.engine}` : "Yamayı uygulamak için önce oyunu aç.";
+  if (!res.ok) {
+    body.innerHTML = `<div class="upd-state warn">${icon("alert")}<div><b>Liste alınamadı</b><p>${esc(res.error || "")}</p></div></div>`;
+    return;
+  }
+  if (!res.items.length) {
+    body.innerHTML = `<div class="upd-state">${icon("search")}<div><b>${query ? "Eşleşen yama yok" : "Henüz paylaşılmış yama yok"}</b>
+      <p>Bir oyunu çevirdikten sonra Çeviri Editörü'nden yamayı dışa aktarıp "Toplulukla paylaş" diyerek ilk sen paylaşabilirsin.</p></div></div>`;
+    return;
+  }
+  body.innerHTML = res.items.map((p) => `<div class="cm-item">
+      <div class="grow"><div class="title">${esc(p.game)}</div>
+        <div class="chips">${p.engine ? `<span class="pill">${esc(p.engine)}</span>` : ""}${p.target ? `<span class="pill">${esc(p.target.toUpperCase())}</span>` : ""}${p.lines ? `<span class="pill">${fmt(p.lines)} satır</span>` : ""}</div>
+        <div class="meta">${esc(p.user)} · ${esc(p.updated)}</div></div>
+      <div class="cm-actions"><button class="btn" data-cm-page="${esc(p.url)}">${icon("globe")}Sayfa</button>
+        ${p.files.length ? `<button class="btn lime" data-cm-get="${esc(p.files[0])}" ${res.game ? "" : "disabled"}>${icon("download")}İndir ve uygula</button>`
+          : `<span class="cm-nofile">Dosya eklenmemiş</span>`}</div></div>`).join("");
 }
 
 function openConfirm({ id, title, text }) {
@@ -1325,6 +1425,7 @@ document.addEventListener("click", async (ev) => {
     case "bepinex-uninstall": call("uninstall_bepinex"); break;
     case "export-patch": call("export_patch"); break;
     case "import-patch": if (await call("import_patch")) loadEditor(true); break;
+    case "community": openCommunity(); break;
     case "json-file": case "json-folder": {
       const picked = await call("json_pick", el.dataset.action === "json-folder" ? "folder" : "file");
       if (picked) $("#jsonInput").value = picked;
@@ -1498,6 +1599,8 @@ $("#backupToggle").addEventListener("change", (e) => updateSettings({ backup: e.
 $("#nsfwToggle").addEventListener("change", (e) => updateSettings({ nsfw: e.target.checked }));
 $("#qualityToggle").addEventListener("change", (e) => updateSettings({ quality_pass: e.target.checked }));
 $("#soundToggle").addEventListener("change", (e) => updateSettings({ sound: e.target.checked }));
+$("#notifyToggle").addEventListener("change", (e) => updateSettings({ notify: e.target.checked }));
+$("#memoryToggle").addEventListener("change", (e) => updateSettings({ memory: e.target.checked }));
 $("#updateBtn").addEventListener("click", () => openUpdate(!(S.update && S.update.available)));
 
 const search = $("#searchInput");

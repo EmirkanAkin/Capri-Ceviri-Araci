@@ -34,15 +34,10 @@ try:
         LogFn,
         OllamaTranslationEngine,
         ProgressTracker,
-        QAChecker,
         TranslationCache,
         TranslationEngine,
         cache_file_for,
         get_model_info,
-        mask_text,
-        model_ready,
-        protected_content_valid,
-        unmask_text,
     )
     ENGINE_COMMON_AVAILABLE = True
 except ImportError:

@@ -17,6 +17,7 @@
     </div>
     <div class="body"><div class="tr selectable" id="tr">Alan izleniyor…</div></div>
   </div>
+  <script src="i18n.js"></script>
   <script>
     "use strict";
     const $ = (s) => document.querySelector(s);
@@ -44,6 +45,10 @@
     };
     $("#toggle").addEventListener("click", () => api().ocr_pin_toggle());
     $("#close").addEventListener("click", () => api().ocr_pin_stop());
+    // Arayüz dili: ana pencereyle aynı sözlük (dil değişince Python tarafı yeniden gönderir)
+    const loadUiLanguage = () => api() && api().ui_dictionary && api().ui_dictionary()
+      .then((r) => r && window.I18N && I18N.set(r.language, r.dict)).catch(() => {});
+    if (api()) loadUiLanguage(); else addEventListener("pywebviewready", loadUiLanguage);
   </script>
 </body>
 </html>
