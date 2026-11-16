@@ -27,7 +27,7 @@ STAGING_DIR = APP_DIR / "portable_cache" / "update"
 API = os.environ.get("CAPRI_UPDATE_API") or "https://api.github.com/repos/{repo}/releases/latest"
 BUILD_INFO = RES_DIR / "build_info.json"
 # Güncelleme paketinin asla dokunmayacağı yollar (kullanıcı verisi)
-PROTECTED = ("portable_cache", "model", "model_nllb", "runtime", "tools", "data", "config_providers.json", "gemini_api_key.txt",
+PROTECTED = ("portable_cache", "model", "model_nllb", "models_llm", "runtime", "tools", "data", "config_providers.json", "gemini_api_key.txt",
              "glossary.json", "glossary_rpgm.json", "glossary_nsfw.json", "terms.json")
 LogFn = Callable[[str], None]
 

@@ -13,7 +13,11 @@ from engine_common import (
 
 # RPG Maker kontrol kodları
 PROTECTED_RPGM = re.compile(
-    r"(\\[CVNPIGcvnpig]\[\d+\]"
+    r"(\\[A-Za-z]+\[[^\]\r\n]*\]"      # \C[27], \V[1], \name[...] ve eklenti kodları
+    r"|\\[A-Za-z]+<[^>\r\n]*>"         # \pop<1> gibi eklenti kodları
+    r"|%\d+"                           # savaş mesajlarındaki %1, %2
+    r"|\b(?:if|en)\([^()\r\n]*\)"      # seçenek koşulları (MPP_ChoiceEX: "Seçenek if(s[108])")
+    r"|\\[CVNPIGcvnpig]\[\d+\]"
     r"|\\[{}]"
     r"|\\[<>]"
     r"|\\[.!|^$]"
@@ -24,6 +28,55 @@ PROTECTED_RPGM = re.compile(
     r")",
     re.IGNORECASE,
 )
+
+# Satır başındaki konuşmacı adı (\name[勇者] Hoş geldin!): ad ve satır ayrı çevrilir, sonra birleştirilir.
+# Böylece aynı ad her satırda aynı çevrilir, Japonca/Çince ad satırın çevrilmesini engellemez ve editörde ikisi de
+# ayrı düzenlenebilir. İçinde kod olan adlara (\name[\V[4]]) dokunulmaz.
+RPGM_SPEAKER = re.compile(r"^(\s*\\name\[)([^\]\\\r\n]+)(\]\s*)(.*)$", re.IGNORECASE | re.DOTALL)
+RPGM_EXTRA_INSTRUCTION = (
+    "RPG Maker metinleri: ters bölüyle başlayan kodları (\\C[3], \\V[1], \\N[1], \\pop<1>, \\!, \\., \\|) ve %1, %2 "
+    "yer tutucularını harfi harfine koru. Köşeli parantez içindeki sıradan kelimeler ([Axe], [Accessories] gibi) etiket "
+    "değildir; onları da çevir. Tek başına gelen kısa metinler genellikle karakter adı ya da menü terimidir."
+)
+
+
+def split_speaker(text: str) -> tuple:
+    """(ad, satır gövdesi); satır başında çevrilebilir bir \\name[...] yoksa (None, metin)."""
+    m = RPGM_SPEAKER.match(text)
+    if not m or not re.search(r"[^\W\d_]", m.group(2)):
+        return None, text
+    return m.group(2), m.group(4)
+
+
+def speaker_sources(texts: List[str]) -> List[str]:
+    """Çevirmene gidecek benzersiz metinler: konuşmacı adı ile satır gövdesi ayrı öğelerdir."""
+    out: List[str] = []
+    for text in texts:
+        name, body = split_speaker(text)
+        if name is None:
+            out.append(text)
+            continue
+        out.append(name)
+        if body.strip():
+            out.append(body)
+    return list(dict.fromkeys(out))
+
+
+def join_speaker(texts: List[str], translations: Dict[str, str]) -> Dict[str, str]:
+    """speaker_sources ile ayrılan çevirileri asıl satırlara geri birleştirir: {asıl satır: çeviri}."""
+    result: Dict[str, str] = {}
+    for text in texts:
+        name, body = split_speaker(text)
+        if name is None:
+            if text in translations:
+                result[text] = translations[text]
+            continue
+        m = RPGM_SPEAKER.match(text)
+        new_name = re.sub(r"[\]\\\r\n]", "", translations.get(name) or name).strip() or name
+        new_body = (translations.get(body) or body) if body.strip() else body
+        result[text] = f"{m.group(1)}{new_name}{m.group(3)}{new_body}"
+    return result
+
 
 RPGM_BUILTIN_GLOSSARY = {
     'Level': 'Seviye', 'Lv': 'Sv', 'HP': 'HP', 'MP': 'MP', 'TP': 'TP',
@@ -333,72 +386,63 @@ class ExtractedText:
     context: str
     speaker: str = ""
 
+def _command_texts(json_file: Path, commands: Any, base: str) -> List[ExtractedText]:
+    """Bir olay komut listesindeki oyuncunun gördüğü metinler: konuşma (401, 101 başlığındaki ad), kayan metin (405)
+    ve seçenekler (102). Haritalar, ortak olaylar (CommonEvents) ve savaş olayları (Troops) aynı biçimdedir."""
+    found: List[ExtractedText] = []
+    if not isinstance(commands, list):
+        return found
+    speaker = ""
+    for i, cmd in enumerate(commands):
+        if not isinstance(cmd, dict):
+            continue
+        code, params = cmd.get("code"), cmd.get("parameters") or []
+        if code == 101:
+            speaker = params[4] if len(params) > 4 and isinstance(params[4], str) else ""
+        elif code in (401, 405) and params and isinstance(params[0], str) and params[0].strip():
+            found.append(ExtractedText(json_file, f"{base}.list[{i}].parameters[0]", params[0],
+                                       "dialogue" if code == 401 else "scroll", speaker if code == 401 else ""))
+        elif code == 102 and params and isinstance(params[0], list):
+            for c_idx, choice in enumerate(params[0]):
+                if isinstance(choice, str) and choice.strip():
+                    found.append(ExtractedText(json_file, f"{base}.list[{i}].parameters[0][{c_idx}]", choice, "choice"))
+    return found
+
+
 def extract_texts_mv_mz(data_dir: Path, log: LogFn = print) -> List[ExtractedText]:
     """RPG Maker MV/MZ JSON dosyalarından çevrilebilir metinleri çıkarır."""
     extracted = []
-    
+
     for json_file in data_dir.glob("*.json"):
         if json_file.name.startswith("Map") and json_file.name != "MapInfos.json":
             try:
-                with open(json_file, 'r', encoding='utf-8') as f:
+                with open(json_file, 'r', encoding='utf-8-sig') as f:
                     data = json.load(f)
-                    
-                if not data or 'events' not in data:
-                    continue
-                    
-                for e_idx, event in enumerate(data.get('events', [])):
-                    if not event:
-                        continue
-                    for p_idx, page in enumerate(event.get('pages', [])):
-                        list_cmds = page.get('list', [])
-                        
-                        speaker = ""
-                        i = 0
-                        while i < len(list_cmds):
-                            cmd = list_cmds[i]
-                            code = cmd.get('code')
-                            params = cmd.get('parameters', [])
-                            
-                            # 101: Show Text Header
-                            if code == 101:
-                                if len(params) > 4 and isinstance(params[4], str) and params[4]:
-                                    speaker = params[4]
-                                    
-                                j = i + 1
-                                while j < len(list_cmds) and list_cmds[j].get('code') == 401:
-                                    line_text = list_cmds[j]['parameters'][0]
-                                    if line_text.strip():
-                                        j_path = f"events[{e_idx}].pages[{p_idx}].list[{j}].parameters[0]"
-                                        extracted.append(ExtractedText(
-                                            file_path=json_file,
-                                            json_path=j_path,
-                                            original=line_text,
-                                            context="dialogue",
-                                            speaker=speaker
-                                        ))
-                                    j += 1
-                                i = j - 1
-
-                            
-                            # 102: Show Choices
-                            elif code == 102 and params:
-                                for c_idx, choice in enumerate(params[0]):
-                                    if choice.strip():
-                                        j_path = f"events[{e_idx}].pages[{p_idx}].list[{i}].parameters[0][{c_idx}]"
-                                        extracted.append(ExtractedText(
-                                            file_path=json_file,
-                                            json_path=j_path,
-                                            original=choice,
-                                            context="choice"
-                                        ))
-                            
-                            i += 1
+                for e_idx, event in enumerate((data or {}).get('events') or []):
+                    for p_idx, page in enumerate((event or {}).get('pages') or []):
+                        extracted += _command_texts(json_file, (page or {}).get('list'), f"events[{e_idx}].pages[{p_idx}]")
             except Exception as e:
                 log(f"Hata {json_file.name} dosyasında okunurken: {str(e)}")
-                
+
+        elif json_file.name in ("CommonEvents.json", "Troops.json"):
+            # Ortak olaylar (telefon, gün sonu, menüden çağrılan konuşmalar) ve savaş içi konuşmalar
+            try:
+                with open(json_file, 'r', encoding='utf-8-sig') as f:
+                    data = json.load(f)
+                for e_idx, event in enumerate(data if isinstance(data, list) else []):
+                    if not event:
+                        continue
+                    if json_file.name == "CommonEvents.json":
+                        extracted += _command_texts(json_file, event.get('list'), f"[{e_idx}]")
+                    else:
+                        for p_idx, page in enumerate(event.get('pages') or []):
+                            extracted += _command_texts(json_file, (page or {}).get('list'), f"[{e_idx}].pages[{p_idx}]")
+            except Exception as e:
+                log(f"Hata {json_file.name} dosyasında okunurken: {str(e)}")
+
         elif json_file.name == "System.json":
             try:
-                with open(json_file, 'r', encoding='utf-8') as f:
+                with open(json_file, 'r', encoding='utf-8-sig') as f:
                     data = json.load(f)
                 
                 if 'gameTitle' in data and data['gameTitle'].strip():
@@ -432,7 +476,7 @@ def extract_texts_mv_mz(data_dir: Path, log: LogFn = print) -> List[ExtractedTex
 
         elif json_file.name in ["Actors.json", "Enemies.json", "Items.json", "Weapons.json", "Armors.json", "Skills.json", "States.json", "Classes.json"]:
             try:
-                with open(json_file, 'r', encoding='utf-8') as f:
+                with open(json_file, 'r', encoding='utf-8-sig') as f:
                     data = json.load(f)
                     
                 if not isinstance(data, list):
@@ -442,7 +486,8 @@ def extract_texts_mv_mz(data_dir: Path, log: LogFn = print) -> List[ExtractedTex
                     if not item:
                         continue
                         
-                    for key in ['name', 'nickname', 'profile', 'description', 'note', 'message1', 'message2', 'message3', 'message4']:
+                    # "note" eklentilerin okuduğu teknik alandır (<tag:değer>); oyuncu görmez, oyuna da yazılmaz
+                    for key in ['name', 'nickname', 'profile', 'description', 'message1', 'message2', 'message3', 'message4']:
                         if key in item and item[key] and isinstance(item[key], str) and item[key].strip():
                             ctx = f"{json_file.stem.lower()}_{key}"
                             extracted.append(ExtractedText(json_file, f"[{i}].{key}", item[key], ctx))
@@ -559,7 +604,7 @@ def extract_texts_vxace(data_dir: Path, log: LogFn = print, engine_type: str = "
             continue
         for node, label, context in _rgss_slots(obj, path.stem, engine_type):
             text = node.text
-            if text.strip() and re.search(r"[A-Za-zÀ-ž]", text):
+            if text.strip() and re.search(r"[^\W\d_]", text):
                 extracted.append(ExtractedText(file_path=path, json_path=label, original=text, context=context))
     log(f"{len(files)} veri dosyasından {len(extracted)} metin çıkarıldı.")
     return extracted
@@ -568,8 +613,9 @@ def write_translations_mv_mz(
     data_dir: Path,
     translations: Dict[str, str],
     log: LogFn = print,
+    language: str = "tr",
 ) -> int:
-    """MV/MZ JSON dosyalarına çevirileri yazar ve yapıyı korur."""
+    """MV/MZ JSON dosyalarına çevirileri yazar ve yapıyı korur. language: menü terimlerinin büyük harfi için."""
     changed_count = 0
 
     # Yalnızca bu anahtarlardaki string değerlere dokunarız.
@@ -591,9 +637,35 @@ def write_translations_mv_mz(
         325: [1],   # Change Profile
     }
 
+    def swap(container, key, title: bool = False) -> None:
+        nonlocal modified, changed_count
+        s = container[key]
+        if isinstance(s, str) and s in translations and translations[s] != s:
+            new = translations[s]
+            if title and new[:1].islower():   # menü terimi ("savaş" → "Savaş"); Türkçede i → İ
+                first = "İ" if new[0] == "i" and language in ("tr", "az") else new[0].upper()
+                new = first + new[1:]
+            container[key] = new
+            modified = True
+            changed_count += 1
+
+    def replace_system(data) -> None:
+        """System.json: menü/savaş terimleri ve mesajlar listelerde durur (SAFE_KEYS ile yakalanmaz)."""
+        terms = data.get("terms") if isinstance(data.get("terms"), dict) else {}
+        lists = [terms.get(group) for group in ("basic", "commands", "params")]
+        lists += [data.get(name) for name in ("armorTypes", "elements", "equipTypes", "skillTypes", "weaponTypes")]
+        for values in lists:
+            for index in range(len(values) if isinstance(values, list) else 0):
+                swap(values, index, title=True)
+        messages = terms.get("messages")
+        for key in (list(messages) if isinstance(messages, dict) else []):
+            swap(messages, key)
+
     def replace_safe(obj):
         nonlocal modified, changed_count
         if isinstance(obj, dict):
+            if "volume" in obj and "pitch" in obj:
+                return          # ses nesnesi: "name" bir dosya adıdır, çevrilmez
             for k, v in obj.items():
                 if k in SAFE_KEYS and isinstance(v, str):
                     if v in translations and translations[v] != v:
@@ -632,11 +704,13 @@ def write_translations_mv_mz(
 
     for json_file in data_dir.glob("*.json"):
         try:
-            with open(json_file, 'r', encoding='utf-8') as f:
+            with open(json_file, 'r', encoding='utf-8-sig') as f:
                 data = json.loads(f.read())
 
             modified = False
             replace_safe(data)
+            if json_file.name == "System.json" and isinstance(data, dict):
+                replace_system(data)
 
             if modified:
                 with open(json_file, 'w', encoding='utf-8') as f:

@@ -247,7 +247,10 @@ def test_quality_provider_selection(tmp_path, monkeypatch):
     monkeypatch.setattr(app_modern.prov, "load_provider_config", lambda: providers.ProviderConfig(gemini_keys=["k"]))
     assert bridge._quality_provider() == "gemini"
     bridge._settings["model"] = "ollama"
-    assert bridge._quality_provider() == "ollama"
+    assert bridge._quality_provider() == "gemini", "TranslateGemma yalnızca çeviri yapar: düzeltmeleri Gemini yazar"
+    monkeypatch.setattr(app_modern.prov, "load_provider_config",
+                        lambda: providers.ProviderConfig(gemini_keys=["k"], ollama_model="qwen2.5:7b"))
+    assert bridge._quality_provider() == "ollama", "sohbet modeli kalite editörü olabilir"
 
 
 # ── BepInEx otomatik kurulum ─────────────────────────────────────────────────

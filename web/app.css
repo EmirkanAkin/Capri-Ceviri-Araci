@@ -617,18 +617,6 @@ button:active:not(:disabled) { filter: brightness(.92); }
 .prog-facts .hint.warn { color: var(--warn); }
 
 /* Topluluk yamaları */
-.community-modal { width: 640px; }
-.cm-search { position: relative; margin-top: 18px; }
-.cm-search svg.i { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); width: 15px; height: 15px; color: var(--muted); }
-.cm-search .input { padding-left: 36px; width: 100%; }
-.cm-body { margin-top: 12px; max-height: 52vh; overflow: auto; display: flex; flex-direction: column; gap: 8px; }
-.cm-item { display: flex; gap: 14px; align-items: center; padding: 12px 14px; border-radius: 12px; background: var(--surface-2); }
-.cm-item .title { font-weight: 600; }
-.cm-item .chips { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
-.cm-item .meta { color: var(--muted); font-size: 12px; margin-top: 6px; }
-.cm-actions { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
-.cm-nofile { color: var(--muted); font-size: 12px; }
-.cm-game { color: var(--muted); font-size: 12.5px; }
 
 /* Arayüz dili seçici */
 .lang-pick { position: relative; }
@@ -644,3 +632,8 @@ button:active:not(:disabled) { filter: brightness(.92); }
 .lang-menu button svg.i { width: 15px; height: 15px; }
 
 .toplinks button { white-space: nowrap; }
+
+/* Dahili yerel modeller */
+.llm-row .title { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.llm-row .sub { margin-top: 4px; }
+.warn-text { color: var(--warn); }

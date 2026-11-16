@@ -29,8 +29,8 @@
           const lead = key.startsWith("{");
           const n = lead ? m[1] : m[2], text = (lead ? m[2] : m[1]).trim();
           const v = value.trim(), ph = `{${n}}`;
-          if (lead && v.startsWith(ph)) bare.push([text, v.slice(ph.length).trim()]);
-          else if (!lead && v.endsWith(ph)) bare.push([text, v.slice(0, -ph.length).trim()]);
+          // Çeviri yer tutucuyu başka yere taşımış olabilir ("Projekt {0} öffnen"): simge çıkarılınca metin kalır
+          if (v.split(ph).length === 2) bare.push([text, v.replace(ph, " ").replace(/\s+/g, " ").trim()]);
         }
       } else {
         state.exact.set(key, value);
@@ -60,7 +60,8 @@
       if (m.slice(1).some((v) => v.includes(" · ") || v.includes(" — "))) continue;
       const values = {};
       t.order.forEach((n, i) => { const v = m[i + 1]; values[n] = localNumber(v) ?? lookup(norm(v), depth + 1) ?? v; });
-      return t.out.replace(/\{(\d+)\}/g, (_, n) => values[n] ?? "");
+      // "vor 19 Std." + "." → tek nokta (üç nokta korunur)
+      return t.out.replace(/\{(\d+)\}/g, (_, n) => values[n] ?? "").replace(/([^.])\.\.(?!\.)/g, "$1.");
     }
     const end = key.match(/^(.*?[^.…])(…|\.\.\.|\.)$/);    // içteki metin noktayla bitmez: döngü olmaz
     const inner = end ? lookup(end[1].trim(), depth) : null;

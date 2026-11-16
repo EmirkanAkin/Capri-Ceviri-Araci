@@ -213,12 +213,22 @@ class _FakeOllama(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    requests = []   # (yol, model): testler hangi istem biçiminin kullanıldığını görür
+
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-        text = body["messages"][1]["content"].split("\n\n", 1)[1]
-        parts = [p.strip() for p in text.split("§SEP§")]
-        out = "\n§SEP§\n".join(f"TR({p})" for p in parts)
-        data = json.dumps({"message": {"content": out}}).encode()
+        _FakeOllama.requests.append((self.path, body.get("model")))
+        if self.path == "/api/generate":                       # MiLMMT: ham istem, cevap "Turkish:" sonrası
+            source = body["prompt"].split("\nEnglish: ", 1)[1].rsplit("\n", 1)[0]
+            data = json.dumps({"response": f" TR({source})"}).encode()
+        elif len(body["messages"]) == 1:                       # TranslateGemma: tek mesaj, metin 3 satır sonu sonra
+            text = body["messages"][0]["content"].split("\n\n\n", 1)[1]
+            data = json.dumps({"message": {"content": "\n".join(f"TR({line})" for line in text.split("\n"))}}).encode()
+        else:                                                  # genel sohbet modeli: §SEP§ ile toplu
+            text = body["messages"][1]["content"].split("\n\n", 1)[1]
+            parts = [p.strip() for p in text.split("§SEP§")]
+            out = "\n§SEP§\n".join(f"TR({p})" for p in parts)
+            data = json.dumps({"message": {"content": out}}).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.end_headers()

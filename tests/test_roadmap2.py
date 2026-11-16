@@ -1,4 +1,4 @@
-"""Yol haritası (2. tur): tek pencere, bildirim balonu, ortak çeviri belleği, tarama tahmini, topluluk yamaları, dil."""
+"""Yol haritası (2. tur): tek pencere, bildirim balonu, ortak çeviri belleği, tarama tahmini, yama güvenliği, dil."""
 import json
 import os
 
@@ -78,41 +78,59 @@ def test_scan_estimates_unity_and_unreal_lines(tmp_path, monkeypatch):
     assert app_modern.quick_line_count({"path": str(tmp_path), "engine": "unreal"}) == 1
 
 
-def test_community_issue_parsing_and_safe_downloads():
-    import community
-    issue = {"number": 7, "title": "Yama: Sample Game (tr)", "html_url": "https://github.com/o/r/issues/7",
-             "user": {"login": "emir"}, "updated_at": "2026-11-14T10:00:00Z",
-             "body": "Oyun: Sample Game\nMotor: Ren'Py\nDil: tr\nSatır: 18.724\n\n"
-                     "[kp_tr.capripatch.zip](https://github.com/user-attachments/files/123456/kp_tr.capripatch.zip)\n"
-                     "https://evil.example.com/x.zip"}
-    p = community.parse_issue(issue)
-    assert (p["game"], p["target"], p["engine"], p["lines"], p["user"], p["updated"]) == \
-        ("Sample Game", "tr", "Ren'Py", 18724, "emir", "2026-11-14")
-    assert p["files"] == ["https://github.com/user-attachments/files/123456/kp_tr.capripatch.zip"]
-    assert community.allowed_download(p["files"][0])
-    for bad in ("https://evil.example.com/x.zip", "http://github.com/user-attachments/files/1/x.zip",
-                "https://github.com/user-attachments/files/1/x.exe"):
-        assert not community.allowed_download(bad)
-    assert "in%3Atitle" in community.search_url("o/r") and "Yama" in community.search_url("o/r", "knight")
-
-
-def test_community_patch_downloads_and_applies_to_open_game(tmp_path, monkeypatch):
+def _patch(tmp_path, engine, translations, name="p.capripatch"):
     import zipfile
-    import community
+    patch = tmp_path / name
+    with zipfile.ZipFile(patch, "w") as z:
+        z.writestr("manifest.json", json.dumps({"engine": engine, "title": "Demo"}))
+        z.writestr("translations.json", json.dumps(translations))
+    return patch
+
+
+def test_imported_patch_cannot_inject_tags_code_or_links(tmp_path, monkeypatch):
+    """Başkasından gelen yama: yalnızca kaynakla aynı etiket/kodu taşıyan düz çeviriler alınır."""
     bridge = make_bridge(tmp_path, monkeypatch)
     bridge._select_game(str(make_rpgmaker_game(tmp_path / "game")))
-    patch = tmp_path / "p.zip"
-    with zipfile.ZipFile(patch, "w") as z:
-        z.writestr("manifest.json", json.dumps({"engine": "rpgmaker", "title": "Demo"}))
-        z.writestr("translations.json", json.dumps({"New Game": "Yeni Oyun"}))
-    monkeypatch.setattr(community, "download", lambda url, folder: patch)
-    assert bridge.download_community_patch("https://github.com/user-attachments/files/1/p.zip") is True
-    assert app_modern._read_json(bridge._cache_path(), {})["New Game"] == "Yeni Oyun"
-    monkeypatch.setattr(community, "search", lambda repo, query="": [{"game": "Demo", "files": []}])
-    res = bridge.community_patches("demo")
-    assert res["ok"] and res["items"][0]["game"] == "Demo" and res["game"]["title"]
-    monkeypatch.setattr(community, "search", lambda repo, query="": (_ for _ in ()).throw(OSError("ağ yok")))
-    assert bridge.community_patches()["ok"] is False
+    patch = _patch(tmp_path, "rpgmaker", {
+        "New Game": "Yeni Oyun",                                         # temiz
+        "Hello \\C[3]friend\\C[0]!": "Merhaba \\C[3]dostum\\C[0]!",       # kaynaktaki kodlar korunmuş
+        "Welcome!": "Hoş geldin!\\js<require('child_process').exec('calc')>",  # MV/MZ eklentisiyle kod çalıştırma
+        "Goodbye.": "Hoşça kal. https://evil.example/phish",            # bağlantı ekleme
+        "Yes": "Evet\n\\V[9999]",                                       # fazladan satır ve değişken
+        "No": "Hayır\x00",                                              # kontrol karakteri
+        "Hi.": "x" * 500,                                                # anlamsız uzunluk
+    })
+    assert bridge._apply_patch_file(patch) is True
+    cache = app_modern._read_json(bridge._cache_path(), {})
+    assert cache == {"New Game": "Yeni Oyun", "Hello \\C[3]friend\\C[0]!": "Merhaba \\C[3]dostum\\C[0]!"}
+    warn = [e[1] for e in bridge._ui.events if e[0] == "notify" and "alınmadı" in e[1]["title"]]
+    assert warn and warn[0]["title"].startswith("5 satır")
+
+
+def test_renpy_patch_cannot_add_hyperlinks_or_interpolation():
+    import patch_safety
+    safe, rejected = patch_safety.filter_translations({
+        "Hello, [mc]!": "Merhaba, [mc]!",
+        "Click here.": "Buraya tıkla {a=https://evil.example}burası{/a}.",
+        "Nice.": "Güzel [renpy.os.system('calc')].",
+        "Wow.": 'Vay." \n    $ import os',
+    }, "renpy")
+    assert safe == {"Hello, [mc]!": "Merhaba, [mc]!"} and rejected == 3
+
+
+def test_patch_archive_limits(tmp_path, monkeypatch):
+    import zipfile
+    import patch_safety
+    bomb = tmp_path / "bomb.capripatch"
+    with zipfile.ZipFile(bomb, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("manifest.json", "{}")
+        z.writestr("translations.json", "{" + " " * (patch_safety.MAX_TRANSLATIONS + 10) + "}")
+    assert bomb.stat().st_size < 1_000_000, "sıkıştırılmış hali küçük"
+    with pytest.raises(ValueError):
+        patch_safety.read_patch(bomb)
+    bridge = make_bridge(tmp_path, monkeypatch)
+    bridge._select_game(str(make_rpgmaker_game(tmp_path / "game")))
+    assert bridge._apply_patch_file(bomb) is False, "açılmadan reddedilir"
 
 
 def test_english_dictionary_keeps_placeholders():
@@ -152,11 +170,14 @@ def test_switching_ui_language_also_switches_target(tmp_path, monkeypatch):
     import i18n
     bridge = make_bridge(tmp_path, monkeypatch)
     monkeypatch.setattr(app_modern, "DATA_DIR", tmp_path / "data")
-    monkeypatch.setattr(bridge, "_ui_translator", lambda code: (lambda lines: {l: "DE " + l for l in lines}))
+    monkeypatch.setattr(bridge, "_ui_translator", lambda code: (lambda lines: {l: "NL " + l for l in lines}))
     res = bridge.set_ui_language("de_DE")
     assert res["ok"] and res["language"] == "de" and res["target_changed"]
     assert bridge._settings["target"] == "de" and bridge._settings["ui_language"] == "de"
-    assert res["dict"]["Kapat"] == "DE Close"
+    assert res["dict"]["Kapat"] == "Schließen", "Almanca pakette hazır gelir"
+    res = bridge.set_ui_language("nl")
+    assert res["ok"] and res["dict"]["Kapat"] == "NL Close", "hazır gelmeyen dil bulutla üretilir"
+    bridge._settings["target"] = "de"
     res = bridge.set_ui_language("en")
     assert res["dict"]["Kapat"] == "Close" and bridge._settings["target"] == "de", "İngilizce hedef listesinde yok: değişmez"
     monkeypatch.setattr(bridge, "_ui_translator", lambda code: None)

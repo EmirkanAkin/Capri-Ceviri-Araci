@@ -39,7 +39,9 @@ EXCLUDES = ["torch", "torchvision", "torchaudio", "transformers", "tokenizers", 
             "sacremoses", "huggingface_hub", "accelerate", "sympy", "networkx", "jinja2", "mpmath",
             "matplotlib", "scipy", "pandas", "cv2", "tkinter", "IPython", "pytest", "numpy.testing"]
 HIDDEN = ["webview", "webview.platforms.edgechromium", "webview.platforms.winforms", "clr", "UnityPy", "pylocres",
-          "mss", "rpycdec", "numpy", "requests"]
+          "mss", "rpycdec", "numpy", "requests",
+          # İsteğe bağlı indirilen Unity bileşen okuyucusu (tools/typetree) dışarıdan bunlarla yüklenir
+          "unity_typed", "ctypes", "ctypes.wintypes", "platform", "dataclasses", "UnityPy.helpers.TypeTreeNode"]
 DATA = ["web", "assets", "data"]
 TIMESTAMP_URL = "http://timestamp.digicert.com"
 

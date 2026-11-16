@@ -192,7 +192,7 @@ def test_translate_text_page(tmp_path, monkeypatch):
     bridge = make_bridge(tmp_path, monkeypatch, model="gemini")
     seen = {}
 
-    def fake(text, provider_id, target_lang, source_lang, nsfw_mode, log, max_tokens):
+    def fake(text, provider_id, target_lang, source_lang, nsfw_mode, log, max_tokens, local_model=None):
         seen.update(provider=provider_id, target=target_lang, source=source_lang, max_tokens=max_tokens)
         return True, "Merhaba\nDünya", 10
 

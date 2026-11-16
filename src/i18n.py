@@ -58,34 +58,47 @@ def placeholders_ok(source: str, translated: str) -> bool:
 class Dictionaries:
     """Dil sözlüklerini sağlar ve eksik olanları üretir."""
 
-    def __init__(self, folder: Path):
+    def __init__(self, folder: Path, bundled: Optional[Path] = None):
         self.folder = Path(folder)
+        self.bundled = Path(bundled) if bundled else None   # pakette hazır gelen sözlükler (data/ui_lang)
 
     def path(self, code: str) -> Path:
         return self.folder / f"{code}.json"
 
+    @staticmethod
+    def _read(path: Optional[Path]) -> Dict[str, str]:
+        try:
+            data = json.loads(path.read_text(encoding="utf-8")) if path else {}
+        except (OSError, ValueError):
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    def _known(self, code: str) -> Dict[str, str]:
+        """Hazır sözlük + kullanıcının bilgisayarında üretilenler (üretilen önce gelir: daha yeni metinler)."""
+        bundled = self._read(self.bundled / f"{code}.json") if self.bundled else {}
+        return {**{k: v for k, v in bundled.items() if k in EN}, **self._read(self.path(code))}
+
     def get(self, code: str) -> Optional[Dict[str, str]]:
-        """Türkçe → boş sözlük; İngilizce → hazır; diğerleri: tamamlanmış kayıt varsa o, yoksa None (üretilmeli)."""
+        """Türkçe → boş sözlük; İngilizce → hazır; diğerleri: hazır + üretilmiş kayıt tamsa o, değilse None (eksikler
+        üretilmeli; sürüm güncellenince yeni metinler eklenir)."""
         if code == "tr":
             return {}
         if code == "en":
             return dict(EN)
-        try:
-            data = json.loads(self.path(code).read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            return None
-        if not isinstance(data, dict) or set(EN) - set(data):
-            return None          # sürüm güncellenince yeni metinler eklenir: eksikler üretilmeli
-        return data
+        data = self._known(code)
+        return data if data and not set(EN) - set(data) else None
+
+    def with_fallback(self, code: str) -> Dict[str, str]:
+        """Eksik metinler İngilizce: hazır sözlüğe sonradan eklenen birkaç metin yüzünden dil kullanılamaz olmasın."""
+        return {**EN, **self._known(code)}
+
+    def missing(self, code: str) -> int:
+        """Bu dilde henüz karşılığı olmayan metin sayısı (anahtarsız kullanıcıya İngilizce görünecekler)."""
+        return 0 if code in ("tr", "en") else len(set(EN) - set(self._known(code)))
 
     def build(self, code: str, translate: Callable[[List[str]], Dict[str, str]]) -> Tuple[Dict[str, str], int]:
         """İngilizce metinleri hedef dile çevirir. translate(liste) → {İngilizce: çeviri}. (sözlük, başarısız sayısı)"""
-        try:
-            existing = json.loads(self.path(code).read_text(encoding="utf-8"))
-            if not isinstance(existing, dict):
-                existing = {}
-        except (OSError, ValueError):
-            existing = {}
+        existing = self._known(code)
         missing = sorted({EN[k] for k in EN if k not in existing})
         translated = translate(missing) if missing else {}
         failed = 0

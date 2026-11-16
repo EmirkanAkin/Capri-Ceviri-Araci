@@ -19,3 +19,4 @@ model_nllb/
 runtime/
 tools/
 *.part
+models_llm/

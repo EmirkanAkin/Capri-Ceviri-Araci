@@ -151,7 +151,7 @@ def translate_json_file(
     input_path: Path,
     output_path: Path,
     model_kind: str = "opus",
-    ollama_model: str = "qwen2.5:7b",
+    ollama_model: str = "translategemma:4b",
     glossary_path: Path | None = None,
     nsfw: bool = False,
     log: LogFn = print,
@@ -261,7 +261,7 @@ def translate_json_folder(
     output_dir: Path,
     pattern: str = "*.json",
     model_kind: str = "opus",
-    ollama_model: str = "qwen2.5:7b",
+    ollama_model: str = "translategemma:4b",
     glossary_path: Path | None = None,
     nsfw: bool = False,
     log: LogFn = print,
@@ -311,15 +311,15 @@ def main():
   python engine_json.py --input ch18_strings.json --output ch18_strings_tr.json --model nllb --nsfw
 
   # Ollama
-  python engine_json.py --input ch18_strings.json --output ch18_strings_tr.json --model ollama --ollama-model qwen2.5:7b
+  python engine_json.py --input ch18_strings.json --output ch18_strings_tr.json --model ollama --ollama-model translategemma:4b
         """,
     )
     parser.add_argument("--input", "-i", required=True, help="Giriş JSON dosyası veya klasörü")
     parser.add_argument("--output", "-o", required=True, help="Çıkış JSON dosyası veya klasörü")
     parser.add_argument("--model", "-m", default="opus", choices=["opus", "nllb", "ollama"],
                         help="Çeviri modeli (varsayılan: opus)")
-    parser.add_argument("--ollama-model", default="qwen2.5:7b",
-                        help="Ollama model adı (varsayılan: qwen2.5:7b)")
+    parser.add_argument("--ollama-model", default="translategemma:4b",
+                        help="Ollama model adı (varsayılan: translategemma:4b)")
     parser.add_argument("--glossary", "-g", help="Ek sözlük dosyası (.json)")
     parser.add_argument("--nsfw", action="store_true",
                         help="Yetişkin içerik sözlüğünü de kullan (glossary_nsfw.json)")

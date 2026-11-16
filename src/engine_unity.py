@@ -121,6 +121,8 @@ class UnityGameInfo:
     scanned: bool = False          # varlık/font taraması yapıldı mı (bkz. scan_unity_assets)
     tmp_fonts: List[str] = field(default_factory=list)      # TextMeshPro font varlıkları
     tmp_glyphs: Set[int] = field(default_factory=set)       # bu fontların içerdiği karakterler (birleşim)
+    typed_counts: Dict[str, int] = field(default_factory=dict)   # bileşen metinleri: fsm / ui / xml (unity_typed)
+    typed_reader_missing: bool = False   # bileşen okuyucusu gerekli ama kurulu değil
 
 
 def detect_unity_game(selected: Union[str, Path]) -> Optional[UnityGameInfo]:
@@ -362,6 +364,21 @@ def extract_texts_unity(info: UnityGameInfo, log: LogFn = print) -> List[UnityTe
 
     # 3. Utage senaryo kitapları ve çok dilli tablolar (sharedassets dahil; IL2CPP'de de okunur)
     items.extend(extract_asset_tables(info, log, loaded))
+
+    # 4. Bileşen metinleri (PlayMaker FSM, UI Text/TMP, çok dilli XML): tek paket data.unity3d ya da başka metin yoksa.
+    #    Oyunun kendi DLL'lerinden üretilen tip bilgisiyle okunur (bkz. unity_typed)
+    import unity_typed
+    info.typed_reader_missing = False
+    if unity_typed.wants_reader(info, len(items)):
+        if unity_typed.generator_available():
+            loaded.clear()   # büyük ortamlar bellekte kalmasın
+            typed = unity_typed.scan(info, log)
+            items.extend(typed.items)
+            info.typed_counts = typed.counts
+            if typed.tmp_glyphs and not info.tmp_glyphs:
+                info.tmp_glyphs = typed.tmp_glyphs
+        else:
+            info.typed_reader_missing = True
     if info.tmp_glyphs:   # TextMeshPro atlaslarında olmayan Türkçe harfler (TTF taraması bunları göremez)
         absent = [c for c in "ğĞşŞıİçÇöÖüÜ" if ord(c) not in info.tmp_glyphs]
         if absent:
@@ -653,7 +670,35 @@ def write_asset_tables(info: UnityGameInfo, translations: Dict[str, str], items:
     return written
 
 
-def translate_texts_unity(
+_SPACED = re.compile(r"(?:[^\W\d_] ){2,}[^\W\d_](?: {2,}(?:[^\W\d_] )*[^\W\d_])*")
+
+
+def collapse_spaced(text: str) -> Optional[str]:
+    """Harfleri aralıklı başlık ("S T A R T   G A M E") ise sıkıştırılmış hâli ("START GAME"), değilse None."""
+    body = text.strip()
+    if not _SPACED.fullmatch(body):
+        return None
+    return " ".join(word.replace(" ", "") for word in re.split(r" {2,}", body))
+
+
+def respace(text: str) -> str:
+    """Çeviriyi aynı biçimde aralıklar: kelimeler arası üç, harfler arası bir boşluk."""
+    return "   ".join(" ".join(word) for word in text.split())
+
+
+def translate_texts_unity(unique_sources: List[str], *args: Any, **kwargs: Any) -> Dict[str, str]:
+    """Aralıklı başlıklar sıkıştırılarak çevrilir, sonuç aynı aralıkla geri yazılır; geri kalan her şey aynen."""
+    spaced = {s: collapse_spaced(s) for s in unique_sources}
+    spaced = {s: c for s, c in spaced.items() if c}
+    sources = [s for s in unique_sources if s not in spaced] + sorted(set(spaced.values()) - set(unique_sources))
+    cache = _translate_texts_unity(sources, *args, **kwargs)
+    for original, collapsed in spaced.items():
+        if original not in cache and cache.get(collapsed):
+            cache[original] = respace(cache[collapsed])
+    return cache
+
+
+def _translate_texts_unity(
     unique_sources: List[str],
     cache_path: Path,
     target_lang: str = "tr",
@@ -664,8 +709,8 @@ def translate_texts_unity(
     tracker: Optional[ProgressTracker] = None,
     model_kind: str = "gemini",
     model_dir: Optional[Path] = None,
-    ollama_model: str = "qwen2.5:7b",
-    ollama_host: str = "http://localhost:11434",
+    ollama_model: str = "translategemma:4b",
+    ollama_host: str = "http://127.0.0.1:11434",
     failed_out: Optional[set] = None,
     extra_instruction: str = "",
 ) -> Dict[str, str]:
@@ -730,19 +775,10 @@ def translate_texts_unity(
         )
 
     # 3. Ollama veya offline modeller
-    elif selected_model == "ollama":
-        from engine_common import OllamaTranslationEngine
-        trans_cache = TranslationCache(cache_path, cache)
-        engine = OllamaTranslationEngine(
-            model_name=ollama_model,
-            cache=trans_cache,
-            glossary=glossary,
-            protected_pattern=PROTECTED_UNITY,
-            log=log,
-            host=ollama_host,
-            target_lang=target_lang,
-            source_lang=source_lang,
-        )
+    elif selected_model in ("ollama", "local"):     # local: Capri'nin dahili llama.cpp modeli
+        from engine_common import make_llm_engine
+        engine = make_llm_engine(selected_model, ollama_model, ollama_host, TranslationCache(cache_path, cache),
+                                 PROTECTED_UNITY, log, target_lang, source_lang, glossary=glossary)
         cache.update(engine.translate_batch(missing, progress=progress, tracker=tracker))
 
     else:
@@ -769,6 +805,7 @@ def write_translations_unity(
     translations: Dict[str, str],
     extracted_items: List[UnityTextItem],
     log: LogFn = print,
+    target_lang: str = "tr",
 ) -> int:
     """
     Çevrilen metinleri Unity varlıklarına (resources.assets ve dosyalara) yazar.
@@ -884,5 +921,11 @@ def write_translations_unity(
 
     # 3. Utage senaryo kitapları ve çok dilli tablolar
     modified_count += write_asset_tables(info, translations, extracted_items, log)
+
+    # 4. Bileşen metinleri (PlayMaker, UI Text/TMP, çok dilli XML)
+    if any(i.format_type == "typed" for i in extracted_items):
+        import unity_typed
+        modified_count += unity_typed.write(info, translations, extracted_items, log, target=target_lang,
+                                            replace_file=_replace_file)
     return modified_count
 

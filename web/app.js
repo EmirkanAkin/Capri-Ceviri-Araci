@@ -41,8 +41,9 @@ const PROVIDERS = [
     fields: [["anthropic_key", "API anahtarı", "password", ""], ["anthropic_model", "Model", "text", ""]], test: "anthropic_key" },
   { id: "deepl", short: "D", title: "DeepL", tag: "Bulut · makine çevirisi", desc: "Dilbilgisine sadık profesyonel çeviri (Free anahtarlar “:fx” ile biter). Oyun etiketleri otomatik korunur.",
     fields: [["deepl_key", "API anahtarı", "password", "full"]], test: "deepl_key" },
-  { id: "ollama", short: "O", title: "Ollama", tag: "Yerel LLM · sansürsüz", desc: "Bilgisayarında çalışan açık kaynak modeller (Qwen 2.5, Llama 3…). İnternet ve kota gerekmez; Ollama uygulaması açık olmalı.",
-    fields: [["ollama_host", "Sunucu adresi", "text", ""], ["ollama_model", "Model", "text", ""]], test: "ollama_host" },
+  { id: "local", short: "L", title: "Yerel model (dahili)", tag: "Çevrimdışı · Ollama gerekmez", desc: "Çeviri için eğitilmiş modeller (TranslateGemma, MiLMMT) Capri'nin içinde, internetsiz ve kotasız çalışır. Ayrı bir program kurulmaz: Yerel Modeller sayfasından model dosyasını indirmen yeterli.", fields: [], test: "local" },
+  { id: "ollama", short: "O", title: "Ollama", tag: "Yerel · çeviri modelleri", desc: "Bilgisayarında, internetsiz ve kotasız çalışan yerel modeller. Çeviri için eğitilmiş modeller genel sohbet modellerinden çok daha iyi sonuç verir: TranslateGemma ardışık satırları bağlamıyla, MiLMMT tek satırları (ekran çevirisi) hızlıca çevirir. Ollama uygulaması kurulu ve açık olmalı.",
+    fields: [["ollama_host", "Sunucu adresi", "text", ""], ["ollama_model", "Model", "ollama-select", "full"]], test: "ollama_host" },
   { id: "opus", short: "OP", title: "OPUS-MT", tag: "Çevrimdışı · EN→TR", desc: "Helsinki-NLP İngilizce → Türkçe modeli. Hafif ve hızlı, ekran kartında internetsiz çalışır.", fields: [], test: "opus" },
   { id: "nllb", short: "N", title: "NLLB-200", tag: "Çevrimdışı · çok dilli", desc: "Meta'nın 200 dilli modeli; ekran kartında internetsiz çalışır. Türkçe dışındaki hedef dillere de çevirebilir (Almanca, İspanyolca, Rusça, Japonca…).", fields: [], test: "nllb" },
 ];
@@ -107,6 +108,10 @@ const HANDLERS = {
     renderHero(); renderEngineCard(); renderProgress(); renderModels(); renderAnalysis();
     if (!d.busy && $("#page-editor").classList.contains("active")) loadEditor(true);
     if (!d.busy && /BepInEx/.test(prevLabel) && activeProject()) call("analyze", true);
+    if (!d.busy && prevLabel === "Model indirme" && S.ollamaInfo) {   // Ollama modeli indi: listeyi ve seçimi yenile
+      S.ollamaInfo = null;
+      call("ollama_models").then((m) => { if (m) { S.ollamaInfo = m; S.providers.ollama_model = m.current; renderProviders(); } });
+    }
   },
   analysis: (d) => { S.analysis = d; S.analysisError = null; renderAnalysis(); renderHero(); },
   project: (p) => upsertProject(p),
@@ -232,7 +237,7 @@ function renderHero() {
     setHtml(meta, chips.map((c) => `<span class="meta-chip">${esc(c)}</span>`).join(""));
     const view = isActive ? heroActive(p) : {
       tag: (STATUS[p.status] || ["Proje"])[0], tone: "",
-      desc: p.last_action_at ? `Son işlem: ${p.last_action} · ${relTime(p.last_action_at)}.`
+      desc: p.last_action_at ? `Son işlem: ${p.last_action} · ${relTime(p.last_action_at).replace(/\.$/, "")}.`
         : p.status === "paused" ? "Önceki çeviri yarıda kaldı; açıp kaldığı yerden devam edebilirsin." : "Bu oyunda henüz çeviri yapılmadı.",
       actions: `<button class="cta" data-action="open" data-path="${esc(p.path)}">Projeyi aç ${icon("right")}</button>`,
     };
@@ -470,6 +475,11 @@ function providerStatus(id) {
   if (id === "gemini") return pv.gemini_keys && pv.gemini_keys.length ? [`Hazır · ${pv.gemini_keys.length} anahtar`, "ok"] : ["Anahtar gerekli", "warn"];
   if (["openai", "anthropic", "deepl"].includes(id)) return pv[`${id}_key`] ? ["Hazır", "ok"] : ["Anahtar gerekli", "warn"];
   if (id === "ollama") return ["Yerel sunucu", ""];
+  if (id === "local") {
+    const l = (S.models && S.models.llm) || {};
+    const m = (l.models || []).find((x) => x.id === l.selected);
+    return m && m.installed && (l.runtimes || []).some((r) => r.installed) ? [`Hazır · ${m.label}`, "ok"] : ["İndirilmedi", "warn"];
+  }
   const m = S.models && S.models[id];
   return m && m.is_ready ? ["Kurulu", "ok"] : ["Kurulu değil", "warn"];
 }
@@ -500,7 +510,7 @@ function renderSelects() {
   $("#sourceSelect").innerHTML = st.source_languages.map((l) => `<option value="${esc(l.code)}">${esc(l.label)}</option>`).join("");
   $("#targetSelect").innerHTML = st.target_languages.map((l) => `<option value="${esc(l.code)}">${esc(l.label)}</option>`).join("");
   const group = (label, ids) => `<optgroup label="${label}">${ids.map((m) => `<option value="${m}">${esc(st.model_labels[m])}</option>`).join("")}</optgroup>`;
-  $("#modelSelect").innerHTML = group("Bulut", ["gemini", "openai", "anthropic", "deepl"]) + group("Yerel", ["ollama", "opus", "nllb"]);
+  $("#modelSelect").innerHTML = group("Bulut", ["gemini", "openai", "anthropic", "deepl"]) + group("Yerel", ["local", "ollama", "opus", "nllb"]);
   syncSettingsUi();
 }
 
@@ -850,9 +860,14 @@ function renderProviders() {
   const fields = p.fields.map(([name, label, type, span]) => `<div class="${span}"><div class="field-label">${label}</div>
     ${type === "textarea" ? `<textarea class="input code" data-field="${name}" spellcheck="false">${esc(providerValue(name))}</textarea>`
       : type === "gemini-select" ? geminiSelect(name)
+      : type === "ollama-select" ? ollamaSelect(name)
       : `<input class="input" data-field="${name}" type="${type}" value="${esc(providerValue(name))}" spellcheck="false">`}</div>`).join("");
   let extra = "";
-  if (!p.fields.length) {
+  if (p.id === "local") {
+    const [st, tone] = providerStatus("local");
+    extra = `<div class="row-actions"><span class="pill ${tone}">${esc(st)}</span>
+      <button class="btn sm" data-page="models">${icon("cpu")}Yerel modeller</button></div>`;
+  } else if (!p.fields.length) {
     const m = S.models[p.id] || {};
     extra = `<div class="row-actions"><span class="pill ${m.is_ready ? "ok" : "warn"}">${m.is_ready ? `Kurulu · ${fmt(m.size_mb)} MB` : "Model dosyaları eksik"}</span>
       <button class="btn sm" data-page="models">${icon("cpu")}Yerel modeller</button></div>`;
@@ -866,6 +881,32 @@ function renderProviders() {
       <button class="btn ${isDefault ? "" : "lime"}" data-action="default-provider" ${isDefault ? "disabled" : ""}>${icon("check")}${isDefault ? "Varsayılan motor" : "Varsayılan yap"}</button>
       <span class="status-msg" id="provStatus"></span>
     </div>`;
+}
+
+function ollamaSelect(name) {
+  const current = providerValue(name) || "translategemma:4b";
+  const info = S.ollamaInfo;
+  if (!info && !S.ollamaLoading) {
+    S.ollamaLoading = true;
+    call("ollama_models").then((m) => { S.ollamaInfo = m || { presets: [], installed: [] }; S.ollamaLoading = false; if (S.provSel === "ollama") renderProviders(); });
+  }
+  const presets = (info && info.presets) || [];
+  const cards = presets.map((p) => {
+    const rec = info && info.recommended === p.model;
+    const using = current === p.model;
+    const action = p.installed
+      ? `<button class="btn sm ${using ? "" : "lime"}" data-action="ollama-use" data-model="${esc(p.model)}" ${using ? "disabled" : ""}>${icon("check")}${using ? "Seçili" : "Kullan"}</button>`
+      : `<button class="btn sm lime" data-action="ollama-pull" data-model="${esc(p.model)}" ${S.busy || !(info && info.running) ? "disabled" : ""}>${icon("download")}Kur (${fmt(p.size_gb)} GB)</button>`;
+    return `<div class="list-row"><div class="grow"><div class="title">${esc(p.label)}${rec ? ' <span class="pill lime">Ekran kartına önerilen</span>' : ""}${p.installed ? ' <span class="pill ok">Kurulu</span>' : ""}</div>
+      <div class="sub">${esc(p.note)}</div></div>${action}</div>`;
+  }).join("");
+  const state = !info ? "Ollama denetleniyor…"
+    : !info.running ? "Ollama çalışmıyor. ollama.com'dan kurup açtıktan sonra modeli buradan tek tıkla indirebilirsin."
+    : info.family === "chat" ? "Seçili model genel bir sohbet modeli; çeviri için yukarıdaki modeller önerilir."
+    : "Çeviri modelleri yalnızca çeviri yapar; kalite editörü için Gemini kullanılır.";
+  return `<input class="input" data-field="${name}" type="text" value="${esc(current)}" spellcheck="false">
+    <div class="field-hint">${state}</div><div class="field-hint">TranslateGemma ve MiLMMT, Gemma kullanım şartlarına tabidir.</div>
+    <div class="list" style="margin-top:8px">${cards}</div>`;
 }
 
 function geminiSelect(name) {
@@ -916,10 +957,50 @@ async function testProvider() {
 }
 
 /* ── Yerel modeller ────────────────────────────────────────────────── */
+function llmRequirement(m, vram) {
+  const need = m.tier === "heavy"
+    ? `Yüksek sistem gerektirir · ${m.vram_gb} GB+ ekran kartı belleği, ${m.ram_gb} GB RAM`
+    : `Hafif · ${m.vram_gb} GB ekran kartı belleği ya da ${m.ram_gb} GB RAM yeterli`;
+  const short = vram != null && vram < m.vram_gb;
+  return { need, warn: short ? `Ekran kartın ${fmt(vram)} GB: bu model işlemciye taşar ve yavaş çalışır.` : "" };
+}
+
+function renderLlm() {
+  const l = S.models.llm;
+  const box = $("#llmPanel");
+  if (!box) return;
+  if (!l) { box.innerHTML = ""; return; }
+  const runtime = (l.runtimes || []).find((r) => r.installed);
+  const rows = (l.models || []).map((m) => {
+    const req = llmRequirement(m, l.vram_gb);
+    const selected = l.selected === m.id && S.settings.model === "local";
+    const actions = !m.installed
+      ? `<button class="btn ${m.recommended ? "lime" : ""}" data-action="llm-download" data-id="${m.id}" ${S.busy ? "disabled" : ""}>${icon("download")}İndir (${fmt(Math.round(m.size / 1e8) / 10)} GB)</button>`
+      : `${m.family === "milmmt" ? "" : `<button class="btn ${selected ? "" : "lime"}" data-action="llm-use" data-id="${m.id}" ${selected ? "disabled" : ""}>${icon("check")}${selected ? "Kullanılıyor" : "Kullan"}</button>`}
+         <button class="btn" data-action="llm-remove" data-id="${m.id}" ${S.busy ? "disabled" : ""}>${icon("trash")}Sil</button>`;
+    return `<div class="list-row llm-row">
+      <div class="grow"><div class="title">${esc(m.label)}
+        ${m.tier === "heavy" ? '<span class="pill warn">Yüksek sistem</span>' : '<span class="pill">Hafif</span>'}
+        ${m.recommended ? '<span class="pill lime">Ekran kartına önerilen</span>' : ""}${m.installed ? '<span class="pill ok">İndirildi</span>' : ""}</div>
+        <div class="sub">${esc(m.use)}${m.speed ? ` · ${esc(m.speed)}` : ""}</div>
+        <div class="sub">${esc(req.need)}</div>${req.warn ? `<div class="sub warn-text">${esc(req.warn)}</div>` : ""}</div>
+      <div class="row-actions" style="margin:0">${actions}</div></div>`;
+  }).join("");
+  setHtml(box, `<div class="panel-head"><div><div class="panel-title">Yerel çeviri modelleri <span class="pill lime">Önerilen</span></div>
+      <p class="panel-desc">Çeviri için eğitilmiş modeller Capri'nin içinde çalışır: Ollama ya da başka bir program kurmana gerek yok,
+        internet ve kota gerekmez. Model dosyası (GGUF) ve 37 MB'lık llama.cpp çalışma ortamı yalnızca "İndir"e basınca bu
+        klasöre iner ve SHA-256 ile doğrulanır. Ekran çevirisinde MiLMMT kuruluysa o kullanılır (tek satır ~0,1 sn).</p></div>
+      <span class="pill ${runtime ? "ok" : ""}">${runtime ? "Çalışma ortamı kurulu" : "Çalışma ortamı ilk indirmede kurulur"}</span></div>
+    <div class="list">${rows}</div>
+    <p class="field-hint">Hızlar RTX 5070 (12 GB) ile ölçüldü; ekran kartına göre değişir. İlk çalıştırma, ekran kartı kodu derlendiği için birkaç saniye uzun sürer.</p>
+    <p class="field-hint">Modeller Gemma kullanım şartlarına tabidir. Ekran kartı yoksa işlemcide çalışır (yaklaşık 5-10 kat yavaş).</p>`);
+}
+
 function renderModels() {
+  renderLlm();
   const info = {
-    opus: ["OPUS-MT · İngilizce → Türkçe", "Helsinki-NLP opus-mt-tc-big-en-tr. ~450 MB, hızlı ve hafif."],
-    nllb: ["NLLB-200 · 600M · çok dilli", "facebook/nllb-200-distilled-600M. 200 dil; Türkçe dışı hedeflere de çevirir."],
+    opus: ["OPUS-MT · İngilizce → Türkçe", "Helsinki-NLP opus-mt-tc-big-en-tr. ~450 MB, hızlı ve hafif. Lisans: CC-BY 4.0."],
+    nllb: ["NLLB-200 · 600M · çok dilli", "facebook/nllb-200-distilled-600M. 200 dil; Türkçe dışı hedeflere de çevirir. Lisans: CC-BY-NC 4.0 (yalnızca ticari olmayan kullanım)."],
   };
   const rt = S.models.runtime || { ready: true };
   $("#runtimePanel").classList.toggle("hidden", !!rt.ready);
@@ -1274,64 +1355,6 @@ $("#langMenu").addEventListener("click", (ev) => {
 });
 document.addEventListener("click", (ev) => { if (!ev.target.closest("#langPick")) $("#langMenu").classList.add("hidden"); });
 
-/* ── Topluluk yamaları ─────────────────────────────────────────────── */
-function openCommunity() {
-  if (!$("#communityModal")) {
-    const wrap = document.createElement("div");
-    wrap.className = "modal-wrap";
-    wrap.id = "communityModal";
-    wrap.innerHTML = `<div class="modal community-modal">
-      <div class="upd-head"><span class="brand-mark">${icon("globe")}</span>
-        <div><h3>Topluluk yamaları</h3><div class="upd-current">Başkalarının paylaştığı çeviriler. Uygulanan satırlar için API harcanmaz.</div></div></div>
-      <div class="cm-search">${icon("search")}<input class="input" id="cmQuery" placeholder="Oyun adıyla ara"></div>
-      <div id="cmBody" class="cm-body"></div>
-      <div class="row-actions"><span class="cm-game" id="cmGame"></span><span class="grow"></span><button class="btn" data-cm="close">Kapat</button></div></div>`;
-    wrap.addEventListener("click", async (ev) => {
-      if (ev.target === wrap || ev.target.closest("[data-cm='close']")) { wrap.remove(); return; }
-      const page = ev.target.closest("[data-cm-page]");
-      if (page) { call("open_url", page.dataset.cmPage); return; }
-      const get = ev.target.closest("[data-cm-get]");
-      if (get && !get.disabled) {
-        get.disabled = true;
-        get.innerHTML = `<span class="spinner"></span>İndiriliyor`;
-        const ok = await call("download_community_patch", get.dataset.cmGet);
-        get.disabled = false;
-        get.innerHTML = ok ? `${icon("check")}Uygulandı` : `${icon("download")}İndir ve uygula`;
-        if (ok) loadEditor(true);
-      }
-    });
-    let timer = null;
-    $("#cmQuery", wrap).addEventListener("input", (e) => { clearTimeout(timer); timer = setTimeout(() => loadCommunity(e.target.value), 450); });
-    document.body.appendChild(wrap);
-  }
-  loadCommunity("");
-}
-
-async function loadCommunity(query) {
-  const body = $("#cmBody");
-  if (!body) return;
-  body.innerHTML = `<div class="upd-state"><span class="spinner"></span><div><b>Yamalar aranıyor…</b></div></div>`;
-  const res = (await call("community_patches", query)) || { ok: false, items: [] };
-  if (!$("#cmBody")) return;
-  $("#cmGame").textContent = res.game ? `Açık oyun: ${res.game.title} · ${res.game.engine}` : "Yamayı uygulamak için önce oyunu aç.";
-  if (!res.ok) {
-    body.innerHTML = `<div class="upd-state warn">${icon("alert")}<div><b>Liste alınamadı</b><p>${esc(res.error || "")}</p></div></div>`;
-    return;
-  }
-  if (!res.items.length) {
-    body.innerHTML = `<div class="upd-state">${icon("search")}<div><b>${query ? "Eşleşen yama yok" : "Henüz paylaşılmış yama yok"}</b>
-      <p>Bir oyunu çevirdikten sonra Çeviri Editörü'nden yamayı dışa aktarıp "Toplulukla paylaş" diyerek ilk sen paylaşabilirsin.</p></div></div>`;
-    return;
-  }
-  body.innerHTML = res.items.map((p) => `<div class="cm-item">
-      <div class="grow"><div class="title">${esc(p.game)}</div>
-        <div class="chips">${p.engine ? `<span class="pill">${esc(p.engine)}</span>` : ""}${p.target ? `<span class="pill">${esc(p.target.toUpperCase())}</span>` : ""}${p.lines ? `<span class="pill">${fmt(p.lines)} satır</span>` : ""}</div>
-        <div class="meta">${esc(p.user)} · ${esc(p.updated)}</div></div>
-      <div class="cm-actions"><button class="btn" data-cm-page="${esc(p.url)}">${icon("globe")}Sayfa</button>
-        ${p.files.length ? `<button class="btn lime" data-cm-get="${esc(p.files[0])}" ${res.game ? "" : "disabled"}>${icon("download")}İndir ve uygula</button>`
-          : `<span class="cm-nofile">Dosya eklenmemiş</span>`}</div></div>`).join("");
-}
-
 function openConfirm({ id, title, text }) {
   const wrap = document.createElement("div");
   wrap.className = "modal-wrap";
@@ -1416,8 +1439,20 @@ document.addEventListener("click", async (ev) => {
     case "open-path": call("open_path", path); break;
     case "test-provider": testProvider(); break;
     case "save-provider": saveProviders(); break;
+    case "ollama-use": { const input = $('#providerDetail [data-field="ollama_model"]'); if (input) input.value = el.dataset.model; await saveProviders(); S.ollamaInfo = null; renderProviders(); break; }
+    case "ollama-pull": if (await call("ollama_pull", el.dataset.model)) S.ollamaInfo = null; break;
     case "default-provider": saveProviders(S.provSel); break;
     case "download-model": call("download_model", el.dataset.id); break;
+    case "llm-download": call("download_local_model", el.dataset.id); break;
+    case "llm-use": await updateSettings({ model: "local", local_model: el.dataset.id }); renderModels(); renderProviders(); break;
+    case "llm-remove": {
+      const m = ((S.models.llm || {}).models || []).find((x) => x.id === el.dataset.id);
+      if (m && confirm(I18N.t(`${m.label} silinsin mi? Tekrar kullanmak için yeniden indirmen gerekir.`))) {
+        const l = await call("remove_local_model", el.dataset.id);
+        if (l) { S.models.llm = l; renderModels(); renderProviders(); }
+      }
+      break;
+    }
     case "compact-model": call("compact_model", el.dataset.id); break;
     case "quality-pass": call("quality_pass"); break;
     case "update-open": openUpdate(true); break;
@@ -1425,7 +1460,6 @@ document.addEventListener("click", async (ev) => {
     case "bepinex-uninstall": call("uninstall_bepinex"); break;
     case "export-patch": call("export_patch"); break;
     case "import-patch": if (await call("import_patch")) loadEditor(true); break;
-    case "community": openCommunity(); break;
     case "json-file": case "json-folder": {
       const picked = await call("json_pick", el.dataset.action === "json-folder" ? "folder" : "file");
       if (picked) $("#jsonInput").value = picked;

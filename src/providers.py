@@ -69,8 +69,8 @@ class ProviderConfig:
     # DeepL
     deepl_key: str = ""
     # Ollama (Yerel LLM)
-    ollama_host: str = "http://localhost:11434"
-    ollama_model: str = "qwen2.5:7b"
+    ollama_host: str = "http://127.0.0.1:11434"
+    ollama_model: str = "translategemma:4b"
     # Çevrimdışı Modeller
     opus_dir: str = "model"
     nllb_dir: str = "model_nllb"
@@ -118,7 +118,7 @@ PROVIDER_DISPLAY_INFO = {
         "badge": "💻 Tamamen Yerel / Ücretsiz",
         "badge_color": "#a855f7",
         "category": "Yerel Yapay Zeka",
-        "description": "Bilgisayarınızda yerel olarak çalışan açık kaynaklı LLM'ler (Qwen 2.5, Llama 3, Mistral). İnternet bağlantısı veya API anahtarı gerektirmez; tamamen gizli ve sınırsızdır.",
+        "description": "Bilgisayarınızda yerel olarak çalışan açık modeller (önerilen: TranslateGemma, MiLMMT). İnternet bağlantısı veya API anahtarı gerektirmez; tamamen gizli ve sınırsızdır.",
         "requires_key": False,
         "is_offline": True,
     },
@@ -184,8 +184,9 @@ def load_provider_config() -> ProviderConfig:
             cfg.anthropic_key = data.get("anthropic_key", "")
             cfg.anthropic_model = data.get("anthropic_model", "claude-3-5-haiku-20241022")
             cfg.deepl_key = data.get("deepl_key", "")
-            cfg.ollama_host = data.get("ollama_host", "http://localhost:11434")
-            cfg.ollama_model = data.get("ollama_model", "qwen2.5:7b")
+            # Windows "localhost"u önce IPv6 (::1) dener; Ollama orada dinlemez ve her istek ~2 sn bekler
+            cfg.ollama_host = (data.get("ollama_host") or "http://127.0.0.1:11434").replace("//localhost", "//127.0.0.1")
+            cfg.ollama_model = data.get("ollama_model", "translategemma:4b")
             cfg.opus_dir = data.get("opus_dir", "model")
             cfg.nllb_dir = data.get("nllb_dir", "model_nllb")
         except Exception:
@@ -424,12 +425,12 @@ def test_deepl_connection(api_key: str) -> Tuple[bool, int, str]:
         return False, 0, f"Bağlantı hatası: {e}"
 
 
-def test_ollama_service(host: str = "http://localhost:11434") -> Tuple[bool, List[str], str]:
+def test_ollama_service(host: str = "http://127.0.0.1:11434") -> Tuple[bool, List[str], str]:
     """
     Ollama yerel servisinin çalışıp çalışmadığını denetler ve
     yüklü modellerin listesini döndürür.
     """
-    clean_host = (host or "http://localhost:11434").rstrip("/")
+    clean_host = (host or "http://127.0.0.1:11434").rstrip("/").replace("//localhost", "//127.0.0.1")
     t0 = time.monotonic()
     try:
         resp = requests.get(f"{clean_host}/api/tags", timeout=4)
@@ -440,7 +441,7 @@ def test_ollama_service(host: str = "http://localhost:11434") -> Tuple[bool, Lis
             if models:
                 return True, models, f"Ollama Servisi Aktif ({latency} ms) — {len(models)} model yüklü"
             else:
-                return True, [], f"Ollama Aktif ama hiç model yüklenmemiş. 'ollama pull qwen2.5:7b' çalıştırın."
+                return True, [], "Ollama Aktif ama hiç model yüklenmemiş. Sağlayıcılar → Ollama'dan önerilen bir çeviri modelini indir."
         else:
             return False, [], f"Ollama HTTP {resp.status_code} yanıtı verdi."
     except Exception:
@@ -645,8 +646,11 @@ def llm_complete(provider: str, system: str, user: str, cfg: Optional[ProviderCo
             raise RuntimeError(f"Claude HTTP {resp.status_code}: {resp.text[:160]}")
         return "".join(part.get("text", "") for part in resp.json().get("content", []))
     if provider == "ollama":
-        resp = requests.post(f"{(cfg.ollama_host or 'http://localhost:11434').rstrip('/')}/api/chat", timeout=600, json={
-            "model": cfg.ollama_model or "qwen2.5:7b", "stream": False, "format": "json",
+        from engine_common import ollama_family
+        if ollama_family(cfg.ollama_model) != "chat":
+            raise RuntimeError(f"{cfg.ollama_model} yalnızca çeviri yapar; kalite editörü için sohbet modeli gerekir.")
+        resp = requests.post(f"{(cfg.ollama_host or 'http://127.0.0.1:11434').rstrip('/')}/api/chat", timeout=600, json={
+            "model": cfg.ollama_model or "translategemma:4b", "stream": False, "format": "json",
             "options": {"temperature": 0.2, "num_ctx": 8192},
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]})
         if resp.status_code != 200:
@@ -815,6 +819,7 @@ def translate_single_text(
     nsfw_mode: bool = False,
     log: Callable[[str], None] = print,
     max_tokens: int = 2048,
+    local_model: Optional[str] = None,
 ) -> Tuple[bool, str, int]:
     """
     Seçilen sağlayıcı ile bir metni (tek cümle ya da çok satırlı) çevirir ve
@@ -932,21 +937,22 @@ def translate_single_text(
             return False, f"DeepL Hatası: {e}", 0
 
     # 5. Ollama
-    elif p_id == "ollama":
-        clean_host = (cfg.ollama_host or "http://localhost:11434").rstrip("/")
-        system = f"Translate from {source_lang} to {target_lang}. Output ONLY the translated text."
-        payload = {
-            "model": cfg.ollama_model or "qwen2.5:7b",
-            "prompt": f"{system}\n\nText: {text}\n\nTranslation:",
-            "stream": False,
-        }
+    elif p_id == "local":
+        import local_llm
         try:
-            resp = requests.post(f"{clean_host}/api/generate", json=payload, timeout=20)
-            lat = int((time.monotonic() - t0) * 1000)
-            if resp.status_code == 200:
-                res = resp.json().get("response", "").strip()
-                return True, res, lat
-            return False, f"Ollama HTTP {resp.status_code}", lat
+            res = local_llm.translate_one(local_model or "translategemma-4b", text, source_lang, target_lang, log=log)
+            return True, res, int((time.monotonic() - t0) * 1000)
+        except Exception as e:
+            return False, f"Yerel model hatası: {e}", 0
+
+    elif p_id == "ollama":
+        from engine_common import ollama_translate_one
+        try:
+            res = ollama_translate_one(cfg.ollama_host or "http://127.0.0.1:11434", cfg.ollama_model or "translategemma:4b",
+                                       text, source_lang, target_lang, timeout=20)
+            return True, res, int((time.monotonic() - t0) * 1000)
+        except requests.RequestException as e:
+            return False, f"Ollama Bağlantı Hatası: {e}", 0
         except Exception as e:
             return False, f"Ollama Bağlantı Hatası: {e}", 0
 
@@ -1055,11 +1061,12 @@ def _llm_batch(provider: str, items: List[str], system: str, cfg: ProviderConfig
     return ["" if x is None else str(x) for x in parsed]
 
 
-def _deepl_batch(items: List[str], target_lang: str, source_lang: str, cfg: ProviderConfig) -> List[str]:
+def _deepl_batch(items: List[str], target_lang: str, source_lang: str, cfg: ProviderConfig,
+                 pattern: Optional["re.Pattern"] = None) -> List[str]:
     """Etiketler <k> ile işaretlenir ve DeepL'e çevirmemesi söylenir."""
     def protect(text: str) -> str:
         out, last = [], 0
-        for m in CLOUD_PROTECTED.finditer(text):
+        for m in (pattern or CLOUD_PROTECTED).finditer(text):
             out.append(html.escape(text[last:m.start()], quote=False))
             out.append(f"<k>{html.escape(m.group(0), quote=False)}</k>")
             last = m.end()
@@ -1097,11 +1104,13 @@ def translate_with_cloud(
     game_engine: str = "video game",
     failed_out: Optional[set] = None,
     extra_instruction: str = "",
+    protected: Optional["re.Pattern"] = None,
 ) -> int:
     """
     OpenAI, Claude veya DeepL ile satırları toplu çevirir ve `cache` sözlüğüne
     yazar. Geçersiz yanıt alınan satırlar kaynak metinle bırakılır, `failed_out`
     kümesine eklenir ve diske yazılmaz (sonraki çalıştırmada yeniden denenir).
+    protected: oyun motorunun etiket kuralı (verilmezse genel kural: CLOUD_PROTECTED).
     """
     if not missing:
         return 0
@@ -1130,7 +1139,7 @@ def translate_with_cloud(
         for attempt in range(3):
             try:
                 if provider == "deepl":
-                    return list(_deepl_batch(items, target_lang, source_lang, cfg))
+                    return list(_deepl_batch(items, target_lang, source_lang, cfg, protected))
                 result = _llm_batch(provider, items, system, cfg)
                 if result is not None:
                     return list(result)
@@ -1155,7 +1164,8 @@ def translate_with_cloud(
             log(f"Uyarı: {err}")
             results = [None] * len(chunk)
         for src, tr in zip(chunk, results):
-            if tr and placeholders_valid(src, tr):
+            if tr and (placeholders_valid(src, tr) if protected is None
+                       else collections.Counter(protected.findall(src)) == collections.Counter(protected.findall(tr))):
                 cache[src] = tr
                 failed.discard(src)
             else:

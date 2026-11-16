@@ -38,12 +38,12 @@ Ren'Py · Unity · Unreal Engine · RPG Maker · JSON — artı oyun ekranını 
 - **Oyuna özel bağlam:** Karakter adları otomatik taranır; terimler, hitap (sen/siz) ve oyun notları yapay
   zekâya talimat olarak gider.
 - **Çeviri Editörü ve yama paylaşımı:** Satırları düzelt, API harcamadan oyuna uygula, `.capripatch` olarak paylaş.
+  İçe aktarılan yamalar satır satır denetlenir: kaynakta olmayan etiket, kod ya da bağlantı ekleyen satırlar alınmaz.
 - **Şifreli arşivler:** RPG Maker `Game.rgss3a / .rgss2a / .rgssad` arşivleri dahili olarak açılır; Unreal `.pak`
   paketleri için gereken araç, sana sorulduktan sonra kurulur.
 - **Otomatik oyun bulma:** Steam, Epic, GOG ve oyun klasörlerindeki çevrilebilir oyunlar kütüphanede öneri olarak çıkar.
 - **Çevrimdışı mod:** OPUS-MT ve NLLB-200 ekran kartında, internetsiz ve kotasız çalışır.
 - **17 arayüz dili:** Üst çubuktan dili seç; çeviri hedefi de o dile geçer.
-- **Topluluk yamaları:** Başkalarının paylaştığı çevirileri uygulama içinden bul ve tek tıkla uygula.
 
 ## İndir ve çalıştır
 1. **[Capri-win64.zip](https://github.com/EmirkanAkin/Capri-Ceviri-Araci/releases/latest/download/Capri-win64.zip)** dosyasını indir
@@ -68,7 +68,7 @@ Ren'Py · Unity · Unreal Engine · RPG Maker · JSON — artı oyun ekranını 
 | Motor | Ne çevrilir | Notlar |
 | --- | --- | --- |
 | **Ren'Py** | `.rpy`, `.rpyc`, `.rpa` | 17 hedef dil, diyalog sırasıyla bağlamlı çeviri, Türkçede kalite turu, otomatik font yaması |
-| **Unity** | `resources.assets` / `sharedassets` TextAsset, StreamingAssets, **Utage** senaryoları, **I2 Localization** | IL2CPP'de de doğrudan; dosyada metni olmayan oyunlarda BepInEx + XUnity.AutoTranslator otomatik kurulumu |
+| **Unity** | `resources.assets` / `sharedassets` TextAsset, StreamingAssets, **Utage** senaryoları, **I2 Localization**, **PlayMaker** FSM, UI Text / TextMeshPro ve çok dilli XML (tek paket `data.unity3d` dahil; tip bilgisi oyunun DLL'lerinden) | IL2CPP'de de doğrudan; dosyada metni olmayan oyunlarda BepInEx + XUnity.AutoTranslator otomatik kurulumu |
 | **Unreal Engine 4/5** | `.locres` (açık, `.pak` ya da `.utoc` içinde) | Paketler `repak` / `retoc` ile okunur, çeviri `Paks/~mods` altına yama paketi olur; şifreli oyunlarda AES anahtarı girilebilir |
 | **RPG Maker MV / MZ** | `data/*.json` | Diyalog, seçenekler, veritabanı, sistem terimleri |
 | **RPG Maker XP / VX / VX Ace** | `Data/*.rxdata / .rvdata / .rvdata2` | Değişmeyen her bayt korunur; şifreli arşivler otomatik açılır ve yedeklenir |
@@ -79,9 +79,23 @@ Ren'Py · Unity · Unreal Engine · RPG Maker · JSON — artı oyun ekranını 
 | --- | --- | --- |
 | Google Gemini | Bulut | Tüm uygun modeller hız sırasıyla denenir; birden fazla anahtarla paralel çeviri |
 | OpenAI · Claude · DeepL | Bulut | Etiket doğrulamalı toplu çeviri |
-| Ollama | Yerel LLM | Kendi bilgisayarında çalışan modeller |
-| OPUS-MT | Yerel (GPU) | İngilizce → Türkçe, çok hızlı |
-| NLLB-200 | Yerel (GPU) | 200 dil; fp16'ya küçültülebilir (2,3 → 1,2 GB) |
+| Yerel model (dahili) | Yerel, Ollama'sız | TranslateGemma ve MiLMMT Capri'nin içinde (llama.cpp) çalışır; tek tıkla indirilir |
+| Ollama | Yerel çeviri modelleri | Ollama kuruluysa aynı modeller onun üzerinden de kullanılabilir |
+| OPUS-MT | Yerel (GPU) | İngilizce → Türkçe, çok hızlı (CC-BY 4.0) |
+| NLLB-200 | Yerel (GPU) | 200 dil; fp16'ya küçültülebilir (2,3 → 1,2 GB). Lisansı CC-BY-NC 4.0: yalnızca ticari olmayan kullanım |
+
+**Hangi yerel model?** Genel sohbet modelleri (Qwen, Llama…) çeviride zayıf kalır; çeviri için eğitilmiş modelleri seç.
+Yerel Modeller sayfasından indirilir, Ollama ya da başka bir program gerekmez (37 MB'lık llama.cpp ortamı ilk indirmede
+kurulur; her dosya SHA-256 ile doğrulanır). Ölçüm (RTX 5070, 12 GB):
+
+| Model | Boyut | Sistem | Ekran kartıyla | Ekran kartsız |
+| --- | --- | --- | --- | --- |
+| TranslateGemma 4B | 2,5 GB | Hafif: 4 GB ekran kartı ya da 8 GB RAM | ~10 satır/sn | ~1 satır/sn |
+| TranslateGemma 12B | 7,3 GB | **Yüksek sistem:** 10 GB+ ekran kartı, 16 GB RAM | ~4 satır/sn, en iyi kalite | ~0,4 satır/sn |
+| MiLMMT-46 4B | 2,5 GB | Hafif (ekran çevirisi) | tek satır ~0,1 sn | tek satır ~0,5 sn |
+
+Oyun etiketleri ve kodları ölçümde 80 satırın 79-80'inde korundu. Modeller Gemma kullanım şartlarına tabidir; kalite
+editörü olarak kullanılamazlar (düzeltmeleri Gemini yazar).
 
 ## Ekran çevirisi (OCR)
 <img src="docs/media/capri-ocr.gif" width="420" align="right" alt="Ekran çevirisi animasyonu">
@@ -89,6 +103,8 @@ Ren'Py · Unity · Unreal Engine · RPG Maker · JSON — artı oyun ekranını 
 - **`Ctrl+Shift+T`** → ekran donar, alanı sürükle, çeviri temaya uygun bir pencerede açılır (kopyala / sabitle).
 - **`Ctrl+Shift+Y`** → alanı sabitle; metin değiştikçe yeniden okunur ve çevrilir. Aynı kısayol kapatır.
 - Windows'un yerleşik OCR motoru kullanılır (alan başına ~5-15 ms). Fare hangi monitördeyse orası yakalanır.
+- Gün ışığındaki konturlu ya da sarı altyazılar okunamazsa yazı arka plandan ayıklanıp yeniden okunur
+  (yapay altyazı karelerinde gökyüzü üzerindeki konturlu yazı %73 → %97, sarı yazı %48 → %96).
 - Çeviri pencereleri ekran yakalamaya görünmez; Capri kendi yazdığını tekrar okumaz.
 - En hızlı canlı çeviri için motoru OPUS (GPU) seç: değişimden ekrana ~0,4 sn.
 
@@ -146,7 +162,7 @@ src/                 Uygulama kaynak kodu
   app_modern.py        Arayüz köprüsü ve çeviri iş akışları (giriş noktası)
   engine_renpy.py      Ren'Py (rpy/rpyc/rpa, şablonlar, Gemini, font yaması)
   engine_unity.py      Unity (TextAsset, StreamingAssets, TMP fontları) · unity_utage.py, unity_i2.py,
-                       unity_bepinex.py, bepinex_installer.py
+                       unity_typed.py (PlayMaker/UI/XML, tip bilgisiyle), unity_bepinex.py, bepinex_installer.py
   engine_unreal.py     Unreal (.locres) · unreal_pak.py (.pak / repak), unreal_modding.py (~mods)
   engine_rpgmaker.py   RPG Maker MV/MZ ve XP/VX/VX Ace · rgss_marshal.py, rgss_archive.py
   engine_json.py       Motor bağımsız JSON çevirici
@@ -156,7 +172,7 @@ src/                 Uygulama kaynak kodu
   gpu_runtime.py       Yerel model ortamı (PyTorch) kurulumu
   game_scanner.py      Bilgisayardaki oyunları bulma
   ocr.py               Ekran çevirisi: yakalama, Windows OCR, canlı izleyici, kısayollar
-  library.py           Proje kütüphanesi ve Steam kapak görselleri · community.py (topluluk yamaları)
+  library.py           Proje kütüphanesi ve Steam kapak görselleri · patch_safety.py (yama denetimi)
   backup_system.py     Yedekleme / geri yükleme
   secrets_store.py     Windows Kimlik Bilgisi Yöneticisi
   updater.py           Uygulama içi güncelleme · single_instance.py (tek pencere)

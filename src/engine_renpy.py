@@ -1271,7 +1271,7 @@ def _looks_translatable_ui_text(value: str) -> bool:
     visible_text = PROTECTED.sub("", text).strip()
     if not visible_text:
         return False
-    if not re.search(r"[A-Za-zÀ-ž]", text):
+    if not re.search(r"[^\W\d_]", text):
         return False
     if re.fullmatch(r"[A-Za-z0-9_./\\:-]+", text) and (
         "/" in text
@@ -1670,7 +1670,7 @@ def collect_quality_entries(tl_dir: Path) -> list[QualityEntry]:
             raw_entries.append((index, source, draft, speaker))
 
         for position, (index, source, draft, speaker) in enumerate(raw_entries):
-            if not source or not draft or not re.search(r"[A-Za-zÀ-ž]", source):
+            if not source or not draft or not re.search(r"[^\W\d_]", source):
                 continue
             previous_text = [
                 value[1] for value in raw_entries[max(0, position - 3):position]
@@ -2109,9 +2109,17 @@ def translate_with_gemini(
     failed_out: set[str] | None = None,
     max_workers: int | None = None,
     extra_instruction: str = "",
+    protected: "re.Pattern | None" = None,
 ) -> int:
+    """protected: oyun motorunun etiket kuralı. Verilmezse Ren'Py kuralı kullanılır (köşeli parantez = değişken);
+    RPG Maker / Unity gibi motorlarda köşeli parantez sıradan metindir, kendi kurallarıyla denetlenmeleri gerekir."""
     if not missing:
         return 0
+    if protected is None:
+        tags_ok = protected_content_valid
+    else:
+        from engine_common import protected_content_valid as _engine_tags_ok
+        tags_ok = lambda source, target: _engine_tags_ok(source, target, protected)  # noqa: E731
 
     log(f"Yapay Zeka (Gemini Flash) ile {len(missing)} benzersiz satır çevriliyor... [Hedef: {target_lang}]")
 
@@ -2299,7 +2307,7 @@ def translate_with_gemini(
                     for src, tr in zip(items, translated):
                         src_str = str(src) if src is not None else ""
                         tr_str = str(tr) if tr is not None else ""
-                        if tr_str and protected_content_valid(src_str, tr_str):
+                        if tr_str and tags_ok(src_str, tr_str):
                             results[src_str] = tr_str
                         else:
                             results[src_str] = src_str
@@ -2515,7 +2523,7 @@ def translate_with_transformers(
     lengths = []
     for source in missing:
         lead, inner, trail = extract_outer_tags(source)
-        if inner and re.search(r"[A-Za-zÀ-ž]", inner):
+        if inner and re.search(r"[^\W\d_]", inner):
             cleaned_inner = preprocess_source_text(inner, en_pre)
             prepared, values = mask_text(cleaned_inner)
         else:
@@ -2678,8 +2686,8 @@ def translate_templates(
     log: LogFn = print,
     progress: ProgressFn | None = None,
     model_kind: str = "opus",
-    ollama_model: str = "qwen2.5:7b",
-    ollama_host: str = "http://localhost:11434",
+    ollama_model: str = "translategemma:4b",
+    ollama_host: str = "http://127.0.0.1:11434",
     failed_out: set[str] | None = None,
     extra_instruction: str = "",
     target_lang: str = "tr",
@@ -2708,7 +2716,7 @@ def translate_templates(
     for source in unique:
         if not PROTECTED.sub("", source).strip():
             cache[source] = source
-        elif not re.search(r"[A-Za-zÀ-ž]", source):
+        elif not re.search(r"[^\W\d_]", source):
             cache[source] = source
         elif source not in cache and re.fullmatch(
             r"[A-Z][A-Za-zÀ-ž'’-]{1,24}", source
@@ -2748,18 +2756,11 @@ def translate_templates(
                 game_engine="Ren'Py Visual Novel", failed_out=failed_out, extra_instruction=extra_instruction,
                 target_lang=target_lang, source_lang=source_lang,
             )
-        elif selected_model == "ollama":
-            from engine_common import OllamaTranslationEngine, TranslationCache
+        elif selected_model in ("ollama", "local"):
+            from engine_common import TranslationCache, make_llm_engine
 
-            engine = OllamaTranslationEngine(
-                model_name=ollama_model,
-                cache=TranslationCache(cache_path, cache),
-                protected_pattern=PROTECTED,
-                log=log,
-                host=ollama_host,
-                target_lang=target_lang,
-                source_lang=source_lang,
-            )
+            engine = make_llm_engine(selected_model, ollama_model, ollama_host, TranslationCache(cache_path, cache),
+                                     PROTECTED, log, target_lang, source_lang)
             cache.update(engine.translate_batch(missing, progress=progress))
         else:
             translate_with_transformers(

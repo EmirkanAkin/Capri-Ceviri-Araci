@@ -285,8 +285,8 @@ def translate_texts_unreal(
     tracker: Optional[ProgressTracker] = None,
     model_kind: str = "gemini",
     model_dir: Optional[Path] = None,
-    ollama_model: str = "qwen2.5:7b",
-    ollama_host: str = "http://localhost:11434",
+    ollama_model: str = "translategemma:4b",
+    ollama_host: str = "http://127.0.0.1:11434",
     failed_out: Optional[set] = None,
     extra_instruction: str = "",
 ) -> Dict[str, str]:
@@ -346,19 +346,10 @@ def translate_texts_unreal(
             target_lang=target_lang, source_lang=source_lang,
             game_engine="Unreal Engine Game", failed_out=failed_out, extra_instruction=extra_instruction,
         )
-    elif selected_model == "ollama":
-        from engine_common import OllamaTranslationEngine
-        trans_cache = TranslationCache(cache_path, cache)
-        engine = OllamaTranslationEngine(
-            model_name=ollama_model,
-            cache=trans_cache,
-            glossary=glossary,
-            protected_pattern=PROTECTED_UNREAL,
-            log=log,
-            host=ollama_host,
-            target_lang=target_lang,
-            source_lang=source_lang,
-        )
+    elif selected_model in ("ollama", "local"):     # local: Capri'nin dahili llama.cpp modeli
+        from engine_common import make_llm_engine
+        engine = make_llm_engine(selected_model, ollama_model, ollama_host, TranslationCache(cache_path, cache),
+                                 PROTECTED_UNREAL, log, target_lang, source_lang, glossary=glossary)
         cache.update(engine.translate_batch(missing, progress=progress, tracker=tracker))
     else:
         from engine_common import TranslationEngine

@@ -131,6 +131,22 @@ def mask_text(text: str, pattern: re.Pattern) -> tuple[str, list[str]]:
     return masked, values
 
 
+def tidy_mask_spacing(masked_source: str, translated: str) -> str:
+    """
+    Modeller maskenin yanına kaynakta olmayan boşluk koyabiliyor ("XPH000XIs" → "XPH000X Gerçekten"); maske bir
+    etiketse ({i}, \\C[3]) oyunda fazladan boşluk görünür. Kaynakta maskeye bitişik olan taraftaki boşluk silinir.
+    """
+    for match in MASK_TOKEN.finditer(masked_source):
+        token = match.group(0)
+        after = masked_source[match.end():match.end() + 1]
+        before = masked_source[match.start() - 1:match.start()] if match.start() else ""
+        if after and not after.isspace():
+            translated = re.sub(re.escape(token) + r"[ \t]+", token, translated)
+        if before and not before.isspace():
+            translated = re.sub(r"[ \t]+" + re.escape(token), token, translated)
+    return translated
+
+
 def unmask_text(text: str, values: list[str]) -> str | None:
     """Maskeleri orijinal belirteçlere geri dönüştür. Tutarsızlıkta None döner."""
     found = [int(v) for v in MASK_TOKEN.findall(text)]
@@ -856,7 +872,7 @@ def ollama_service_running() -> bool:
     """Ollama servisinin çalışıp çalışmadığını kontrol et."""
     try:
         import urllib.request as _req
-        with _req.urlopen("http://localhost:11434/api/tags", timeout=2) as r:
+        with _req.urlopen("http://127.0.0.1:11434/api/tags", timeout=2) as r:
             return r.status == 200
     except Exception:
         return False
@@ -867,7 +883,7 @@ def ollama_list_models() -> list[str]:
     try:
         import json as _json
         import urllib.request as _req
-        with _req.urlopen("http://localhost:11434/api/tags", timeout=3) as r:
+        with _req.urlopen("http://127.0.0.1:11434/api/tags", timeout=3) as r:
             data = _json.loads(r.read())
             return [m["name"] for m in data.get("models", [])]
     except Exception:
@@ -1041,7 +1057,7 @@ class TranslationEngine:
                     results[source] = fuzzy
                     continue
             # Harf içermeyen teknik metinleri atla
-            if not re.search(r"[A-Za-zÀ-ž]", source):
+            if not re.search(r"[^\W\d_]", source):
                 results[source] = source
                 continue
             to_translate.append(source)
@@ -1208,6 +1224,127 @@ def safe_archive_member(name: str) -> Path:
 # Ollama LLM Çeviri Motoru — Toplu (batch) API çağrısı desteği
 # ═══════════════════════════════════════════════════════════════════════════════
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# Ollama: çeviriye özel yerel modeller
+# ═══════════════════════════════════════════════════════════════════════════════
+# Genel sohbet modelleri (Qwen, Llama…) çeviride belirgin şekilde zayıf kalır; çeviri için eğitilmiş modeller önerilir.
+#  - TranslateGemma (Google, Gemma 3 tabanlı, 55 dil): ardışık satırları birlikte (bağlamla) çevirir.
+#  - MiLMMT-46 (Xiaomi, Gemma 3 tabanlı, 46 dil): tek cümle/satır için; ekran çevirisinde hızlı.
+# İkisi de Gemma kullanım şartlarına tabidir. İstem biçimleri model kartlarındaki resmi biçimdir.
+OLLAMA_PRESETS = [
+    {"model": "translategemma:4b", "label": "TranslateGemma 4B", "size_gb": 3.3, "vram_gb": 6, "kind": "translategemma",
+     "note": "Önerilen · ardışık satırları bağlamıyla çevirir"},
+    {"model": "translategemma:12b", "label": "TranslateGemma 12B", "size_gb": 8.1, "vram_gb": 16, "kind": "translategemma",
+     "note": "Daha kaliteli · 16 GB+ ekran kartı"},
+    {"model": "hf.co/mradermacher/MiLMMT-46-4B-v1.0-GGUF:Q4_K_M", "label": "MiLMMT-46 4B", "size_gb": 2.6, "vram_gb": 4,
+     "kind": "milmmt", "note": "Tek satır · ekran çevirisi için hızlı"},
+]
+DEFAULT_OLLAMA_MODEL = "translategemma:4b"
+_TG_CODES = {"zh-CN": "zh-Hans", "zh-TW": "zh-Hant"}
+_MILMMT_NAMES = {"zh-CN": "Chinese (Simplified)", "zh-TW": "Chinese (Traditional)", "pt-BR": "Portuguese"}
+
+
+def ollama_family(model: str) -> str:
+    """translategemma / milmmt (yalnızca çeviri yapar) ya da chat (genel sohbet modeli)."""
+    name = (model or "").lower()
+    if "translategemma" in name:
+        return "translategemma"
+    if "milmmt" in name:
+        return "milmmt"
+    return "chat"
+
+
+def recommended_ollama_model(vram_gb: float | None) -> str:
+    """Ollama'nın 12B paketi görüntü parçasıyla ~12 GB tutar: 12 GB kartta bir kısmı işlemciye taşar ve 4B'den ~8 kat
+    yavaşlar (ölçüm, RTX 5070 12 GB: 4B 11,6 satır/sn, 12B 1,4 satır/sn). 12B ancak 16 GB ve üstünde önerilir."""
+    return "translategemma:12b" if (vram_gb or 0) >= 16 else DEFAULT_OLLAMA_MODEL
+
+
+def _language_name(code: str) -> str:
+    try:
+        from languages import SUPPORTED_LANGUAGES
+        return SUPPORTED_LANGUAGES[code].name_en if code in SUPPORTED_LANGUAGES else code
+    except Exception:
+        return code
+
+
+def translategemma_prompt(text: str, source: str, target: str) -> str:
+    """ollama.com/library/translategemma'daki resmi tek mesaj biçimi."""
+    source = "en" if source in ("", "auto", None) else source
+    s_name, t_name = _language_name(source), _language_name(target)
+    s_code, t_code = _TG_CODES.get(source, source), _TG_CODES.get(target, target)
+    return (f"You are a professional {s_name} ({s_code}) to {t_name} ({t_code}) translator. Your goal is to accurately "
+            f"convey the meaning and nuances of the original {s_name} text while adhering to {t_name} grammar, "
+            f"vocabulary, and cultural sensitivities.\n"
+            f"Produce only the {t_name} translation, without any additional explanations or commentary. "
+            f"Please translate the following {s_name} text into {t_name}:\n\n\n{text}")
+
+
+def milmmt_prompt(text: str, source: str, target: str) -> str:
+    """xiaomi-research/MiLMMT-46 model kartındaki resmi düz istem (dil adlarıyla)."""
+    source = "en" if source in ("", "auto", None) else source
+    s_name = _MILMMT_NAMES.get(source, _language_name(source))
+    t_name = _MILMMT_NAMES.get(target, _language_name(target))
+    return f"Translate this from {s_name} to {t_name}:\n{s_name}: {text}\n{t_name}:"
+
+
+def ollama_host(host: str | None) -> str:
+    """Windows'ta "localhost" önce IPv6 (::1) denenir; Ollama yalnızca 127.0.0.1'de dinler ve her istek ~2 sn
+    bekleyip IPv4'e düşer (tek satırlık çeviri 0,1 sn yerine 2 sn sürüyordu)."""
+    return (host or "http://127.0.0.1:11434").rstrip("/").replace("//localhost", "//127.0.0.1")
+
+
+def _ollama_post(host: str, path: str, payload: dict, timeout: float = 600) -> dict:
+    import urllib.request as _r
+    req = _r.Request(f"{ollama_host(host)}{path}", data=json.dumps(payload).encode("utf-8"),
+                     headers={"Content-Type": "application/json"}, method="POST")
+    with _r.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read())
+
+
+def ollama_context(chars: int) -> int:
+    """
+    Bağlam boyutu kademeli seçilir: Ollama, num_ctx her değiştiğinde modeli yeniden yükler (~2-3 sn). Eskiden her
+    istekte metin uzunluğuna göre farklı bir değer gidiyordu; tek satırlık çeviri 0,09 sn yerine ~2,5 sn sürüyordu.
+    """
+    need = int(chars * 0.7) + 800        # giriş + çıktı (≈3,5 karakter/belirteç, çıktı ≈ giriş) + istem payı
+    return next((size for size in (4096, 8192, 16384) if size >= need), 32768)
+
+
+def ollama_translate_one(host: str, model: str, text: str, source: str, target: str,
+                         temperature: float = 0.1, timeout: float = 120) -> str:
+    """Tek metin: çeviri modelinin kendi istem biçimiyle (sohbet modelleri için kısa talimat)."""
+    family = ollama_family(model)
+    options = {"temperature": temperature, "num_ctx": ollama_context(len(text))}
+    if family == "milmmt":
+        # Ham istem (sohbet şablonu yok); cevap ilk satır sonunda biter
+        data = _ollama_post(host, "/api/generate", {"model": model, "prompt": milmmt_prompt(text, source, target),
+                                                    "raw": True, "stream": False,
+                                                    "options": {**options, "temperature": 0, "stop": ["\n"]}}, timeout)
+        return (data.get("response") or "").strip()
+    if family == "translategemma":
+        content = translategemma_prompt(text, source, target)
+    else:
+        content = (f"Translate from {_language_name(source if source not in ('', 'auto') else 'en')} to "
+                   f"{_language_name(target)}. Output ONLY the translated text.\n\n{text}")
+    data = _ollama_post(host, "/api/chat", {"model": model, "stream": False, "options": options,
+                                            "messages": [{"role": "user", "content": content}]}, timeout)
+    return ((data.get("message") or {}).get("content") or "").strip()
+
+
+def make_llm_engine(kind: str, model: str, host: str, cache, pattern, log, target_lang: str, source_lang: str,
+                    glossary=None) -> "OllamaTranslationEngine":
+    """Ollama ya da Capri'nin dahili yerel modeli (kind == "local", model = katalog kimliği) için çeviri motoru."""
+    if kind == "local":
+        import local_llm
+        return OllamaTranslationEngine(model_name=model, cache=cache, glossary=glossary, protected_pattern=pattern,
+                                       log=log, target_lang=target_lang, source_lang=source_lang,
+                                       transport=local_llm.transport(model, source_lang, target_lang, log),
+                                       family=local_llm.family(model))
+    return OllamaTranslationEngine(model_name=model, cache=cache, glossary=glossary, protected_pattern=pattern, log=log,
+                                   host=host, target_lang=target_lang, source_lang=source_lang)
+
+
 class OllamaTranslationEngine:
     """
     Ollama üzerinden yerel LLM ile toplu çeviri motoru.
@@ -1215,12 +1352,9 @@ class OllamaTranslationEngine:
     Her API çağrısında BATCH_SIZE kadar cümle gönderilir (varsayılan 30).
     76k cümle için ~2.5k API çağrısı yapar (tek tek yerine 76k çağrı değil).
 
-    Gereksinim: Ollama kurulu ve çalışıyor olmalı (https://ollama.com)
-    Önerilen modeller:
-      - qwen2.5:7b       (~4.5 GB, genel, iyi Türkçe)
-      - qwen2.5:14b      (~8.7 GB, kaliteli)
-      - dolphin-mistral  (sansürsüz, yetişkin içerik için ideal)
-      - llama3.2:3b      (~2 GB, hızlı)
+    Gereksinim: Ollama kurulu ve çalışıyor olmalı (https://ollama.com).
+    Önerilen modeller OLLAMA_PRESETS'te: TranslateGemma (bağlamlı) ve MiLMMT (tek satır). Çeviri modelleri kendi
+    istem biçimleriyle çağrılır; genel sohbet modelleri (§SEP§ ile ayrılmış toplu istem) de desteklenir.
     """
 
     _SEP = "§SEP§"
@@ -1243,29 +1377,69 @@ class OllamaTranslationEngine:
 
     def __init__(
         self,
-        model_name: str = "qwen2.5:7b",
+        model_name: str = DEFAULT_OLLAMA_MODEL,
         cache=None,
         glossary=None,
         protected_pattern=None,
         log=print,
-        host: str = "http://localhost:11434",
+        host: str = "http://127.0.0.1:11434",
         temperature: float = 0.1,
         batch_size: int = 30,
         target_lang: str = "tr",
         source_lang: str = "en",
+        transport=None,
+        family: str | None = None,
     ):
+        """transport: verilirse istekler Ollama yerine ona gider — (metin, sıcaklık, zaman aşımı) → çeviri
+        (Capri'nin dahili llama.cpp sunucusu, bkz. local_llm). family: model ailesi adından çıkarılamıyorsa."""
         self.model_name = model_name
+        self.transport = transport
         self.cache = cache
         self.glossary = glossary
         self.pattern = protected_pattern
         self.log = log
-        self.host = host.rstrip("/")
+        self.host = ollama_host(host)
         self.temperature = temperature
         self.batch_size = max(1, batch_size)
         self.target_lang = target_lang
         self.source_lang = source_lang
+        self.family = family or ollama_family(model_name)
+        if self.family == "translategemma":
+            self.batch_size = min(self.batch_size, 12)   # blok başına satır: bağlam için yeterli, kayma riski düşük
 
     def _api_batch(self, texts: list) -> list:
+        """Toplu çeviri: modelin ailesine göre (çeviri modeli → resmi istem biçimi; sohbet modeli → §SEP§)."""
+        if self.family == "translategemma":
+            return self._translategemma_block(texts)
+        if self.family == "milmmt":
+            return [self._one(text) for text in texts]
+        return self._chat_batch(texts)
+
+    def _send(self, text: str, timeout: float = 120) -> str:
+        if self.transport is not None:
+            return self.transport(text, self.temperature, timeout)
+        return ollama_translate_one(self.host, self.model_name, text, self.source_lang, self.target_lang,
+                                    self.temperature, timeout=timeout)
+
+    def _one(self, text: str) -> str:
+        try:
+            return self._send(text)
+        except Exception as error:
+            self.log(f"Yerel model tek satır hatası: {error}")
+            return ""
+
+    def _translategemma_block(self, texts: list) -> list:
+        """Ardışık satırlar tek blokta (satır başına bir metin) gider: model konuşmanın akışını görür. Satır sayısı
+        tutmazsa ya da metinde satır sonu varsa o blok satır satır çevrilir."""
+        if len(texts) > 1 and not any("\n" in t for t in texts):
+            raw = self._send("\n".join(texts), timeout=600)
+            lines = [line.strip() for line in raw.splitlines() if line.strip()]
+            if len(lines) == len(texts):
+                return lines
+            self.log(f"TranslateGemma bloğu {len(texts)} yerine {len(lines)} satır döndü; satır satır çevriliyor")
+        return [self._one(text) for text in texts]
+
+    def _chat_batch(self, texts: list) -> list:
         """Birden fazla metni tek API çağrısıyla çevir, §SEP§ ile ayırır."""
         import json as _j
         import urllib.request as _r
@@ -1287,7 +1461,7 @@ class OllamaTranslationEngine:
             "options": {
                 "temperature": self.temperature,
                 "num_predict": min(8192, max(512, total_chars * 4)),
-                "num_ctx":     max(8192, total_chars * 5 + 1024),
+                "num_ctx":     max(8192, ollama_context(total_chars * 2)),   # kademeli: model yeniden yüklenmez
             },
         }).encode("utf-8")
 
@@ -1369,11 +1543,11 @@ class OllamaTranslationEngine:
                 if progress: progress(done, len(sources))
                 continue
 
-            for (_, src, _, vals), tr in zip(chunk, translations):
+            for (_, src, masked, vals), tr in zip(chunk, translations):
                 if not tr:
                     results[src] = src
                 elif vals:
-                    restored = unmask_text(tr, vals)
+                    restored = unmask_text(tidy_mask_spacing(masked, tr), vals)
                     ok = restored and (
                         not self.pattern
                         or protected_content_valid(src, restored, self.pattern)

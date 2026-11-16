@@ -1,5 +1,76 @@
 # Capri — Değişim Günlüğü
 
+## [1.0.6] - 2026-11-16
+### Yeni
+- **Unity bileşen metinleri, BepInEx'siz:** Metnini tablo yerine bileşenlerinde tutan Unity oyunları (PlayMaker
+  durum makineleri, sahnedeki UI Text / TextMeshPro, `<Language en="…" jp="…"/>` gibi çok dilli XML tabloları; tümü
+  tek paket `data.unity3d` içinde de olabilir) artık doğrudan dosyadan çevriliyor. Alanlar, oyunun kendi DLL'lerinden
+  üretilen tip bilgisiyle okunur (Mono: Managed/*.dll, IL2CPP: GameAssembly + metadata). Her bileşen tam okunmalı ve
+  geri yazılınca bayt bayt aynı çıkmalı; tutmayanlara dokunulmaz. PlayMaker'da yalnızca oyunun dil dalında (English
+  durumu ve ondan zincirlenen durumlar) dile göre değer alan metin çevrilir: her dilde aynı kalan oda/poz/kayıt
+  anahtarları, sahne ve değişken adları korunur. Sayılı dil seçicileri (dil değişkeni 0/1/2…) adlı seçicilerden
+  öğrenilir. Kişi adı tabloları çevrilmez; dil menüsündeki "English" yazısı "Türkçe" olur. TextMeshPro'da eksik harf,
+  fontun yedekleri, TMP Ayarları'ndaki genel yedekler ve varsayılan font zinciriyle birlikte değerlendirilir.
+  Kayıttan sonra paket yeniden okunup her değişiklik doğrulanır; tutmazsa oyun dosyası değiştirilmez. Paket LZ4 ile
+  kaydedilir (boyut aynı kalır). Örnek bir oyunda: 380 PlayMaker, 379 arayüz, 102 tablo metni; 46.502 nesneden
+  yalnızca metin taşıyan 426'sı değişti, oyun açılışta hatasız yükleniyor.
+- **Unity bileşen okuyucusu isteğe bağlı:** Tip bilgisi üreticisi (TypeTreeGeneratorAPI 0.0.10, 7,5 MB) yerel DLL'inde
+  GPL-3.0 lisanslı AssetRipper kodu içerdiği için Capri paketine konmuyor; gereken oyunda bir kez izin istenip
+  PyPI'dan sabit sürüm ve SHA-256 doğrulamasıyla `tools/typetree` klasörüne indiriliyor. "Hayır" denirse BepInEx yolu
+  aynen kalır.
+- **Yerel model (dahili), Ollama'sız:** TranslateGemma 4B/12B ve MiLMMT-46 4B, Capri'nin içinde llama.cpp
+  (llama-server, Vulkan) ile çalışıyor. Yerel Modeller sayfasından tek tıkla indirilir; 37 MB'lık çalışma ortamı ilk
+  indirmede kurulur. Sürümler sabit, her dosya SHA-256 ile doğrulanır, zararlı arşiv yolları reddedilir. Sunucu
+  yalnızca 127.0.0.1'i dinler; ilk çeviride açılır, 5 dakika kullanılmazsa ya da Capri kapanınca (çökse bile) kapanır.
+  `--fit` ile model ekran kartına sığdırılır, sığmayan kısım işlemciye düşer. Her modelde "Hafif" / "Yüksek sistem
+  gerektirir" etiketi, gereken ekran kartı belleği ve RAM, ölçülen hız yazıyor; kart yetersizse uyarı çıkıyor.
+  Ölçüm (RTX 5070): TranslateGemma 4B ~10 satır/sn, 12B ~4 satır/sn (Ollama'da 1,4: Ollama paketi 12 GB kartta
+  işlemciye taşıyor), MiLMMT tek satır ~0,1 sn. Ekran çevirisinde MiLMMT kuruluysa o kullanılır. Vulkan, CUDA ile
+  neredeyse aynı hızda olduğu için (8,5 / 9,4 satır/sn) 630 MB'lık CUDA paketi sunulmuyor. Uygulama güncellemesi
+  indirilen modelleri silmez.
+- **Yerel çeviri modelleri (Ollama):** TranslateGemma (4B/12B) ve MiLMMT-46 4B, model kartlarındaki resmi istem
+  biçimleriyle çalışıyor. TranslateGemma ardışık satırları tek blokta (bağlamıyla) çevirir; satır sayısı tutmazsa
+  satır satır yeniden dener. Sağlayıcılar → Ollama'da ekran kartına göre önerilen model işaretlenir ve Capri içinden
+  ilerleme çubuğuyla indirilir. Varsayılan Ollama modeli artık `translategemma:4b`; Qwen önerileri kaldırıldı.
+  Yalnızca çeviri yapan modeller kalite editörü olarak kullanılmaz (düzeltmeleri Gemini yazar).
+- **Ekran çevirisi:** Okuma zayıfsa altyazı yazısı arka plandan ayıklanıp (koyu konturun içi / parlak ya da sarı
+  pikseller) yeniden okunur. Yapay altyazı karelerinde: gökyüzü + konturlu yazı %73 → %97, gökyüzü + sarı yazı
+  %48 → %96, karmaşık sahne + ince yazı %51 → %79. Koyu sahnelerde değişiklik yok; ek süre en fazla ~40 ms.
+- **Hazır arayüz sözlükleri:** İspanyolca, Almanca, Fransızca, Rusça, Portekizce (Brezilya), İtalyanca ve Lehçe
+  pakete eklendi; bulut anahtarı olmayan kullanıcılar da kullanabilir. Yeni sürümle eklenen metinler gerekirse
+  anahtarla tamamlanır. Çeviri yer tutucuyu başka yere taşısa da simgeli düğmeler doğru çevrilir.
+- Yerel modellerin lisansları (NLLB-200: CC-BY-NC 4.0) Yerel Modeller sayfasında ve üçüncü taraf bildirimlerinde.
+- **Yama güvenliği:** İçe aktarılan yamanın her satırı motorun etiket kuralıyla kaynağa göre denetleniyor. Kaynakta
+  olmayan etiket, kod ya da bağlantı (Ren'Py `{a=…}` / `[…]`, RPG Maker eklentilerinin çalıştırdığı `\js<…>`), fazladan
+  satır sonu, kontrol karakteri ve anlamsız uzunluktaki satırlar alınmıyor; kaç satırın alınmadığı bildiriliyor. Arşiv
+  boyutu ve satır sayısı sınırlı (sıkıştırma bombasına karşı).
+### Kaldırılanlar
+- **Topluluk yamaları** (uygulama içinden GitHub'da yama arama ve indirme, "Toplulukla paylaş"): yabancıların dosyalarını
+  indirip oyun dosyalarına yazmak güvenlik riski taşıyordu. Yamalar artık yalnızca elle, bilinen birinden alınan dosyayla
+  içe aktarılıyor.
+### Düzeltmeler
+- **Ollama çok yavaştı:** (1) Windows'ta `localhost` önce IPv6 (`::1`) deneniyor, Ollama orada dinlemediği için her
+  istek ~2 sn bekliyordu; artık `127.0.0.1` kullanılıyor (kayıtlı adresler de düzeltiliyor). (2) Her istekte farklı
+  bağlam boyutu (`num_ctx`) gidiyor, Ollama da modeli her seferinde yeniden yüklüyordu; boyut artık kademeli.
+  RTX 5070'te ölçüm: TranslateGemma 4B 2,4 → 11,6 satır/sn, MiLMMT 4B 0,47 → 8,9 satır/sn (tek satır ~0,1 sn).
+- Yerel modeller etiketlerin içine boşluk koyabiliyordu ("{i} Gerçekten…"); kaynakta bitişik olan boşluk siliniyor.
+- TranslateGemma 12B yalnızca 16 GB ve üstü kartlara öneriliyor: Ollama paketi 12 GB kartta işlemciye taşıyor.
+- Japonca/Çince kaynaklı oyunlarda yalnızca Latin harfi "harf" sayılıyordu: Ren'Py çeviri şablonları, arayüz metni
+  taraması, kalite editörü, yerel modeller ve RPG Maker XP/VX/VX Ace okuyucusu bu satırları atlıyordu.
+- **RPG Maker MV/MZ:** `CommonEvents.json` (ortak olaylar: telefon, gün sonu, menüden çağrılan konuşmalar),
+  `Troops.json` (savaş konuşmaları) ve kayan metin (405) hiç okunmuyordu; bir oyunda konuşmaların üçte biri
+  İngilizce kalıyordu. Artık hepsi çevriliyor.
+- **RPG Maker:** `System.json` menü ve savaş terimleri çıkarılıyor ama oyuna yazılmıyordu; artık yazılıyor
+  (ilk harf büyük). Eklentilerin okuduğu "not" alanları çevrilmiyor.
+- **RPG Maker:** Bulut motorları Ren'Py'nin etiket kuralını kullanıyordu; "[Axe] …" gibi açıklamalar ve
+  `\name[…]` içeren satırlar "etiket bozuldu" sayılıp İngilizce bırakılıyordu. RPG Maker artık kendi kodlarıyla
+  (`\C[n]`, `\V[n]`, `\pop<1>`, `%1`, seçenek koşulları `if(...)`) denetleniyor.
+- **RPG Maker:** Satır başındaki konuşmacı adı (`\name[...]`) satırdan ayrı çevriliyor; aynı ad her satırda aynı
+  kalıyor ve Çeviri Editörü'nde ayrı düzenlenebiliyor.
+- Yalnızca Çince/Japonca karakterden oluşan satırlar "harf yok" sayılıp atlanıyordu; artık çevriliyor. Önbellekte
+  çevrilmeden kalmış bu tür satırlar yeniden deneniyor.
+- RPG Maker: Ses efekti nesnelerindeki dosya adlarına (`"name": "Attack"`) asla dokunulmuyor.
+
 ## [1.0.5] - 2026-11-14
 ### Yeni
 - **Utage desteği (Unity):** Japon görsel roman motoru Utage'nin senaryo kitapları IL2CPP oyunlarda da (tip bilgisi

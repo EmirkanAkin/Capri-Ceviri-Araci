@@ -41,7 +41,7 @@ from progress import LiveEta, SpeedStore, estimate, estimate_cost, format_durati
 from languages import renpy_language_name
 from user_errors import describe_error
 
-APP_VERSION = "1.0.5"
+APP_VERSION = "1.0.6"
 from paths import APP_DIR, FROZEN, GLOSSARY_DIR, ICON_FILE, RES_DIR, WEB_DIR, seed_user_files
 SOUNDS_DIR = RES_DIR / "assets"
 import gpu_runtime
@@ -61,6 +61,7 @@ MODEL_LABELS = {
     "openai": "OpenAI",
     "anthropic": "Anthropic Claude",
     "deepl": "DeepL",
+    "local": "Yerel model (dahili)",
     "ollama": "Ollama (yerel LLM)",
     "opus": "OPUS-MT (çevrimdışı)",
     "nllb": "NLLB-200 (çevrimdışı)",
@@ -77,23 +78,25 @@ DEFAULT_SETTINGS = {
     "ocr_interval": 350, "ocr_place": "below",
     "update_repo": "", "update_check": True,
     "scan_on_start": True, "scan_folders": [], "scan_dismissed": [], "sound": True, "notify": True, "memory": True, "ui_language": None,
+    "local_model": None,       # dahili yerel model (local_llm.CATALOG kimliği); None: ekran kartına göre önerilen
 }
 # Güncelleme penceresinde gösterilir; ayrıntılar CHANGELOG.md'de
 WHATS_NEW = [
-    "Unity: Utage ve I2 Localization oyunları artık doğrudan çevriliyor (BepInEx gerekmeden)",
-    "Unity: oyunun fontunda olmayan harfler kutu yerine en yakın harfle yazılıyor (ğ→g)",
-    "Arayüz dili: 17 dil, hata mesajları dahil; seçtiğin dil çeviri hedefi de olur",
-    "Topluluk yamaları: paylaşılan çevirileri uygulama içinden bul, indir ve uygula",
-    "Ortak çeviri belleği: \"Save\", \"Options\" gibi metinler her oyunda yeniden çevrilmez",
-    "Görev çubuğunda çeviri ilerlemesi; bitince Windows bildirimi (arka plandayken)",
-    "Capri ikinci kez açılınca yeni pencere açılmaz, açık olan öne gelir",
-    "Taramada Unity ve Unreal oyunlarının satır sayısı da görünüyor",
-    "Çeviri ayarları sadeleştirildi; dar pencerede üst üste binmiyor",
+    "RPG Maker MV/MZ: ortak olaylar, savaş konuşmaları ve kayan metinler de çevriliyor",
+    "RPG Maker: Japonca/Çince konuşmacı adları ayrı ve her satırda aynı çevriliyor",
+    "RPG Maker: menü terimleri oyuna yazılıyor; [Kılıç] gibi açıklamalar da çevriliyor",
+    "Oyunda Çince ya da Japonca kalmış satırlar da hedef dile çevriliyor",
+    "Yerel çeviri modelleri Capri içinde: TranslateGemma ve MiLMMT, Ollama gerekmez",
+    "Ekran çevirisi: gün ışığında konturlu ve sarı altyazılar çok daha iyi okunuyor",
+    "Japonca/Çince kaynaklı Ren'Py ve RPG Maker VX oyunlarında satırlar artık atlanmıyor",
+    "Arayüz: Almanca, İspanyolca, Fransızca, Rusça ve diğer sözlükler hazır geliyor",
+    "Güvenlik: topluluk yaması indirme kaldırıldı; içe aktarılan yamalar denetleniyor",
+    "Unity: PlayMaker, UI Text/TextMeshPro ve data.unity3d metinleri BepInEx'siz çevriliyor",
 ]
 UI_PORT = 42001
 NOTO = "https://github.com/notofonts/noto-cjk/raw/main/Sans/SubsetOTF/{0}/NotoSans{0}-Regular.otf"
 NOTO_FONTS = {"ja": NOTO.format("JP"), "zh-CN": NOTO.format("SC"), "zh-TW": NOTO.format("TC"), "ko": NOTO.format("KR")}
-ANALYSIS_VERSION = 3     # analiz biçimi değişince eski kayıtlar yok sayılır (3: Utage/I2/TMP tabloları)
+ANALYSIS_VERSION = 5     # analiz biçimi değişince eski kayıtlar yok sayılır (5: Unity bileşen metinleri)
 LEARN_MIN_LINES, LEARN_MIN_SECONDS = 20, 5.0
 OCR_TITLES = {"select": "Capri OCR Seçim", "popup": "Capri OCR Sonuç", "pin": "Capri OCR Sabit"}
 PATCH_SUFFIX = ".capripatch"
@@ -146,16 +149,30 @@ def detect_any_game_type(path_str: str) -> Tuple[Optional[str], Any]:
     found = _detect_here(p)
     if found[0]:
         return found
-    try:
-        children = [c for c in p.iterdir() if c.is_dir() and not c.name.startswith((".", "_"))]
-    except OSError:
-        return None, None
-    # Çalıştırılabilir dosya içeren alt klasörler önce denenir
-    children.sort(key=lambda c: (not any(c.glob("*.exe")), c.name.lower()))
-    for child in children[:12]:
-        found = _detect_here(child)
-        if found[0]:
-            return found
+
+    def children_of(folder: Path) -> List[Path]:
+        try:
+            items = [c for c in folder.iterdir() if c.is_dir() and not c.name.startswith((".", "_"))]
+        except OSError:
+            return []
+        # Çalıştırılabilir dosya içeren alt klasörler önce denenir
+        return sorted(items, key=lambda c: (not any(c.glob("*.exe")), c.name.lower()))[:12]
+
+    # 1. kat: her alt klasör. 2. kat: yalnızca sarmalayıcıya benzeyen (en fazla 4 alt klasörlü) klasörlerin içi —
+    # ör. "Oyun_v1.1.3_Windows\Oyun v1.1.3 Windows\PC\Oyun.exe". Tarama büyük klasörlerde yavaşlamaz.
+    frontier = [p]
+    for level in range(2):
+        deeper: List[Path] = []
+        for folder in frontier:
+            children = children_of(folder)
+            if level > 0 and len(children) > 4:
+                continue
+            for child in children:
+                found = _detect_here(child)
+                if found[0]:
+                    return found
+                deeper.append(child)
+        frontier = deeper
     return None, None
 
 
@@ -976,7 +993,8 @@ class CapriBridge:
         card = gpu_runtime.nvidia_info()
         runtime = gpu_runtime.ready()
         if card:
-            self._gpu = {"name": card["name"], "detail": card["memory"], "cuda": runtime}
+            self._gpu = {"name": card["name"], "detail": card["memory"], "cuda": runtime,
+                         "vram_gb": float(re.sub(r"[^\d.]", "", card["memory"]) or 0)}
         else:
             self._gpu = {"name": "Ekran kartı algılanmadı", "detail": "CPU", "cuda": False}
         self._gpu["runtime"] = runtime
@@ -988,13 +1006,16 @@ class CapriBridge:
     # ── Arayüz dili ──────────────────────────────────────────────────────────
     def _ui_dictionaries(self):
         import i18n
-        return i18n.Dictionaries(DATA_DIR / "ui_lang")
+        return i18n.Dictionaries(DATA_DIR / "ui_lang", RES_DIR / "data" / "ui_lang")   # üretilen + pakette hazır
 
     def _ui_payload(self) -> Dict[str, Any]:
         """Arayüz dili ve sözlüğü. Henüz üretilmemiş bir dilse İngilizce gönderilir ve "pending" işaretlenir."""
         import i18n
         code = self._settings.get("ui_language") or "tr"
-        dictionary = self._ui_dictionaries().get(code)
+        dictionaries = self._ui_dictionaries()
+        dictionary = dictionaries.get(code)
+        if dictionary is None and dictionaries.missing(code) <= 0.1 * len(i18n.EN) and self._ui_translator(code) is None:
+            dictionary = dictionaries.with_fallback(code)   # hazır sözlükte birkaç yeni metin eksik, anahtar yok: uyarma
         self._ui_dict = dictionary if dictionary is not None else dict(i18n.EN)
         return {"language": code, "languages": i18n.ui_languages(), "dict": self._ui_dict, "pending": dictionary is None}
 
@@ -1318,9 +1339,10 @@ class CapriBridge:
         kind = game["type"]
         if kind == "unity":
             paths = [info.resources_assets_path, Path(info.root) / "BepInEx", info.streaming_assets_dir]
-            try:   # Utage/I2 tabloları sharedassets/level dosyalarında olabilir
+            try:   # Utage/I2 tabloları sharedassets/level dosyalarında, bileşen metinleri data.unity3d'de olabilir
+                import unity_typed
                 from engine_unity import _table_asset_files
-                paths += list(_table_asset_files(info))
+                paths += list(_table_asset_files(info)) + unity_typed.containers(info) + [unity_typed.reader_dir()]
             except Exception:
                 pass
         elif kind == "unreal":
@@ -1359,6 +1381,9 @@ class CapriBridge:
         texts = game.get("texts")
         if texts is not None:
             uniques = list(dict.fromkeys(t.original for t in texts if t.original.strip()))
+            if game["type"] == "rpgmaker":   # çeviriyle aynı birimler: konuşmacı adı ve satır ayrı
+                from engine_rpgmaker import speaker_sources
+                uniques = speaker_sources(uniques)
             game["uniques"] = uniques
             analysis["stats"] = {"unique": len(uniques), "chars": sum(len(u) for u in uniques),
                                  "words": sum(len(u.split()) for u in uniques), "exact": True}
@@ -1455,6 +1480,8 @@ class CapriBridge:
         info = game["info"] or detect_unity_game(game["root"])
         game["info"] = info
         texts = extract_texts_unity(info, log=self._log)
+        if info.typed_reader_missing and not game.get("reader_declined"):
+            texts, info = self._offer_unity_reader(game, info, texts)
         game["texts"] = texts
         unique = len({t.original for t in texts if t.original.strip()})
         notes = [
@@ -1466,13 +1493,25 @@ class CapriBridge:
         ]
         import bepinex_installer
         utage = sum(1 for t in texts if t.format_type == "utage")
-        needed = not texts or (info.runtime == "IL2CPP" and not utage)
+        typed = info.typed_counts
+        needed = not texts or (info.runtime == "IL2CPP" and not utage and not typed)
         installed = bepinex_installer.is_installed(info.root)
         if utage:
             notes.append(f"Utage senaryosu dosyada açık: {_n(utage)} satır doğrudan çevrilir (BepInEx gerekmez). "
                          "Oyunda dil olarak English seçilince Türkçe görünür.")
+        if typed:
+            notes.append(f"Oyunun bileşenlerinde açık metin: {_n(typed.get('fsm', 0))} PlayMaker, "
+                         f"{_n(typed.get('ui', 0))} arayüz, {_n(typed.get('xml', 0))} tablo satırı. Doğrudan çevrilir "
+                         "(BepInEx gerekmez); oyunda dil olarak English seçilince Türkçe görünür.")
+        # IL2CPP: metin derlenmiş kodda/tipsiz veride. Mono: veri açık ama Capri'nin okuyamadığı bir yapıda (PlayMaker,
+        # Adventure Creator, tek paket data.unity3d…). İkisinde de oyunda görünen metni BepInEx + XUnity yakalar.
+        bundled = (Path(info.data_dir) / "data.unity3d").is_file() if getattr(info, "data_dir", None) else False
         if needed:
             notes.append("Metinler dosyada açık değil: çeviri BepInEx + XUnity.AutoTranslator ile uygulanır"
+                         + (" (kurulu)." if installed else " — tek tıkla kurulabilir.") if info.runtime == "IL2CPP" else
+                         "Metinler Capri'nin doğrudan okuyabildiği bir biçimde değil"
+                         + (" (tüm veri tek pakette: data.unity3d)" if bundled else "")
+                         + ": çeviri BepInEx + XUnity.AutoTranslator ile uygulanır"
                          + (" (kurulu)." if installed else " — tek tıkla kurulabilir."))
         for note in notes:
             self._log(note)
@@ -1481,11 +1520,20 @@ class CapriBridge:
             "engine_detail": f"Unity · {info.runtime}",
             "font": {"ok": info.font_turkish_support,
                      "text": "Uyumlu" if info.font_turkish_support else "Eksik: " + " ".join(info.missing_font_chars[:8])},
-            "advice": ([{"tone": "info", "text": "Metinler oyun dosyalarında açık değil. Çeviri, oyun içinde BepInEx aracılığıyla gösterilir"
-                                                 + ("; BepInEx bu oyunda kurulu." if installed else "; kurulum için çeviri sırasında iznin istenir.")}]
+            "advice": ([{"tone": "info", "text": (
+                            "Metinler oyun dosyalarında açık değil. Çeviri, oyun içinde BepInEx aracılığıyla gösterilir"
+                            if info.runtime == "IL2CPP" else
+                            "Bu oyunun metinleri kendi yapısında (ör. PlayMaker, Adventure Creator ya da tek paket "
+                            "data.unity3d) duruyor; Capri bunları dosyadan doğrudan çeviremiyor. Çeviri, oyunda ekrana gelen "
+                            "metni yakalayan BepInEx + XUnity.AutoTranslator ile yapılır: oyunu oynadıkça metinler toplanır")
+                            + ("; BepInEx bu oyunda kurulu." if installed else "; kurulum için çeviri sırasında iznin istenir.")}]
                        if needed else [])
                       + ([{"tone": "info", "text": "Utage senaryosu bulundu: çeviri oyunun İngilizce metninin yerine yazılır. "
                                                    "Oyunda dil seçeneğinden English'i seçince Türkçe görünür."}] if utage else [])
+                      + ([{"tone": "info", "text": "Metinler oyunun kendi bileşenlerinden (PlayMaker, UI Text/TextMeshPro, "
+                                                   "dil tabloları) okundu. Çeviri İngilizce metnin yerine yazılır; oyunda dil "
+                                                   "seçeneğinden English'i seçince Türkçe görünür. Dil menüsündeki English "
+                                                   "yazısı da Türkçe olur."}] if typed else [])
                       + ([{"tone": "warn", "text": (
                             f"Oyunun fontunda {' '.join(info.missing_font_chars)} harfleri yok. Kutu olarak görünmesinler diye "
                             "Capri bunları en yakın harfle yazar (ğ→g, ş→s, ı→i); diğer harfler olduğu gibi kalır."
@@ -1644,6 +1692,12 @@ class CapriBridge:
             ok, _models, msg = prov.test_ollama_service(cfg.ollama_host)
             if not ok:
                 raise UserError(msg)
+        elif model == "local":
+            import local_llm
+            model_id = self._local_model_id()
+            if local_llm.server_exe() is None or not local_llm.model_installed(model_id):
+                raise UserError(f"{local_llm.BY_ID[model_id]['label']} indirilmemiş. Yerel Modeller sayfasından tek "
+                                "tıkla indirebilirsin (Ollama gerekmez).")
         else:
             if not gpu_runtime.ready():
                 raise UserError(f"{MODEL_LABELS[model]} için yerel model ortamı (PyTorch) kurulu değil. "
@@ -1837,9 +1891,11 @@ class CapriBridge:
         return {"ok": True, "found": len(names), "added": len(added), "names": names[:50]}
 
     def _translate_strings(self, unique: List[str], cache_path: Path, pattern: Any, glossary: Glossary,
-                           game_engine: str, failed: set, extra: Optional[str] = None) -> Dict[str, str]:
-        """Motor bağımsız: benzersiz metinleri seçili sağlayıcıyla çevirir (önbellek + sözlük)."""
-        from engine_common import OllamaTranslationEngine, TranslationEngine
+                           game_engine: str, failed: set, extra: Optional[str] = None,
+                           engine_tags: Any = None) -> Dict[str, str]:
+        """Motor bağımsız: benzersiz metinleri seçili sağlayıcıyla çevirir (önbellek + sözlük).
+        engine_tags: bulut motorlarının etiket denetiminde kullanılacak motor kuralı (yoksa Ren'Py/genel kural)."""
+        from engine_common import TranslationEngine, make_llm_engine
         from engine_renpy import load_gemini_api_key, translate_with_gemini
         s, cfg, model = self._settings, prov.load_provider_config(), self._settings["model"]
         cache = TranslationCache(cache_path)
@@ -1849,9 +1905,15 @@ class CapriBridge:
             hit = glossary.lookup(src)
             if hit is not None:
                 translations[src] = hit
-            elif not re.search(r"[A-Za-zÀ-ž]", src):
+            elif not re.search(r"[^\W\d_]", src):   # harf yok (sayı/noktalama); Japonca/Çince satırlar çevrilir
                 translations[src] = src
-        missing = [src for src in unique if src not in translations and src not in cache]
+        # Önbellekte kendisiyle kayıtlı Çince/Japonca/Korece satır: eskiden "harf yok" sayılıp çevrilmeden bırakılmıştı
+        foreign = re.compile(r"[぀-ヿ㐀-鿿가-힯]")
+        cjk_target = s["target"] in ("ja", "zh-CN", "zh-TW", "ko")
+
+        def stale(src: str) -> bool:
+            return not cjk_target and cache.get(src) == src and bool(foreign.search(src))
+        missing = [src for src in unique if src not in translations and (src not in cache or stale(src))]
         self._log(f"Benzersiz: {_n(len(unique))} · Önbellekte: {_n(len(unique) - len(missing))} · Çevrilecek: {_n(len(missing))}")
         source = "en" if s["source"] == "auto" else s["source"]
         extra = self._extra_instruction() if extra is None else extra
@@ -1859,16 +1921,17 @@ class CapriBridge:
             if model == "gemini":
                 translate_with_gemini(missing, cache.data, cache_path, load_gemini_api_key(), log=self._log,
                                       progress=self._progress, target_lang=s["target"], source_lang=source,
-                                      game_engine=game_engine, failed_out=failed, extra_instruction=extra)
+                                      game_engine=game_engine, failed_out=failed, extra_instruction=extra,
+                                      protected=engine_tags)
             elif model in CLOUD_MODELS:
                 prov.translate_with_cloud(model, missing, cache.data, cache_path, cfg, log=self._log,
                                           progress=self._progress, target_lang=s["target"], source_lang=source,
-                                          game_engine=game_engine, failed_out=failed, extra_instruction=extra)
+                                          game_engine=game_engine, failed_out=failed, extra_instruction=extra,
+                                          protected=engine_tags)
             else:
-                if model == "ollama":
-                    engine = OllamaTranslationEngine(model_name=cfg.ollama_model, host=cfg.ollama_host, cache=cache,
-                                                     target_lang=s["target"], source_lang=source,
-                                                     glossary=glossary, protected_pattern=pattern, log=self._log)
+                if model in ("ollama", "local"):
+                    engine = make_llm_engine(model, self._llm_model(cfg), cfg.ollama_host, cache, pattern, self._log,
+                                             s["target"], source, glossary=glossary)
                 else:
                     engine = TranslationEngine(
                         model_dir=prov.resolve_model_dir("model_nllb" if model == "nllb" else "model"),
@@ -1913,7 +1976,7 @@ class CapriBridge:
             log=self._log,
             progress=self._progress,
             model_kind=s["model"],
-            ollama_model=cfg.ollama_model,
+            ollama_model=self._llm_model(cfg),
             ollama_host=cfg.ollama_host,
             failed_out=failed,
             extra_instruction=self._extra_instruction(),
@@ -1945,7 +2008,7 @@ class CapriBridge:
         # İzin çeviriden önce istenir: "hayır" denirse boşuna API harcanmaz
         use_bridge = False
         # Utage gibi senaryosu dosyada açık oyunlar IL2CPP olsa da köprüye ihtiyaç duymaz
-        scenario_in_files = any(t.format_type == "utage" for t in texts)
+        scenario_in_files = any(t.format_type in ("utage", "typed") for t in texts)
         if not texts or (info.runtime == "IL2CPP" and not scenario_in_files):
             import bepinex_installer
             installed = is_bepinex_installed(info.root)
@@ -1963,7 +2026,7 @@ class CapriBridge:
             files = {info.root / t.source_file for t in texts if t.format_type == "tsv_file"}
             if info.resources_assets_path and any(t.source_file == "resources.assets" for t in texts):
                 files.add(info.resources_assets_path)
-            files |= {info.data_dir / t.source_file for t in texts if t.format_type in ("utage", "tsv_col", "i2")}
+            files |= {info.data_dir / t.source_file for t in texts if t.format_type in ("utage", "tsv_col", "i2", "typed")}
             if files:
                 self._stage("backup", "Orijinal dosyalar yedekleniyor")
                 create_game_backup(info.root, "unity", sorted(files), log=self._log)
@@ -1976,14 +2039,14 @@ class CapriBridge:
             log=self._log, progress=self._progress, tracker=None,
             model_kind=s["model"],
             model_dir=prov.resolve_model_dir("model_nllb" if s["model"] == "nllb" else "model"),
-            ollama_model=cfg.ollama_model, ollama_host=cfg.ollama_host, failed_out=failed,
+            ollama_model=self._llm_model(cfg), ollama_host=cfg.ollama_host, failed_out=failed,
             extra_instruction=self._extra_instruction(),
         )
         self._learn_speed(game)
         if s.get("quality_pass") and texts:
             translations.update(self._quality_edits(unique, translations))
         self._stage("write", "Çeviri oyuna yazılıyor")
-        written = write_translations_unity(info, translations, texts, self._log) if texts else 0
+        written = write_translations_unity(info, translations, texts, self._log, target_lang=s["target"]) if texts else 0
         game["texts"] = None  # Varlıklar değişti; bir sonraki analizde yeniden okunur
         game["analysis"] = None
 
@@ -2031,7 +2094,7 @@ class CapriBridge:
             unique_sources=unique, cache_path=self._cache_path(), target_lang=s["target"], source_lang=s["source"],
             glossary=self._glossary("glossary.json"), log=self._log, progress=self._progress, tracker=None,
             model_kind=s["model"], model_dir=prov.resolve_model_dir("model_nllb" if s["model"] == "nllb" else "model"),
-            ollama_model=cfg.ollama_model, ollama_host=cfg.ollama_host, failed_out=failed,
+            ollama_model=self._llm_model(cfg), ollama_host=cfg.ollama_host, failed_out=failed,
             extra_instruction=self._extra_instruction(),
         )
 
@@ -2112,8 +2175,8 @@ class CapriBridge:
         return written
 
     def _translate_rpgmaker(self, game: Dict[str, Any], failed: set) -> int:
-        from engine_rpgmaker import (PROTECTED_RPGM, RGSS_EXT, detect_rpgmaker_game, write_translations_mv_mz,
-                                     write_translations_vxace)
+        from engine_rpgmaker import (PROTECTED_RPGM, RGSS_EXT, RPGM_EXTRA_INSTRUCTION, detect_rpgmaker_game,
+                                     join_speaker, speaker_sources, write_translations_mv_mz, write_translations_vxace)
         info = game["info"] or detect_rpgmaker_game(game["root"])
         rgss = info.engine_type in RGSS_EXT
         if rgss and self._rgss_archive(info):
@@ -2128,18 +2191,22 @@ class CapriBridge:
         self._stage("prepare", "Oyunun metinleri hazırlanıyor")
         texts = game["texts"] if game["texts"] is not None else self._rpgm_extract(info)
         unique = list(dict.fromkeys(t.original for t in texts if t.original.strip()))
+        sources = speaker_sources(unique)   # \name[勇者] satırları: ad ve gövde ayrı çevrilir
         self._stage("translate", f"{MODEL_LABELS[self._settings['model']]} çeviriyor")
-        translations = self._translate_strings(unique, self._cache_path(), PROTECTED_RPGM,
-                                               self._glossary("glossary_rpgm.json"), "RPG Maker Game", failed)
+        extra = "\n\n".join(x for x in (self._extra_instruction(), RPGM_EXTRA_INSTRUCTION) if x)
+        translations = self._translate_strings(sources, self._cache_path(), PROTECTED_RPGM,
+                                               self._glossary("glossary_rpgm.json"), "RPG Maker Game", failed,
+                                               extra=extra, engine_tags=PROTECTED_RPGM)
         self._learn_speed(game)
         if self._settings.get("quality_pass"):
-            translations.update(self._quality_edits(unique, translations))
+            translations.update(self._quality_edits(sources, translations))
+        translations = join_speaker(unique, translations)
         self._stage("write", "Çeviri oyuna yazılıyor")
         game["texts"] = None
         game["analysis"] = None
         if rgss:
             return write_translations_vxace(info.data_dir, translations, self._log, engine_type=info.engine_type)
-        return write_translations_mv_mz(info.data_dir, translations, self._log)
+        return write_translations_mv_mz(info.data_dir, translations, self._log, language=self._settings["target"])
 
     # ── BepInEx (Unity) ──────────────────────────────────────────────────────
     def install_bepinex(self) -> bool:
@@ -2179,8 +2246,11 @@ class CapriBridge:
 
     # ── Kalite editörü (Ren'Py) ──────────────────────────────────────────────
     def _quality_provider(self) -> str:
+        from engine_common import ollama_family
         model = self._settings["model"]
-        if model in prov.LLM_PROVIDERS:
+        translation_only = model == "local" or (
+            model == "ollama" and ollama_family(prov.load_provider_config().ollama_model) != "chat")
+        if model in prov.LLM_PROVIDERS and not translation_only:   # TranslateGemma/MiLMMT düzeltme yazamaz
             return model
         if prov.load_provider_config().gemini_keys:
             return "gemini"
@@ -2374,15 +2444,43 @@ class CapriBridge:
         from engine_unity import detect_unity_game, extract_texts_unity, write_translations_unity
         self._restore_originals(game)
         info = detect_unity_game(game["root"])
-        return write_translations_unity(info, cache, extract_texts_unity(info, self._log), self._log)
+        return write_translations_unity(info, cache, extract_texts_unity(info, self._log), self._log,
+                                        target_lang=self._settings["target"])
+
+    def _offer_unity_reader(self, game: Dict[str, Any], info: Any, texts: List[Any]):
+        """Bileşen okuyucusu gerekli ama kurulu değil: bir kez izin istenir, indirilip metinler yeniden okunur."""
+        import unity_typed
+        from engine_unity import detect_unity_game, extract_texts_unity
+        if not self._ask("Unity bileşen okuyucusu", (
+                "Bu oyunun metinleri oyunun kendi bileşenlerinde (PlayMaker, UI Text/TextMeshPro ya da tek paket "
+                "data.unity3d). Capri bunları oyunun tip bilgisiyle okuyup doğrudan çevirebilir; bunun için bileşen "
+                f"okuyucusunun ({unity_typed.READER_SIZE_MB} MB) bir kez indirilmesi gerekir.\n\n"
+                f"Kaynak: PyPI, TypeTreeGeneratorAPI {unity_typed.READER_VERSION}; dosya SHA-256 ile doğrulanır. "
+                "İndirilsin mi?\n\nHayır dersen çeviri BepInEx ile oyun içinde yapılabilir.")):
+            game["reader_declined"] = True
+            return texts, info
+        self._status("Unity bileşen okuyucusu indiriliyor…")
+        try:
+            unity_typed.install_reader(log=self._log)
+        except Exception as exc:
+            self._log(f"Bileşen okuyucusu indirilemedi: {exc}")
+            self._toast("Unity bileşen okuyucusu indirilemedi; çeviri BepInEx ile yapılabilir.", "warn")
+            game["reader_declined"] = True
+            return texts, info
+        info = detect_unity_game(game["root"])
+        game["info"] = info
+        return extract_texts_unity(info, log=self._log), info
 
     def _apply_rpgmaker(self, game: Dict[str, Any], cache: Dict[str, str]) -> int:
-        from engine_rpgmaker import RGSS_EXT, detect_rpgmaker_game, write_translations_mv_mz, write_translations_vxace
+        from engine_rpgmaker import (RGSS_EXT, detect_rpgmaker_game, join_speaker, write_translations_mv_mz,
+                                     write_translations_vxace)
         self._restore_originals(game)
         info = detect_rpgmaker_game(game["root"])
+        originals = list(dict.fromkeys(t.original for t in self._rpgm_extract(info)))
+        translations = {**cache, **join_speaker(originals, cache)}   # konuşmacı adı ve satır ayrı kayıtlı
         if info.engine_type in RGSS_EXT:
-            return write_translations_vxace(info.data_dir, cache, self._log, engine_type=info.engine_type)
-        return write_translations_mv_mz(info.data_dir, cache, self._log)
+            return write_translations_vxace(info.data_dir, translations, self._log, engine_type=info.engine_type)
+        return write_translations_mv_mz(info.data_dir, translations, self._log, language=self._settings["target"])
 
     def _apply_unreal(self, game: Dict[str, Any], cache: Dict[str, str]) -> int:
         from engine_unreal import detect_unreal_game, extract_texts_unreal, write_translations_unreal
@@ -2477,21 +2575,8 @@ class CapriBridge:
         with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as archive:
             archive.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
             archive.writestr("translations.json", json.dumps(cache, ensure_ascii=False))
-        repo = self._update_repo()
-        if repo:   # topluluk: yamayı GitHub'da bir konu olarak paylaş (dosyayı sayfaya sürükleyip bırakmak yeter)
-            import urllib.parse
-            # GitHub konulara .capripatch eklemeye izin vermez; aynı içerik .zip olarak yanına konur
-            shared = target if target.suffix.lower() == ".zip" else target.with_name(target.name + ".zip")
-            if shared != target:
-                shutil.copy2(target, shared)
-            query = urllib.parse.urlencode({"title": f"Yama: {game['title']} ({self._settings['target']})", "labels": "yama",
-                                            "body": f"Oyun: {game['title']}\nMotor: {ENGINE_LABELS.get(game['type'], game['type'])}\n"
-                                                    f"Dil: {self._settings['target']}\nSatır: {len(cache)}\n\n"
-                                                    f"{shared.name} dosyasını buraya sürükleyip bırak."})
-            action = {"label": "Toplulukla paylaş", "url": f"https://github.com/{repo}/issues/new?{query}"}
-        else:
-            action = {"label": "Klasörü aç", "path": str(target.parent)}
-        self._notify("Yama dışa aktarıldı", f"{_n(len(cache))} satır · {target.name}", "ok", "archive", action)
+        self._notify("Yama dışa aktarıldı", f"{_n(len(cache))} satır · {target.name}", "ok", "archive",
+                     {"label": "Klasörü aç", "path": str(target.parent)})
         return str(target)
 
     def import_patch(self) -> bool:
@@ -2506,11 +2591,14 @@ class CapriBridge:
         return self._apply_patch_file(Path(result[0]))
 
     def _apply_patch_file(self, path: Path) -> bool:
-        """Yama dosyasındaki çevirileri açık oyunun önbelleğine ekler (oyuna yazmak için çeviri başlatılır)."""
+        """
+        Yama dosyasındaki çevirileri açık oyunun önbelleğine ekler (oyuna yazmak için çeviri başlatılır).
+        Yama başkasından gelmiş olabilir: her satır motorun etiket kuralıyla kaynağa göre denetlenir; yeni etiket, kod,
+        bağlantı ya da fazladan satır sonu ekleyen satırlar alınmaz (bkz. patch_safety).
+        """
+        import patch_safety
         try:
-            with zipfile.ZipFile(path) as archive:
-                manifest = json.loads(archive.read("manifest.json"))
-                translations = json.loads(archive.read("translations.json"))
+            manifest, translations = patch_safety.read_patch(path)
         except (OSError, KeyError, ValueError, zipfile.BadZipFile):
             self._notify("Yama okunamadı", "Dosya geçerli bir Capri yaması değil.", "error", "alert")
             return False
@@ -2519,43 +2607,21 @@ class CapriBridge:
                          f"Yama {ENGINE_LABELS.get(manifest.get('engine'), '?')} için, açık oyun {ENGINE_LABELS[self._game['type']]}.",
                          "error", "alert")
             return False
+        safe, rejected = patch_safety.filter_translations(translations, self._game["type"])
         cache_path = self._cache_path()
         cache = _read_json(cache_path, {})
-        cache.update({str(k): str(v) for k, v in translations.items()})
+        cache.update(safe)
         _write_json(cache_path, cache)
+        title = str(manifest.get("title", ""))[:120]
         self._notify("Yama içe aktarıldı",
-                     f"{_n(len(translations))} satır ({manifest.get('title', '')}). 'Çeviriyi başlat' ile oyuna uygula — "
+                     f"{_n(len(safe))} satır ({title}). 'Çeviriyi başlat' ile oyuna uygula — "
                      "bu satırlar için API harcanmaz.", "ok", "archive")
+        if rejected:
+            self._notify(f"{_n(rejected)} satır alınmadı",
+                         "Bu satırlar kaynakta olmayan etiket, kod, bağlantı ya da satır sonu ekliyordu; güvenlik için "
+                         "yamadan alınmadı.", "warn", "shield")
         self._ui.emit("stats", self.get_stats())
         return True
-
-    # ── Topluluk yamaları ────────────────────────────────────────────────────
-    def community_patches(self, query: str = "") -> Dict[str, Any]:
-        """GitHub'da paylaşılmış Capri yamalarını arar."""
-        import community
-        repo = self._update_repo()
-        if not repo:
-            return {"ok": False, "error": "Topluluk deposu ayarlı değil.", "items": []}
-        try:
-            items = community.search(repo, query)
-        except Exception as error:
-            self._log(f"Topluluk yamaları alınamadı: {error}")
-            return {"ok": False, "error": "GitHub'a ulaşılamadı. İnternet bağlantını kontrol edip tekrar dene.", "items": []}
-        return {"ok": True, "items": items, "repo": repo,
-                "game": {"title": self._game["title"], "engine": ENGINE_LABELS.get(self._game["type"], "")} if self._game else None}
-
-    def download_community_patch(self, url: str) -> bool:
-        """Topluluk yamasını indirip açık oyuna uygular (yalnızca GitHub konu ekleri indirilir)."""
-        import community
-        if not self._game:
-            self._toast("Önce yamanın ait olduğu oyunu aç.", "warn")
-            return False
-        try:
-            path = community.download(url, DATA_DIR / "patches")
-        except Exception as error:
-            self._notify("Yama indirilemedi", str(error), "error", "alert")
-            return False
-        return self._apply_patch_file(path)
 
     # ── Canlı önizleme ───────────────────────────────────────────────────────
     def translate_text(self, text: str, source: str = "", target: str = "", model: str = "") -> Dict[str, Any]:
@@ -2569,7 +2635,7 @@ class CapriBridge:
             return {"ok": False, "text": f"{label} yalnızca İngilizce → Türkçe çeviri yapabilir.", "latency": 0, "model": label}
         ok, result, latency = prov.translate_single_text(
             text=text, provider_id=model, target_lang=target, source_lang=source,
-            nsfw_mode=bool(s["nsfw"]), log=self._log, max_tokens=4096,
+            nsfw_mode=bool(s["nsfw"]), log=self._log, max_tokens=4096, local_model=self._local_model_id(),
         )
         return {"ok": ok, "text": result, "latency": latency, "model": label}
 
@@ -2640,6 +2706,73 @@ class CapriBridge:
 
     def _ocr_model(self) -> str:
         return self._settings.get("ocr_model") or self._settings["model"]
+
+    # ── Dahili yerel modeller (llama.cpp, Ollama'sız) ────────────────────────
+    def _local_model_id(self, ocr: bool = False) -> str:
+        """Seçili dahili model; seçilmemişse ekran kartına göre önerilen. Ekran çevirisinde (tek satır) MiLMMT kuruluysa
+        o kullanılır: tek satırda ~0,1 sn ve TranslateGemma'dan hızlı."""
+        import local_llm
+        if ocr and local_llm.model_installed("milmmt-4b"):
+            return "milmmt-4b"
+        chosen = self._settings.get("local_model")
+        if chosen in local_llm.BY_ID:
+            return chosen
+        installed = [m["id"] for m in local_llm.CATALOG if local_llm.model_installed(m["id"]) and m["family"] != "milmmt"]
+        return installed[0] if installed else local_llm.recommend((self._gpu or {}).get("vram_gb"))["model"]
+
+    def _vram_gb(self) -> Optional[float]:
+        """Ekran kartı belleği. Açılıştaki tespit arka planda sürüyorsa beklemeden doğrudan okunur (~50 ms); yoksa
+        12 GB'lık karta hafif model önerilirdi."""
+        vram = (self._gpu or {}).get("vram_gb")
+        if vram is None and (self._gpu or {}).get("name") == "Algılanıyor…":
+            card = gpu_runtime.nvidia_info()
+            vram = float(re.sub(r"[^\d.]", "", card["memory"]) or 0) if card else None
+        return vram
+
+    def _llm_model(self, cfg: Any) -> str:
+        """Ollama ya da dahili motor için model adı (motorlara ollama_model parametresiyle gider)."""
+        return self._local_model_id() if self._settings["model"] == "local" else cfg.ollama_model
+
+    def local_models(self) -> Dict[str, Any]:
+        import local_llm
+        vram = self._vram_gb()
+        data = local_llm.status(vram)
+        data["selected"] = self._local_model_id()
+        data["vram_gb"] = vram
+        return data
+
+    def download_local_model(self, model_id: str) -> bool:
+        """Dahili modeli (gerekirse önce 37 MB'lık llama.cpp çalışma ortamını) indirir ve SHA-256 ile doğrular."""
+        import local_llm
+        if model_id not in local_llm.BY_ID:
+            return False
+        spec = local_llm.BY_ID[model_id]
+
+        def task():
+            if local_llm.server_exe() is None:
+                self._stage("download", "Yerel model ortamı (llama.cpp) indiriliyor")
+                self._progress_unit = "MB"
+                local_llm.install_runtime(local_llm.DEFAULT_RUNTIME, lambda d, t: self._progress(d >> 20, max(1, t >> 20)),
+                                          self._cancel, self._log)
+            self._stage("download", f"{spec['label']} indiriliyor")
+            self._progress_unit = "MB"
+            local_llm.install_model(model_id, lambda d, t: self._progress(d >> 20, max(1, t >> 20)), self._cancel, self._log)
+            if spec["family"] != "milmmt" and not local_llm.model_installed(self._settings.get("local_model") or ""):
+                self._settings["local_model"] = model_id
+                save_settings(self._settings)
+            self._ui.emit("models", self.model_status())
+            self._notify("Yerel model hazır", f"{spec['label']} indirildi ve doğrulandı. Sağlayıcılar'dan \"Yerel model "
+                         "(dahili)\" motorunu seçerek kullanabilirsin.", "ok", "cpu")
+        return self._run_task("Model indirme", task)
+
+    def remove_local_model(self, model_id: str) -> Dict[str, Any]:
+        import local_llm
+        if model_id in local_llm.BY_ID:
+            local_llm.remove_model(model_id)
+            if self._settings.get("local_model") == model_id:
+                self._settings["local_model"] = None
+                save_settings(self._settings)
+        return self.local_models()
 
     def ocr_status(self) -> Dict[str, Any]:
         try:
@@ -2786,7 +2919,7 @@ class CapriBridge:
             return False, f"{MODEL_LABELS[model]} yalnızca Türkçeye çevirebilir.", 0, False
         ok, result, latency = prov.translate_single_text(text, model, target_lang=target, source_lang=source,
                                                          nsfw_mode=bool(self._settings["nsfw"]), log=self._log,
-                                                         max_tokens=1024)
+                                                         max_tokens=1024, local_model=self._local_model_id(ocr=True))
         if ok:
             self._ocr_cache[key] = result
             while len(self._ocr_cache) > 400:
@@ -3123,6 +3256,47 @@ class CapriBridge:
         prov.save_provider_config(cfg)
         return {"ok": True, "settings": self._settings}
 
+    def ollama_models(self) -> Dict[str, Any]:
+        """Ollama'da kurulu modeller + önerilen çeviri modelleri (ekran kartının belleğine göre öneri)."""
+        from engine_common import OLLAMA_PRESETS, ollama_family, recommended_ollama_model
+        cfg = prov.load_provider_config()
+        running, installed, _msg = prov.test_ollama_service(cfg.ollama_host)
+        names = set(installed)
+        presets = [{**p, "installed": p["model"] in names or f"{p['model']}:latest" in names} for p in OLLAMA_PRESETS]
+        return {"running": running, "installed": installed, "presets": presets, "current": cfg.ollama_model,
+                "family": ollama_family(cfg.ollama_model),
+                "recommended": recommended_ollama_model((self._gpu or {}).get("vram_gb"))}
+
+    def ollama_pull(self, model: str) -> bool:
+        """Ollama modelini Capri içinden indirir (ilerleme çubuğuyla); bitince varsayılan Ollama modeli yapar."""
+        model = (model or "").strip()
+        if not model:
+            return False
+
+        def task():
+            import requests
+            cfg = prov.load_provider_config()
+            host = (cfg.ollama_host or "http://127.0.0.1:11434").rstrip("/")
+            if not prov.test_ollama_service(host)[0]:
+                raise UserError("Ollama çalışmıyor. Ollama'yı kurup açtıktan sonra tekrar dene (ollama.com).")
+            self._stage("download", f"{model} indiriliyor")
+            self._progress_unit = "MB"
+            with requests.post(f"{host}/api/pull", json={"model": model, "stream": True}, stream=True, timeout=60) as resp:
+                if resp.status_code != 200:
+                    raise UserError(f"Ollama indirmeyi reddetti (HTTP {resp.status_code}).")
+                for raw in resp.iter_lines():
+                    if not raw:
+                        continue
+                    event = json.loads(raw)
+                    if event.get("error"):
+                        raise UserError(f"Ollama: {event['error']}")
+                    if event.get("total") and event.get("completed") is not None:
+                        self._progress(int(event["completed"]) >> 20, max(1, int(event["total"]) >> 20))
+            cfg.ollama_model = model
+            prov.save_provider_config(cfg)
+            self._notify("Model indirildi", f"{model} hazır ve Ollama için seçildi.", "ok", "download")
+        return self._run_task("Model indirme", task)
+
     def gemini_models(self) -> List[str]:
         """Anahtarın erişebildiği, çeviriye uygun Gemini modelleri (hız sırasıyla)."""
         try:
@@ -3146,6 +3320,16 @@ class CapriBridge:
             ok, models, msg = prov.test_ollama_service(value or cfg.ollama_host)
             if ok and models:
                 msg += " · " + ", ".join(models[:6])
+        elif provider == "local":
+            import local_llm
+            model_id = self._local_model_id()
+            started = time.time()
+            try:
+                result = local_llm.translate_one(model_id, "Welcome back, traveler!", "en", self._settings["target"],
+                                                 log=self._log)
+                ok, msg = True, f"{local_llm.BY_ID[model_id]['label']} çalışıyor ({int((time.time() - started) * 1000)} ms): {result}"
+            except Exception as error:
+                ok, msg = False, str(error)
         elif provider in ("opus", "nllb"):
             status = prov.get_offline_model_status(provider)
             ok = status["is_ready"]
@@ -3159,6 +3343,7 @@ class CapriBridge:
         data: Dict[str, Any] = {k: prov.get_offline_model_status(k) for k in ("opus", "nllb")}
         data["runtime"] = {"ready": gpu_runtime.ready(), "missing": gpu_runtime.missing(),
                            "dir": str(gpu_runtime.SITE_DIR)}
+        data["llm"] = self.local_models()
         return data
 
     def _ensure_runtime(self) -> bool:
@@ -3315,6 +3500,11 @@ class CapriBridge:
     def win_close(self) -> None:
         self._ui.window = None     # kapanırken yok edilmiş pencereye JavaScript gönderilmesin
         self.ocr_pin_stop(silent=True)
+        try:
+            import local_llm
+            local_llm.SERVER.stop()   # dahili model sunucusu ekran kartı belleğini bırakır
+        except Exception:
+            pass
         for win in list(self._ocr_win.values()):
             try:
                 win.destroy()
