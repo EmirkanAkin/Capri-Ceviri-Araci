@@ -35,20 +35,17 @@ def describe_error(exc: BaseException) -> Dict[str, Any]:
                            "Bu motor için gereken kütüphaneler kurulu değil. Yerel Modeller sayfasından tek tıkla kurabilirsin.",
                            detail, MODELS_ACTION)
         return _result("Uygulamanın bir parçası eksik",
-                       "Bu bir Capri paketleme hatası. Son sürümü indirip aynı klasöre açman sorunu çözer; ayarların ve "
-                       "çevirilerin korunur.", detail, {"label": "Güncellemeleri kontrol et", "update": True})
+                       "Capri paketleme hatası. Son sürümü aynı klasöre aç; ayarların korunur.", detail, {"label": "Güncellemeleri kontrol et", "update": True})
     if any(k in text for k in ("resource_exhausted", "quota", "rate limit", "too many requests", " 429")):
         return _result("API kotası doldu",
-                       "Sağlayıcının kullanım sınırına ulaşıldı. Biraz bekleyip kaldığın yerden devam et ya da başka bir "
-                       "anahtar ekle. Yapılan çeviriler kaybolmadı.", detail, PROVIDERS_ACTION)
+                       "Kullanım sınırı doldu. Biraz bekleyip devam et ya da başka bir anahtar ekle; çeviriler kaybolmadı.", detail, PROVIDERS_ACTION)
     if any(k in text for k in ("api key", "api_key", "permission_denied", "unauthorized", "invalid_api", " 401", " 403")):
         return _result("API anahtarı kabul edilmedi",
                        "Anahtar yanlış, süresi dolmuş ya da yetkisiz olabilir. Sağlayıcılar sayfasından kontrol et.",
                        detail, PROVIDERS_ACTION)
     if isinstance(exc, PermissionError):
         return _result("Oyun dosyalarına yazılamadı",
-                       "Oyun açıksa kapat. Klasör Program Files altındaysa Capri'yi yönetici olarak çalıştır ya da oyunu "
-                       "başka bir klasöre taşı.", detail)
+                       "Oyun açıksa kapat. Program Files altındaysa Capri'yi yönetici olarak çalıştır.", detail)
     if isinstance(exc, OSError) and exc.errno == errno.ENOSPC:
         return _result("Diskte yer kalmadı", "Biraz yer açıp kaldığın yerden devam et.", detail)
     if isinstance(exc, FileNotFoundError):

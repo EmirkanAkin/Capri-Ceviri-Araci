@@ -1276,7 +1276,7 @@ def _looks_translatable_ui_text(value: str) -> bool:
     if re.fullmatch(r"[A-Za-z0-9_./\\:-]+", text) and (
         "/" in text
         or "\\" in text
-        or "." in text
+        or re.search(r"\.[A-Za-z0-9_]", text)      # dosya.uzantı, gui.button; "A-Alright." / "Aaah..." değil
         or text.casefold() in UI_TECHNICAL_WORDS
     ):
         return False
@@ -1301,6 +1301,19 @@ def _string_literal_is_dict_key(line: str, match: re.Match) -> bool:
     return bool(re.match(r"\s*:", tail))
 
 
+# Argüman olarak verilen metin (call show_line(..., text="…")): yalnızca adı ekran metni olanlar alınır;
+# look="smile", bg="room" gibi görünüm/resim kodları çeviriye gönderilmez
+_KEYWORD_BEFORE = re.compile(r"\b(\w+)\s*=\s*$")
+_DISPLAY_KEYWORD = re.compile(
+    r"text|title|message|msg|caption|tooltip|prompt|label|dialog|line|desc|hint|string|what|header|button|name|notify",
+    re.IGNORECASE)
+
+
+def _keyword_is_not_display(line: str, match: re.Match) -> bool:
+    keyword = _KEYWORD_BEFORE.search(line[:match.start()])
+    return bool(keyword) and not _DISPLAY_KEYWORD.search(keyword.group(1))
+
+
 def _ui_literals_from_line(line: str) -> list[str]:
     stripped = line.strip()
     if not stripped or stripped.startswith("#"):
@@ -1310,7 +1323,7 @@ def _ui_literals_from_line(line: str) -> list[str]:
         return []
     values = []
     for match in QUOTED_ANY.finditer(line):
-        if _string_literal_is_dict_key(line, match):
+        if _string_literal_is_dict_key(line, match) or _keyword_is_not_display(line, match):
             continue
         try:
             value = decode_literal(match.group(1))
@@ -1391,13 +1404,18 @@ def _copy_source_scripts_for_ui_scan(info: GameInfo, output_dir: Path, log: LogF
     log(f"Gelişmiş UI taraması kaynakları: {copied} RPY + {compiled} RPYC")
 
 
+UI_STRING_LIMIT = 200_000   # eskiden 6000'di: diyaloğu argümanla veren oyunlarda satırların üçte ikisi dışarıda kalıyordu
+
+
 def augment_ui_string_templates(
     info: GameInfo,
     tl_dir: Path,
     log: LogFn = print,
-    limit: int = 6000,
+    limit: int = UI_STRING_LIMIT,
 ) -> dict[str, int]:
-    """Screen/phone/task gibi arayüz metinleri için ek translate strings üretir."""
+    """Screen/phone/task gibi arayüz metinleri için ek translate strings üretir. Bazı oyunlar diyaloğun tamamını
+    bir yardımcıya argüman olarak verir (call show_line(..., text="…")): bunlar da burada toplanır, bu yüzden
+    sınır diyalog sayısının çok üstündedir ve aşılırsa sessizce kesilmez, günlüğe yazılır."""
     target = tl_dir / "zz_renptr_ui_strings.rpy"
     target.unlink(missing_ok=True)
     existing = _existing_string_olds(tl_dir)
@@ -1445,7 +1463,9 @@ def augment_ui_string_templates(
         handle.writelines(lines)
     temporary.replace(target)
     log(f"Gelişmiş UI taraması: {len(found)} ek arayüz metni şablona eklendi.")
-    return {"added": len(found), "scanned": len(existing)}
+    if len(found) >= limit:
+        log(f"UYARI: Arayüz metni sınırına ({limit}) ulaşıldı; kalan metinler bu çeviriye girmedi.")
+    return {"added": len(found), "scanned": len(existing), "truncated": len(found) >= limit}
 
 
 def collect_empty_entries(root: Path):

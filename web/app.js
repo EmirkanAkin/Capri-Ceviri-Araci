@@ -33,19 +33,17 @@ const STATUS = {
   paused: ["Durduruldu", "warn"],
 };
 const PROVIDERS = [
-  { id: "gemini", short: "G", title: "Google Gemini", tag: "Bulut · en hızlı", desc: "Binlerce satırı dakikalar içinde, doğal ve akıcı çevirir. “Otomatik” modda anahtarının erişebildiği tüm modeller hız sırasıyla denenir; biri kotaya takılırsa sıradakine geçilir. Birden fazla anahtar paralel kullanılır.",
+  { id: "gemini", short: "G", group: "cloud", title: "Google Gemini", tag: "Bulut · en hızlı", desc: "Hızlı ve doğal çeviri. Birden fazla anahtar paralel kullanılır; kotası dolan modelden sonrakine geçilir.",
     fields: [["gemini_keys", "API anahtarları (her satıra bir tane)", "textarea", "full"], ["gemini_model", "Model", "gemini-select", "full"]], test: "gemini_keys" },
-  { id: "openai", short: "AI", title: "OpenAI", tag: "Bulut · GPT", desc: "GPT modelleriyle bağlamsal, akıcı çeviri.",
+  { id: "openai", short: "AI", group: "cloud", title: "OpenAI", tag: "Bulut · GPT", desc: "GPT modelleriyle bağlamsal, akıcı çeviri.",
     fields: [["openai_key", "API anahtarı", "password", ""], ["openai_model", "Model", "text", ""]], test: "openai_key" },
-  { id: "anthropic", short: "C", title: "Anthropic Claude", tag: "Bulut · edebi ton", desc: "Diyalog akıcılığı ve karakter tonunu korumada güçlü.",
+  { id: "anthropic", short: "C", group: "cloud", title: "Anthropic Claude", tag: "Bulut · edebi ton", desc: "Diyalog akıcılığı ve karakter tonunu korumada güçlü.",
     fields: [["anthropic_key", "API anahtarı", "password", ""], ["anthropic_model", "Model", "text", ""]], test: "anthropic_key" },
-  { id: "deepl", short: "D", title: "DeepL", tag: "Bulut · makine çevirisi", desc: "Dilbilgisine sadık profesyonel çeviri (Free anahtarlar “:fx” ile biter). Oyun etiketleri otomatik korunur.",
+  { id: "deepl", short: "D", group: "cloud", title: "DeepL", tag: "Bulut · makine çevirisi", desc: "Dilbilgisine sadık çeviri (Free anahtarlar “:fx” ile biter).",
     fields: [["deepl_key", "API anahtarı", "password", "full"]], test: "deepl_key" },
-  { id: "local", short: "L", title: "Yerel model (dahili)", tag: "Çevrimdışı · Ollama gerekmez", desc: "Çeviri için eğitilmiş modeller (TranslateGemma, MiLMMT) Capri'nin içinde, internetsiz ve kotasız çalışır. Ayrı bir program kurulmaz: Yerel Modeller sayfasından model dosyasını indirmen yeterli.", fields: [], test: "local" },
-  { id: "ollama", short: "O", title: "Ollama", tag: "Yerel · çeviri modelleri", desc: "Bilgisayarında, internetsiz ve kotasız çalışan yerel modeller. Çeviri için eğitilmiş modeller genel sohbet modellerinden çok daha iyi sonuç verir: TranslateGemma ardışık satırları bağlamıyla, MiLMMT tek satırları (ekran çevirisi) hızlıca çevirir. Ollama uygulaması kurulu ve açık olmalı.",
+  { id: "local", short: "L", group: "local", title: "Yerel model", tag: "Capri'nin içinde · internetsiz", desc: "Capri'nin içinde çalışan çeviri modelleri. Ek program, internet ya da kota gerekmez.", fields: [], test: "local" },
+  { id: "ollama", short: "O", group: "local", title: "Ollama", tag: "Harici program", desc: "Ollama programıyla çalışan yerel modeller. Ollama kurulu ve açık olmalı.",
     fields: [["ollama_host", "Sunucu adresi", "text", ""], ["ollama_model", "Model", "ollama-select", "full"]], test: "ollama_host" },
-  { id: "opus", short: "OP", title: "OPUS-MT", tag: "Çevrimdışı · EN→TR", desc: "Helsinki-NLP İngilizce → Türkçe modeli. Hafif ve hızlı, ekran kartında internetsiz çalışır.", fields: [], test: "opus" },
-  { id: "nllb", short: "N", title: "NLLB-200", tag: "Çevrimdışı · çok dilli", desc: "Meta'nın 200 dilli modeli; ekran kartında internetsiz çalışır. Türkçe dışındaki hedef dillere de çevirebilir (Almanca, İspanyolca, Rusça, Japonca…).", fields: [], test: "nllb" },
 ];
 const SAMPLES = [
   ["Diyalog", "Welcome to our tavern, hero! What brings you here tonight?"],
@@ -168,7 +166,7 @@ function showPage(id) {
   $("#scroll").scrollTop = 0;
   renderProgress();
   if (id === "backups") loadBackups();
-  if (id === "models") call("model_status").then((m) => { if (m) { S.models = m; renderModels(); } });
+  if (id === "models" || id === "providers") call("model_status").then((m) => { if (m) { S.models = m; renderModels(); renderProviders(); renderEngineCard(); } });
   if (id === "translator") setTimeout(() => $("#txInput").focus(), 50);
   if (id === "ocr") call("ocr_status").then((o) => { if (o) { S.ocr = o; renderOcr(); } });
   if (id === "editor") loadEditor(true);
@@ -215,8 +213,8 @@ function renderHero() {
   if (!p) {
     setHero("Hoş geldin", "");
     setText($("#heroTitle"), "Oyununu Türkçeye çevir.");
-    setHtml(meta, ["Ren'Py", "Unity", "Unreal", "RPG Maker", "JSON"].map((t) => `<span class="meta-chip">${t}</span>`).join(""));
-    setText($("#heroDesc"), "Oyun klasörünü seç; motoru otomatik algılayıp yedekleyelim ve seçtiğin yapay zekayla tek tıkla çevirelim.");
+    setHtml(meta, ["Ren'Py", "Unity", "Unreal", "RPG Maker", "JSON", "Ekran (OCR)"].map((t) => `<span class="meta-chip">${t}</span>`).join(""));
+    setText($("#heroDesc"), "Oyun klasörünü seç; Capri motoru algılar, yedek alır ve tek tıkla çevirir.");
     setHtml(actions, `<button class="cta" data-action="pick">${icon("plus")}Oyun ekle</button>
                          <button class="ghost" data-page="guide">${icon("book")}Nasıl çalışır?</button>`);
     showHeroError(null);
@@ -298,7 +296,7 @@ function heroActive(p) {
   }
   if (S.analyzing) {
     return { tag: "Analiz ediliyor", tone: "run",
-      desc: "Oyunun metinleri taranıyor. Büyük oyunlarda biraz sürebilir; bu sırada başka bir projeye geçebilirsin.",
+      desc: "Metinler taranıyor; bu sırada başka bir projeye geçebilirsin.",
       actions: `<button class="cta is-running" disabled><span class="spinner dark"></span>Analiz ediliyor</button>${editor}` };
   }
   const err = S.taskError || (p.status === "error" ? p.last_error : null);
@@ -321,7 +319,7 @@ function heroActive(p) {
   if (p.status === "paused") {
     const pct = p.paused_total ? Math.round((p.paused_done / p.paused_total) * 100) : 0;
     return { tag: "Durduruldu", tone: "warn",
-      desc: `${pct ? `%${pct} tamamlanmıştı. ` : ""}Yapılan çeviriler kayıtlı; devam ettiğinde kaldığı yerden sürer, tekrar ücret ödemezsin.`,
+      desc: pct ? `%${pct} tamamlanmıştı. Devam edince kaldığı yerden sürer, tekrar ödemezsin.` : "Devam edince kaldığı yerden sürer, tekrar ödemezsin.",
       actions: `<button class="cta" data-action="translate">${icon("play")}Kaldığı yerden devam et</button>${bepinex}${reanalyze}${editor}${restore}` };
   }
   const est = S.analysis && S.analysis.estimate;
@@ -476,9 +474,10 @@ function providerStatus(id) {
   if (["openai", "anthropic", "deepl"].includes(id)) return pv[`${id}_key`] ? ["Hazır", "ok"] : ["Anahtar gerekli", "warn"];
   if (id === "ollama") return ["Yerel sunucu", ""];
   if (id === "local") {
-    const l = (S.models && S.models.llm) || {};
-    const m = (l.models || []).find((x) => x.id === l.selected);
-    return m && m.installed && (l.runtimes || []).some((r) => r.installed) ? [`Hazır · ${m.label}`, "ok"] : ["İndirilmedi", "warn"];
+    const using = LOCAL_ENGINES.includes(S.settings.model) ? localEngines().find((e) => e.using) : null;
+    if (using && using.ready) return [`Hazır · ${using.title}`, "ok"];
+    const ready = localEngines().find((e) => e.ready);
+    return ready ? [`Hazır · ${ready.title}`, "ok"] : ["İndirilmedi", "warn"];
   }
   const m = S.models && S.models[id];
   return m && m.is_ready ? ["Kurulu", "ok"] : ["Kurulu değil", "warn"];
@@ -543,7 +542,7 @@ function renderAnalysis() {
   const tile = (ic, label, value, sub, tone = "") => `<div class="an-tile ${tone}"><div class="an-label">${icon(ic)}${label}</div>
     <div class="an-value">${value}</div><div class="an-sub">${sub}</div></div>`;
   if (!active) {
-    setHtml(box, `<p class="an-empty">Bir oyun eklediğinde burada kaç satır çevrileceğini, ne kadar süreceğini ve dikkat etmen gereken bir şey olup olmadığını görürsün.</p>`);
+    setHtml(box, `<p class="an-empty">Oyun ekleyince satır sayısı, süre ve uyarılar burada görünür.</p>`);
     return;
   }
   if (S.analyzing) {
@@ -782,7 +781,7 @@ async function loadGlossary() {
     panel.classList.remove("hidden");
     panel.innerHTML = `
       <div class="panel-head"><div><div class="panel-title">Oyuna özel bağlam</div>
-        <p class="panel-desc">Bu bilgiler Gemini, OpenAI ve Claude'a talimat olarak gönderilir; terimler tüm motorlarda tam eşleşmede kullanılır.</p></div>
+        <p class="panel-desc">Bu bilgiler yapay zekâya talimat olarak gider; terimler tüm motorlarda kullanılır.</p></div>
         <button class="btn" id="gScan" ${scannable ? "" : "disabled title='Bu motor için desteklenmiyor'"}>${icon("scan")}Karakterleri tara</button></div>
       <div class="form-grid">
         <div><div class="field-label">Hitap</div>
@@ -841,6 +840,22 @@ function renderBackups(list) {
 }
 
 /* ── Sağlayıcılar ──────────────────────────────────────────────────── */
+const LOCAL_ENGINES = ["local", "opus", "nllb"];   // Capri'nin içinde çalışan motorlar tek kartta gösterilir
+const providerOf = (id) => (LOCAL_ENGINES.includes(id) ? "local" : id);
+
+function localEngines() {
+  const l = (S.models && S.models.llm) || {};
+  const rows = (l.models || []).filter((m) => m.family !== "milmmt").map((m) => ({
+    engine: "local", id: m.id, title: m.label, sub: m.use, ready: !!m.installed,
+    using: S.settings.model === "local" && l.selected === m.id }));
+  const gpu = { opus: ["OPUS-MT", "İngilizce → Türkçe, çok hızlı · ekran kartı"], nllb: ["NLLB-200", "200 dil · ekran kartı"] };
+  for (const k of ["opus", "nllb"]) {
+    const m = (S.models && S.models[k]) || {};
+    rows.push({ engine: k, id: k, title: gpu[k][0], sub: gpu[k][1], ready: !!m.is_ready, using: S.settings.model === k });
+  }
+  return rows;
+}
+
 function providerValue(field) {
   const v = S.providers[field];
   return Array.isArray(v) ? v.join("\n") : (v || "");
@@ -848,15 +863,18 @@ function providerValue(field) {
 
 function renderProviders() {
   if (!S.state) return;
-  $("#providerGrid").innerHTML = PROVIDERS.map((p) => {
+  const sel = providerOf(S.provSel);
+  const card = (p) => {
     const [st, tone] = providerStatus(p.id);
-    return `<button class="prov ${S.provSel === p.id ? "sel" : ""}" data-prov="${p.id}">
-      ${S.settings.model === p.id ? '<span class="prov-star">Varsayılan</span>' : ""}
+    return `<button class="prov ${sel === p.id ? "sel" : ""}" data-prov="${p.id}">
+      ${providerOf(S.settings.model) === p.id ? '<span class="prov-star">Varsayılan</span>' : ""}
       <div class="prov-icon">${p.short}</div><div class="prov-name">${esc(p.title)}</div>
       <div class="prov-tag">${esc(p.tag)}</div><span class="pill ${tone}">${esc(st)}</span></button>`;
-  }).join("");
-  const p = PROVIDERS.find((x) => x.id === S.provSel) || PROVIDERS[0];
-  const isDefault = S.settings.model === p.id;
+  };
+  $("#providerGrid").innerHTML = [["cloud", "Bulut"], ["local", "Bilgisayarında"]].map(([g, label]) =>
+    `<div class="prov-group">${label}</div>${PROVIDERS.filter((p) => p.group === g).map(card).join("")}`).join("");
+  const p = PROVIDERS.find((x) => x.id === sel) || PROVIDERS[0];
+  const isDefault = providerOf(S.settings.model) === p.id;
   const fields = p.fields.map(([name, label, type, span]) => `<div class="${span}"><div class="field-label">${label}</div>
     ${type === "textarea" ? `<textarea class="input code" data-field="${name}" spellcheck="false">${esc(providerValue(name))}</textarea>`
       : type === "gemini-select" ? geminiSelect(name)
@@ -864,13 +882,12 @@ function renderProviders() {
       : `<input class="input" data-field="${name}" type="${type}" value="${esc(providerValue(name))}" spellcheck="false">`}</div>`).join("");
   let extra = "";
   if (p.id === "local") {
-    const [st, tone] = providerStatus("local");
-    extra = `<div class="row-actions"><span class="pill ${tone}">${esc(st)}</span>
-      <button class="btn sm" data-page="models">${icon("cpu")}Yerel modeller</button></div>`;
-  } else if (!p.fields.length) {
-    const m = S.models[p.id] || {};
-    extra = `<div class="row-actions"><span class="pill ${m.is_ready ? "ok" : "warn"}">${m.is_ready ? `Kurulu · ${fmt(m.size_mb)} MB` : "Model dosyaları eksik"}</span>
-      <button class="btn sm" data-page="models">${icon("cpu")}Yerel modeller</button></div>`;
+    extra = `<div class="list">${localEngines().map((e) => `<div class="list-row"><div class="grow">
+        <div class="title">${esc(e.title)}${e.using ? ' <span class="pill lime">Kullanılıyor</span>' : ""}</div><div class="sub">${esc(e.sub)}</div></div>
+        ${!e.ready ? `<button class="btn sm" data-page="models">${icon("download")}İndir</button>`
+          : e.using ? "" : `<button class="btn sm lime" data-action="engine-use" data-engine="${e.engine}" data-id="${e.id}">${icon("check")}Kullan</button>`}
+      </div>`).join("")}</div>
+      <div class="row-actions"><button class="btn sm" data-page="models">${icon("cpu")}Yerel modeller</button></div>`;
   }
   $("#providerDetail").innerHTML = `
     <div class="panel-head"><div><div class="panel-title">${esc(p.title)}</div><p class="panel-desc">${esc(p.desc)}</p></div></div>
@@ -878,7 +895,7 @@ function renderProviders() {
     <div class="row-actions">
       ${p.fields.length ? `<button class="btn" data-action="save-provider">${icon("check")}Kaydet</button>` : ""}
       <button class="btn" data-action="test-provider">${icon("zap")}${p.fields.length ? "Bağlantıyı test et" : "Durumu kontrol et"}</button>
-      <button class="btn ${isDefault ? "" : "lime"}" data-action="default-provider" ${isDefault ? "disabled" : ""}>${icon("check")}${isDefault ? "Varsayılan motor" : "Varsayılan yap"}</button>
+      ${p.id === "local" ? "" : `<button class="btn ${isDefault ? "" : "lime"}" data-action="default-provider" ${isDefault ? "disabled" : ""}>${icon("check")}${isDefault ? "Varsayılan motor" : "Varsayılan yap"}</button>`}
       <span class="status-msg" id="provStatus"></span>
     </div>`;
 }
@@ -944,7 +961,7 @@ async function saveProviders(active) {
 }
 
 async function testProvider() {
-  const p = PROVIDERS.find((x) => x.id === S.provSel) || PROVIDERS[0];
+  const p = PROVIDERS.find((x) => x.id === providerOf(S.provSel)) || PROVIDERS[0];
   const field = $(`#providerDetail [data-field="${p.test}"]`);
   const value = field ? field.value.split("\n")[0].trim() : "";
   const status = $("#provStatus");
@@ -987,27 +1004,24 @@ function renderLlm() {
       <div class="row-actions" style="margin:0">${actions}</div></div>`;
   }).join("");
   setHtml(box, `<div class="panel-head"><div><div class="panel-title">Yerel çeviri modelleri <span class="pill lime">Önerilen</span></div>
-      <p class="panel-desc">Çeviri için eğitilmiş modeller Capri'nin içinde çalışır: Ollama ya da başka bir program kurmana gerek yok,
-        internet ve kota gerekmez. Model dosyası (GGUF) ve 37 MB'lık llama.cpp çalışma ortamı yalnızca "İndir"e basınca bu
-        klasöre iner ve SHA-256 ile doğrulanır. Ekran çevirisinde MiLMMT kuruluysa o kullanılır (tek satır ~0,1 sn).</p></div>
+      <p class="panel-desc">TranslateGemma ve MiLMMT Capri'nin içinde çalışır; Ollama, internet ya da kota gerekmez. Dosyalar SHA-256 ile doğrulanır.</p></div>
       <span class="pill ${runtime ? "ok" : ""}">${runtime ? "Çalışma ortamı kurulu" : "Çalışma ortamı ilk indirmede kurulur"}</span></div>
     <div class="list">${rows}</div>
-    <p class="field-hint">Hızlar RTX 5070 (12 GB) ile ölçüldü; ekran kartına göre değişir. İlk çalıştırma, ekran kartı kodu derlendiği için birkaç saniye uzun sürer.</p>
-    <p class="field-hint">Modeller Gemma kullanım şartlarına tabidir. Ekran kartı yoksa işlemcide çalışır (yaklaşık 5-10 kat yavaş).</p>`);
+    <p class="field-hint">Hızlar RTX 5070 ile ölçüldü; ilk çalıştırma birkaç saniye uzun sürer.</p>
+    <p class="field-hint">Gemma kullanım şartlarına tabidir. Ekran kartı yoksa işlemcide 5-10 kat yavaş çalışır.</p>`);
 }
 
 function renderModels() {
   renderLlm();
   const info = {
-    opus: ["OPUS-MT · İngilizce → Türkçe", "Helsinki-NLP opus-mt-tc-big-en-tr. ~450 MB, hızlı ve hafif. Lisans: CC-BY 4.0."],
-    nllb: ["NLLB-200 · 600M · çok dilli", "facebook/nllb-200-distilled-600M. 200 dil; Türkçe dışı hedeflere de çevirir. Lisans: CC-BY-NC 4.0 (yalnızca ticari olmayan kullanım)."],
+    opus: ["OPUS-MT · İngilizce → Türkçe", "~450 MB, çok hızlı. Lisans: CC-BY 4.0."],
+    nllb: ["NLLB-200 · 600M · çok dilli", "200 dil. Lisans: CC-BY-NC 4.0 (ticari olmayan kullanım)."],
   };
   const rt = S.models.runtime || { ready: true };
   $("#runtimePanel").classList.toggle("hidden", !!rt.ready);
   if (!rt.ready) $("#runtimePanel").innerHTML = `
     <div class="panel-head"><div><div class="panel-title">Yerel model ortamı kurulu değil</div>
-      <p class="panel-desc">OPUS-MT ve NLLB, PyTorch + Transformers ile çalışır. Capri ekran kartına uygun resmi PyTorch sürümünü
-        seçip indirir ve kendi klasörüne kurar (NVIDIA kartta ≈2,9 GB, kartsız ≈260 MB). Bulut motorları ve ekran çevirisi bu ortam olmadan da çalışır.</p></div>
+      <p class="panel-desc">OPUS-MT ve NLLB için PyTorch gerekir (NVIDIA kartta ≈2,9 GB, kartsız ≈260 MB). Bulut motorları ve ekran çevirisi bunsuz da çalışır.</p></div>
       <span class="pill warn">Eksik: ${esc((rt.missing || []).slice(0, 3).join(", "))}${(rt.missing || []).length > 3 ? "…" : ""}</span></div>
     <div class="row-actions"><button class="btn lime" data-action="install-runtime" ${S.busy ? "disabled" : ""}>${icon("download")}Ortamı kur</button>
       <span class="status-msg">Model indirirken de otomatik önerilir.</span></div>`;
@@ -1098,11 +1112,7 @@ function renderGpu() {
     <div class="panel-head"><div><div class="panel-title">GPU hızlandırma (CUDA)</div>
       <p class="panel-desc">${esc(S.gpu ? `${S.gpu.name}${S.gpu.detail ? " · " + S.gpu.detail : ""}` : "")}</p></div>${chip}</div>
     ${metrics}
-    <div class="why"><b>Bu ayar neden var?</b> Ekran kartı ilk kez kullanıldığında sürücü bağlamı ve cuBLAS çekirdekleri hazırlanır;
-      bu, ilk çeviride 1-3 saniyelik bir donma yaratır. Optimizasyon bunu önceden yapar, RTX kartlarda <b>TF32</b> hızlandırmayı açar,
-      kullanılmayan VRAM'i boşaltarak “bellek yetmedi” hatalarını azaltır ve seçili yerel modeli (OPUS/NLLB) VRAM'e yükler.
-      Böylece OPUS/NLLB çevirileri, canlı önizleme ve ekran çevirisi ilk tıklamadan itibaren anında yanıt verir.
-      Gemini gibi bulut motorları GPU kullanmaz; bu ayar yalnızca yerel modelleri hızlandırır.</div>
+    <div class="why">İlk çevirideki 1-3 saniyelik beklemeyi önler: ekran kartını hazırlar ve seçili OPUS/NLLB modelini belleğe yükler. Bulut motorlarını etkilemez.</div>
     <div class="row-actions">
       <button class="btn lime" data-action="gpu-optimize" ${!cuda || S.gpuBusy ? "disabled" : ""}>${icon("zap")}Şimdi optimize et</button>
       <label class="tx-auto"><span class="switch"><input type="checkbox" id="gpuAuto" ${S.settings.gpu_auto ? "checked" : ""}><i></i></span>Yerel motor seçiliyse açılışta hazırla</label>
@@ -1445,6 +1455,8 @@ document.addEventListener("click", async (ev) => {
     case "download-model": call("download_model", el.dataset.id); break;
     case "llm-download": call("download_local_model", el.dataset.id); break;
     case "llm-use": await updateSettings({ model: "local", local_model: el.dataset.id }); renderModels(); renderProviders(); break;
+    case "engine-use": await updateSettings(el.dataset.engine === "local" ? { model: "local", local_model: el.dataset.id } : { model: el.dataset.engine });
+      renderModels(); renderProviders(); break;
     case "llm-remove": {
       const m = ((S.models.llm || {}).models || []).find((x) => x.id === el.dataset.id);
       if (m && confirm(I18N.t(`${m.label} silinsin mi? Tekrar kullanmak için yeniden indirmen gerekir.`))) {

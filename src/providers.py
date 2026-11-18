@@ -441,11 +441,11 @@ def test_ollama_service(host: str = "http://127.0.0.1:11434") -> Tuple[bool, Lis
             if models:
                 return True, models, f"Ollama Servisi Aktif ({latency} ms) — {len(models)} model yüklü"
             else:
-                return True, [], "Ollama Aktif ama hiç model yüklenmemiş. Sağlayıcılar → Ollama'dan önerilen bir çeviri modelini indir."
+                return True, [], "Ollama açık ama model yok. Sağlayıcılar → Ollama'dan bir çeviri modeli indir."
         else:
             return False, [], f"Ollama HTTP {resp.status_code} yanıtı verdi."
     except Exception:
-        return False, [], "Ollama servisi çalışmıyor! Lütfen Ollama uygulamasını başlatın veya komut satırından 'ollama serve' yazın."
+        return False, [], "Ollama çalışmıyor. Ollama uygulamasını aç ya da 'ollama serve' çalıştır."
 
 
 # ─────────────────────────────────────────────────────────────

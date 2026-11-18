@@ -212,7 +212,7 @@
                   <label class="opt">
                     <span class="opt-icon"><svg class="i"><use href="#i-edit"/></svg></span>
                     <span class="opt-text"><span class="toggle-title">Kalite editörü geçişi</span>
-                      <span class="field-hint">Sorunlu taslakları (İngilizce kalıntı, robotik ifade) bağlamıyla bir sohbet modeline düzelttirir.</span></span>
+                      <span class="field-hint">İngilizce kalan ya da yapay duran çevirileri yeniden düzeltir.</span></span>
                     <span class="switch"><input type="checkbox" id="qualityToggle"><i></i></span>
                   </label>
                   <label class="opt">
@@ -271,7 +271,7 @@
                 <button class="btn lime" data-action="pick"><svg class="i"><use href="#i-plus"/></svg>Oyun ekle</button>
               </div>
             </div>
-            <p class="page-sub">Analiz ettiğin ve çevirdiğin oyunlar. Bir karta tıklayarak projeyi aç.</p>
+            <p class="page-sub">Eklediğin oyunlar. Açmak için karta tıkla.</p>
           </div>
           <div id="scanPanel"></div>
           <div id="fullLibrary"></div>
@@ -288,7 +288,7 @@
                 <button class="btn" data-action="import-patch"><svg class="i"><use href="#i-download"/></svg>Yama içe aktar</button>
               </div>
             </div>
-            <p class="page-sub">Önbellekteki çevirileri ara, düzelt ve kaydet. “Oyuna uygula” düzenlemeleri oyun dosyalarına yazar — API harcamaz. Turuncu çizgili satırlar incelenmeli.</p>
+            <p class="page-sub">Çevirileri ara, düzelt ve oyuna uygula (API harcamaz). Turuncu satırlar incelenmeli.</p>
           </div>
           <div id="editorBody"></div>
         </section>
@@ -310,7 +310,7 @@
             <span class="eyebrow">Sözlük</span>
             <div class="section-head"><h2 class="section-title">Terim sözlüğü</h2>
               <button class="btn lime" id="glossarySave"><svg class="i"><use href="#i-check"/></svg>Kaydet</button></div>
-            <p class="page-sub">Tam eşleşen metinler model kullanılmadan bu karşılıklarla çevrilir (menüler, karakter adları, özel terimler).</p>
+            <p class="page-sub">Tam eşleşen metinler bu karşılıklarla çevrilir (menüler, adlar, terimler).</p>
           </div>
           <div class="filters" id="glossaryTabs"></div>
           <div class="panel hidden" id="glossaryProject" style="margin-top:14px"></div>
@@ -329,7 +329,7 @@
           <div class="page-head">
             <span class="eyebrow">JSON çevirici</span>
             <div class="section-head"><h2 class="section-title">Motor bağımsız JSON</h2></div>
-            <p class="page-sub">Kendi motorunu kullanan oyunlarda (ör. VNE, Electron) metin dosyalarını çevir. Anahtarlar ve kod parçaları korunur; düz ve iç içe yapılar desteklenir.</p>
+            <p class="page-sub">Kendi motorunu kullanan oyunların JSON dosyalarını çevir; anahtarlar ve kodlar korunur.</p>
           </div>
           <div class="panels">
             <div class="panel">
@@ -358,7 +358,7 @@
           <div class="page-head">
             <span class="eyebrow">Sağlayıcılar</span>
             <div class="section-head"><h2 class="section-title">Çeviri motoru seç</h2></div>
-            <p class="page-sub">Bir motora tıklayıp ayarlarını yap. API anahtarları Windows Kimlik Bilgisi Yöneticisi'nde, Windows hesabına bağlı olarak şifreli saklanır.</p>
+            <p class="page-sub">Bir motor seç ve ayarla. API anahtarları Windows'ta şifreli saklanır.</p>
           </div>
           <div class="prov-grid" id="providerGrid"></div>
           <div class="panel prov-detail" id="providerDetail"></div>
@@ -369,12 +369,13 @@
           <div class="page-head">
             <span class="eyebrow">Yerel modeller</span>
             <div class="section-head"><h2 class="section-title">Çevrimdışı modeller</h2></div>
-            <p class="page-sub">İnternet ve kota gerektirmeyen, ekran kartında çalışan nöral çeviri modelleri.</p>
+            <p class="page-sub">İnternetsiz ve kotasız çalışan çeviri modelleri.</p>
           </div>
           <div class="panel llm-panel" id="llmPanel"></div>
+          <div class="group-head">Ekran kartı modelleri</div>
           <div class="panel runtime-panel hidden" id="runtimePanel"></div>
-          <div class="panel gpu-panel" id="gpuPanel"></div>
           <div class="panels" id="modelPanels"></div>
+          <div class="panel gpu-panel" id="gpuPanel"></div>
         </section>
 
         <!-- METİN ÇEVİRİCİ -->
@@ -382,7 +383,7 @@
           <div class="page-head">
             <span class="eyebrow">Metin çevirici</span>
             <div class="section-head"><h2 class="section-title">Metin çevir</h2></div>
-            <p class="page-sub">Metni yaz ya da yapıştır; seçtiğin motorla anında çevrilsin. Satır yapısı ve oyun etiketleri korunur.</p>
+            <p class="page-sub">Metni yaz ya da yapıştır; etiketler korunarak anında çevrilir.</p>
           </div>
           <div class="tx-bar">
             <select class="input" id="txSource"></select>
@@ -424,20 +425,20 @@
           <div class="page-head">
             <span class="eyebrow">Ekran çevirisi</span>
             <div class="section-head"><h2 class="section-title">Oyun ekranını çevir</h2></div>
-            <p class="page-sub">Kısayola bas: ekran donar, çevirmek istediğin yeri sürükleyip seç, çeviri hemen yanında belirir. Sabit modda seçtiğin alan canlı izlenir ve metin her değiştiğinde yeniden çevrilir.</p>
+            <p class="page-sub">Kısayola bas, alanı seç, çeviri yanında çıksın. Sabit modda alan izlenir, metin değiştikçe çevrilir.</p>
           </div>
           <div class="ocr-actions">
             <div class="ocr-action">
               <div class="stat-icon"><svg class="i"><use href="#i-scan"/></svg></div>
               <div class="grow"><div class="panel-title">Alan seç ve çevir</div>
-                <p class="panel-desc">Tek seferlik: diyalog, menü ya da görev metnini seç, çeviri açılır pencerede görünsün.</p>
+                <p class="panel-desc">Tek seferlik: alanı seç, çeviri pencerede çıksın.</p>
                 <div class="row-actions"><span class="hotkey" id="hkOnceView">Ctrl + Shift + T</span>
                   <button class="btn lime" data-action="ocr-once"><svg class="i"><use href="#i-scan"/></svg>Şimdi dene</button></div></div>
             </div>
             <div class="ocr-action">
               <div class="stat-icon"><svg class="i"><use href="#i-pin"/></svg></div>
               <div class="grow"><div class="panel-title">Alanı sabitle (canlı)</div>
-                <p class="panel-desc">Altyazı ve diyalog kutuları için: seçilen alan sürekli izlenir, değişen metin otomatik çevrilir.</p>
+                <p class="panel-desc">Altyazılar için: alan izlenir, metin değiştikçe çevrilir.</p>
                 <div class="row-actions"><span class="hotkey" id="hkPinView">Ctrl + Shift + Y</span>
                   <button class="btn lime" data-action="ocr-pin" id="ocrPinBtn"><svg class="i"><use href="#i-pin"/></svg>Alan seç</button></div></div>
             </div>
@@ -453,7 +454,7 @@
                   <input class="input hk-input" id="hkPin" data-setting="pin_hotkey" readonly></div>
                 <div class="full"><div class="field-label"><svg class="i"><use href="#i-zap"/></svg>Ekran çevirisi motoru</div>
                   <select class="input" id="ocrModel"></select>
-                  <div class="field-hint">En hızlısı ekran kartında çalışan OPUS'tur (~50 ms). Gemini daha doğal ama ~1 sn sürer.</div></div>
+                  <div class="field-hint">En hızlısı OPUS (~50 ms); Gemini daha doğal (~1 sn).</div></div>
                 <div><div class="field-label">Canlı yenileme aralığı · <span id="ocrIntervalVal" class="num">350 ms</span></div>
                   <input type="range" class="range" id="ocrInterval" min="150" max="1500" step="50"></div>
                 <div><div class="field-label">Sabit çeviri penceresi</div>
@@ -462,13 +463,13 @@
             </div>
             <div class="panel">
               <div class="panel-head"><div><div class="panel-title">Durum</div>
-                <p class="panel-desc">Metinler Windows'un yerleşik OCR motoruyla okunur; ek model indirmek gerekmez.</p></div>
+                <p class="panel-desc">Windows'un yerleşik OCR'ı kullanılır; indirme gerekmez.</p></div>
                 <span class="pill" id="ocrState">—</span></div>
               <div class="engine-rows" id="ocrRows" style="margin:16px 0 0"></div>
               <ul class="notes" style="margin-top:16px">
-                <li>Oyun “özel tam ekran” modundaysa ekran üstüne pencere çizilemez; oyunu “kenarlıksız / pencereli tam ekran” çalıştır.</li>
-                <li>Çeviri pencereleri ekran yakalamaya görünmez yapılır, bu yüzden orijinal yazının üstünde dursalar bile kendi yazılarını okumazlar.</li>
-                <li>Daha iyi tanıma için Windows'a İngilizce dil paketini ekleyebilirsin (Ayarlar › Saat ve dil › Dil ve bölge).</li>
+                <li>Oyun “özel tam ekran”daysa pencere çizilemez; “kenarlıksız” modda çalıştır.</li>
+                <li>Çeviri pencereleri ekran yakalamaya görünmez; Capri kendi yazısını okumaz.</li>
+                <li>Daha iyi tanıma için Windows'a İngilizce dil paketini ekle.</li>
                 <li>Seçim ekranında <b>Esc</b> veya sağ tık iptal eder.</li>
               </ul>
             </div>
@@ -482,14 +483,13 @@
             <div class="section-head"><h2 class="section-title">Nasıl çalışır?</h2></div>
           </div>
           <div class="panels">
-            <div class="panel"><div class="panel-title">1 · Oyunu ekle</div><p class="panel-desc">“Oyun ekle” ile oyun klasörünü seç. Motor otomatik algılanır ve oyun analiz edilir; indirme sarmalayıcısı klasörü seçsen bile içteki oyun bulunur. Kapak görseli Steam'den gelir.</p></div>
-            <div class="panel"><div class="panel-title">2 · Motoru seç</div><p class="panel-desc">Gemini hızlı ve doğaldır; birden fazla anahtar girersen paralel çalışır. OpenAI, Claude ve DeepL bulut seçenekleridir. OPUS (EN→TR) ve NLLB (200 dil) ekran kartında internetsiz çalışır. Ollama yerel LLM ile sansürsüz çeviri sağlar.</p></div>
-            <div class="panel"><div class="panel-title">3 · Çevir, durdur, devam et</div><p class="panel-desc">“Çeviriyi başlat” önce dosyaları yedekler. İstediğin an “Durdur”a bas; çeviriler önbellekte kalır ve tekrar başlatınca kaldığı yerden, aynı satırlar için API harcamadan devam eder.</p></div>
-            <div class="panel"><div class="panel-title">4 · Düzelt ve paylaş</div><p class="panel-desc">Çeviri Editörü'nde satırları düzelt, “Oyuna uygula” ile yaz. Yamayı .capripatch olarak dışa aktarıp arkadaşlarınla paylaşabilir, onların yamasını içe aktarabilirsin.</p></div>
-            <div class="panel"><div class="panel-title">Geri al</div><p class="panel-desc">Yedekler sayfasından istediğin yedeği geri yükleyerek oyunu orijinal hâline döndür. Unity IL2CPP oyunlarında çeviri BepInEx + XUnity.AutoTranslator dosyaları olarak yazılır (onayın istenir).</p></div>
+            <div class="panel"><div class="panel-title">1 · Oyunu ekle</div><p class="panel-desc">“Oyun ekle” ile oyun klasörünü seç; motor otomatik algılanır.</p></div>
+            <div class="panel"><div class="panel-title">2 · Motoru seç</div><p class="panel-desc">Gemini hızlı ve doğaldır; birden fazla anahtar paralel çalışır. OpenAI, Claude ve DeepL diğer bulut seçenekleri. Yerel modeller internetsiz çalışır.</p></div>
+            <div class="panel"><div class="panel-title">3 · Çevir, durdur, devam et</div><p class="panel-desc">“Çeviriyi başlat” önce yedek alır. Durdurursan kaldığın yerden, yeniden ödemeden devam eder.</p></div>
+            <div class="panel"><div class="panel-title">4 · Düzelt ve paylaş</div><p class="panel-desc">Çeviri Editörü'nde satırları düzelt ve oyuna uygula; yamayı .capripatch olarak paylaş.</p></div>
+            <div class="panel"><div class="panel-title">Geri al</div><p class="panel-desc">Yedekler sayfasından oyunu tek tıkla orijinal hâline döndür.</p></div>
             <div class="panel"><div class="panel-title">Güncellemeler</div>
-              <p class="panel-desc">Yeni sürüm çıktığında Capri haber verir; tek tıkla indirip kurar ve yeniden açılır.
-                Ayarların, önbelleklerin, modellerin ve API anahtarların korunur.</p>
+              <p class="panel-desc">Yeni sürüm çıkınca Capri haber verir ve tek tıkla günceller; ayarların korunur.</p>
               <div class="row-actions">
                 <button class="btn lime" data-action="update-open"><svg class="i"><use href="#i-download"/></svg>Güncellemeleri kontrol et</button>
               </div></div>

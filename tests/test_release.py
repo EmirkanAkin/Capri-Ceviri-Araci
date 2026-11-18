@@ -209,7 +209,7 @@ def test_unreal_pak_install_prompt_translate_and_mod_pak(tmp_path, monkeypatch, 
     assert any("repak" in n for n in bridge._game["analysis"]["notes"]), "kurulmadan önce bilgilendirmeli"
     assert not installed, "analiz izin almadan araç kurmamalı"
     run_sync(bridge, "translate")
-    assert installed and "repak" in asked[0] and "indirip" in asked[0]
+    assert installed and "repak" in asked[0] and "indirilsin" in asked[0]
     mod = paks / "~mods" / "zzz_Capri_TR_P.pak"
     assert mod.exists()
     assert list(fake.packed) == [en], "yalnızca kaynak dil dosyası paketlenmeli"

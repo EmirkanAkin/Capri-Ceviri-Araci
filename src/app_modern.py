@@ -41,7 +41,7 @@ from progress import LiveEta, SpeedStore, estimate, estimate_cost, format_durati
 from languages import renpy_language_name
 from user_errors import describe_error
 
-APP_VERSION = "1.0.6"
+APP_VERSION = "1.0.7"
 from paths import APP_DIR, FROZEN, GLOSSARY_DIR, ICON_FILE, RES_DIR, WEB_DIR, seed_user_files
 SOUNDS_DIR = RES_DIR / "assets"
 import gpu_runtime
@@ -82,21 +82,16 @@ DEFAULT_SETTINGS = {
 }
 # Güncelleme penceresinde gösterilir; ayrıntılar CHANGELOG.md'de
 WHATS_NEW = [
-    "RPG Maker MV/MZ: ortak olaylar, savaş konuşmaları ve kayan metinler de çevriliyor",
-    "RPG Maker: Japonca/Çince konuşmacı adları ayrı ve her satırda aynı çevriliyor",
-    "RPG Maker: menü terimleri oyuna yazılıyor; [Kılıç] gibi açıklamalar da çevriliyor",
-    "Oyunda Çince ya da Japonca kalmış satırlar da hedef dile çevriliyor",
-    "Yerel çeviri modelleri Capri içinde: TranslateGemma ve MiLMMT, Ollama gerekmez",
-    "Ekran çevirisi: gün ışığında konturlu ve sarı altyazılar çok daha iyi okunuyor",
-    "Japonca/Çince kaynaklı Ren'Py ve RPG Maker VX oyunlarında satırlar artık atlanmıyor",
-    "Arayüz: Almanca, İspanyolca, Fransızca, Rusça ve diğer sözlükler hazır geliyor",
-    "Güvenlik: topluluk yaması indirme kaldırıldı; içe aktarılan yamalar denetleniyor",
+    "Unity: Naninovel görsel romanları dosyadan çevriliyor (BepInEx gerekmez)",
     "Unity: PlayMaker, UI Text/TextMeshPro ve data.unity3d metinleri BepInEx'siz çevriliyor",
+    "Ren'Py: diyaloğu argümanla veren oyunlarda bütün satırlar çevriliyor",
+    "Sağlayıcılar sadeleşti: yerel modeller (TranslateGemma, OPUS-MT, NLLB) tek kartta",
+    "Açıklamalar kısaldı; ana sayfada ekran çevirisi (OCR) de görünüyor",
 ]
 UI_PORT = 42001
 NOTO = "https://github.com/notofonts/noto-cjk/raw/main/Sans/SubsetOTF/{0}/NotoSans{0}-Regular.otf"
 NOTO_FONTS = {"ja": NOTO.format("JP"), "zh-CN": NOTO.format("SC"), "zh-TW": NOTO.format("TC"), "ko": NOTO.format("KR")}
-ANALYSIS_VERSION = 5     # analiz biçimi değişince eski kayıtlar yok sayılır (5: Unity bileşen metinleri)
+ANALYSIS_VERSION = 6     # analiz biçimi değişince eski kayıtlar yok sayılır (6: Naninovel)
 LEARN_MIN_LINES, LEARN_MIN_SECONDS = 20, 5.0
 OCR_TITLES = {"select": "Capri OCR Seçim", "popup": "Capri OCR Sonuç", "pin": "Capri OCR Sabit"}
 PATCH_SUFFIX = ".capripatch"
@@ -911,8 +906,7 @@ class CapriBridge:
             path.unlink()
         if failed:
             self._notify(f"{_n(len(failed))} satır incelenmeli",
-                         "Bu satırlar için geçerli çeviri alınamadı ve İngilizce bırakıldı. Editörde düzeltebilir "
-                         "ya da çeviriyi tekrar başlatarak yeniden deneyebilirsin.",
+                         "Bu satırlar çevrilemedi ve İngilizce kaldı. Editörde düzeltebilir ya da çeviriyi yeniden başlatabilirsin.",
                          "warn", "edit", {"label": "Editörde aç", "page": "editor"})
 
     # ── Durum ────────────────────────────────────────────────────────────────
@@ -1079,8 +1073,7 @@ class CapriBridge:
         if dictionary is None:
             translator = self._ui_translator(code)
             if translator is None:
-                error = ("Bu dilin arayüzü için bir bulut çeviri anahtarı gerekiyor (Gemini, OpenAI, Claude veya DeepL). "
-                         "Şimdilik İngilizce gösteriliyor.")
+                error = ("Bu arayüz dili için bir bulut anahtarı gerekiyor (Gemini, OpenAI, Claude veya DeepL). Şimdilik İngilizce.")
             else:
                 self._status("Arayüz çevriliyor…")
                 try:
@@ -1465,8 +1458,8 @@ class CapriBridge:
             "engine_detail": "Ren'Py",
             "font": {"ok": not bad_fonts, "text": "Uyumlu" if not bad_fonts
                      else ("Font gerekli" if target in NO_FONT_FALLBACK else "Otomatik düzeltilecek")},
-            "advice": ([{"tone": "warn", "text": f"Oyunun fontları {native} karakterlerini içermiyor. Bu yazı sistemi için otomatik font yaması yok; "
-                                                 "oyuna uygun bir font eklemezsen metinler görünmeyebilir."} if target in NO_FONT_FALLBACK else
+            "advice": ([{"tone": "warn", "text": f"Oyunun fontlarında {native} karakterleri yok; uygun bir font "
+                                                 "eklemezsen metinler görünmeyebilir."} if target in NO_FONT_FALLBACK else
                         {"tone": "info", "text": f"{len(bad_fonts)} fontta {native} harfleri eksik. Capri çeviride otomatik font yaması uygular."}]
                        if bad_fonts else [])
                       + ([{"tone": "info", "text": f"Oyunda daha önce yapılmış {native} çeviri dosyaları var; mevcut çalışmanın üzerine devam edilir."}]
@@ -1497,22 +1490,22 @@ class CapriBridge:
         needed = not texts or (info.runtime == "IL2CPP" and not utage and not typed)
         installed = bepinex_installer.is_installed(info.root)
         if utage:
-            notes.append(f"Utage senaryosu dosyada açık: {_n(utage)} satır doğrudan çevrilir (BepInEx gerekmez). "
-                         "Oyunda dil olarak English seçilince Türkçe görünür.")
-        if typed:
-            notes.append(f"Oyunun bileşenlerinde açık metin: {_n(typed.get('fsm', 0))} PlayMaker, "
-                         f"{_n(typed.get('ui', 0))} arayüz, {_n(typed.get('xml', 0))} tablo satırı. Doğrudan çevrilir "
-                         "(BepInEx gerekmez); oyunda dil olarak English seçilince Türkçe görünür.")
+            notes.append(f"Utage senaryosu açık: {_n(utage)} satır. BepInEx gerekmez; oyunda English'i seç.")
+        naninovel = typed.get("naninovel", 0) + typed.get("naninovel_ui", 0)
+        if naninovel:
+            notes.append(f"Naninovel senaryosu açık: {_n(typed.get('naninovel', 0))} satır, "
+                         f"{_n(typed.get('naninovel_ui', 0))} arayüz metni. BepInEx gerekmez; oyunda English'i seç.")
+        elif typed:
+            notes.append(f"Bileşenlerde açık metin: {_n(typed.get('fsm', 0))} PlayMaker, {_n(typed.get('ui', 0))} arayüz, "
+                         f"{_n(typed.get('xml', 0))} tablo satırı. BepInEx gerekmez; oyunda English'i seç.")
         # IL2CPP: metin derlenmiş kodda/tipsiz veride. Mono: veri açık ama Capri'nin okuyamadığı bir yapıda (PlayMaker,
         # Adventure Creator, tek paket data.unity3d…). İkisinde de oyunda görünen metni BepInEx + XUnity yakalar.
         bundled = (Path(info.data_dir) / "data.unity3d").is_file() if getattr(info, "data_dir", None) else False
         if needed:
-            notes.append("Metinler dosyada açık değil: çeviri BepInEx + XUnity.AutoTranslator ile uygulanır"
-                         + (" (kurulu)." if installed else " — tek tıkla kurulabilir.") if info.runtime == "IL2CPP" else
-                         "Metinler Capri'nin doğrudan okuyabildiği bir biçimde değil"
-                         + (" (tüm veri tek pakette: data.unity3d)" if bundled else "")
-                         + ": çeviri BepInEx + XUnity.AutoTranslator ile uygulanır"
-                         + (" (kurulu)." if installed else " — tek tıkla kurulabilir."))
+            notes.append(("Tüm veri tek pakette (data.unity3d)" if bundled and info.runtime != "IL2CPP"
+                          else "Metinler dosyada açık değil")
+                         + ": çeviri BepInEx + XUnity.AutoTranslator ile yapılır"
+                         + (" (kurulu)." if installed else " — tek tıkla kurulur."))
         for note in notes:
             self._log(note)
         return {
@@ -1521,22 +1514,21 @@ class CapriBridge:
             "font": {"ok": info.font_turkish_support,
                      "text": "Uyumlu" if info.font_turkish_support else "Eksik: " + " ".join(info.missing_font_chars[:8])},
             "advice": ([{"tone": "info", "text": (
-                            "Metinler oyun dosyalarında açık değil. Çeviri, oyun içinde BepInEx aracılığıyla gösterilir"
+                            ("Metinler dosyalarda açık değil; çeviri oyun içinde BepInEx ile gösterilir (BepInEx kurulu)."
+                             if installed else
+                             "Metinler dosyalarda açık değil; çeviri oyun içinde BepInEx ile gösterilir (kurulumda iznin istenir).")
                             if info.runtime == "IL2CPP" else
-                            "Bu oyunun metinleri kendi yapısında (ör. PlayMaker, Adventure Creator ya da tek paket "
-                            "data.unity3d) duruyor; Capri bunları dosyadan doğrudan çeviremiyor. Çeviri, oyunda ekrana gelen "
-                            "metni yakalayan BepInEx + XUnity.AutoTranslator ile yapılır: oyunu oynadıkça metinler toplanır")
-                            + ("; BepInEx bu oyunda kurulu." if installed else "; kurulum için çeviri sırasında iznin istenir.")}]
+                            ("Bu oyunun metinleri dosyadan çevrilemiyor. Çeviri, oyun içinde BepInEx + XUnity.AutoTranslator "
+                             "ile yapılır (BepInEx kurulu)." if installed else
+                             "Bu oyunun metinleri dosyadan çevrilemiyor. Çeviri, oyun içinde BepInEx + XUnity.AutoTranslator "
+                             "ile yapılır; kurulum için iznin istenir."))}]
                        if needed else [])
-                      + ([{"tone": "info", "text": "Utage senaryosu bulundu: çeviri oyunun İngilizce metninin yerine yazılır. "
-                                                   "Oyunda dil seçeneğinden English'i seçince Türkçe görünür."}] if utage else [])
-                      + ([{"tone": "info", "text": "Metinler oyunun kendi bileşenlerinden (PlayMaker, UI Text/TextMeshPro, "
-                                                   "dil tabloları) okundu. Çeviri İngilizce metnin yerine yazılır; oyunda dil "
-                                                   "seçeneğinden English'i seçince Türkçe görünür. Dil menüsündeki English "
-                                                   "yazısı da Türkçe olur."}] if typed else [])
+                      + ([{"tone": "info", "text": "Utage senaryosu: oyunda dil olarak English'i seçince Türkçe görünür."}] if utage else [])
+                      + ([{"tone": "info", "text": "Metinler oyunun bileşenlerinden okundu. Oyunda dil olarak English'i seçince Türkçe görünür."}] if typed and not naninovel else [])
+                      + ([{"tone": "info", "text": "Naninovel oyunu: oyunda dil olarak English'i seçince Türkçe görünür."}] if naninovel else [])
                       + ([{"tone": "warn", "text": (
-                            f"Oyunun fontunda {' '.join(info.missing_font_chars)} harfleri yok. Kutu olarak görünmesinler diye "
-                            "Capri bunları en yakın harfle yazar (ğ→g, ş→s, ı→i); diğer harfler olduğu gibi kalır."
+                            f"Oyunun fontunda {' '.join(info.missing_font_chars)} yok; bu harfler en yakın harfle yazılır "
+                            "(ğ→g, ş→s, ı→i)."
                             if info.tmp_glyphs else
                             "Oyunun fontunda bazı Türkçe harfler yok; bu harfler oyunda boş ya da farklı görünebilir.")}]
                          if not info.font_turkish_support else []),
@@ -1563,11 +1555,10 @@ class CapriBridge:
                     pak_note = ("Paketler AES ile şifreli. Oyunun AES anahtarını Sözlük → Bu oyun sekmesine girip "
                                 "yeniden analiz et.")
             else:
-                pak_note = ("Metinler .pak paketlerinde. Çeviri başlarken Capri, paketleri açmak için açık kaynak repak "
-                            "aracını indirip kurmak üzere izin isteyecek (~2 MB).")
+                pak_note = ("Metinler .pak paketlerinde; çeviri başlarken repak aracı (~2 MB) için izin istenir.")
             if not texts and not pak_note.startswith(("Paketler", "Metinler .pak paketlerinde")):
-                pak_note = ("Metinler .pak içinde bulunamadı. " + ("IoStore kapsayıcılarında da yok." if unreal_pak.retoc_path() else
-                            "Bu oyun IoStore kullanıyorsa çeviri başlarken retoc aracı için izin istenir (~3 MB).")) \
+                pak_note = ("Metinler .pak içinde bulunamadı. IoStore kapsayıcılarında da yok." if unreal_pak.retoc_path() else
+                            "Metinler .pak içinde yok; oyun IoStore kullanıyorsa retoc aracı (~3 MB) için izin istenir.") \
                     if info.has_iostore else "Paketlerde kaynak dilde metin bulunamadı."
         game["texts"] = texts
         unique = len({t.original for t in texts if t.original.strip()})
@@ -1633,10 +1624,9 @@ class CapriBridge:
         archive = self._rgss_archive(info)
         size_mb = max(1, archive.stat().st_size // (1 << 20))
         if not self._ask("Şifreli arşiv açılacak",
-                         f"{info.version_label} oyununun dosyaları şifreli {archive.name} arşivinde. Çeviri için Capri "
-                         f"arşivi oyun klasörüne açacak (yaklaşık {size_mb} MB dosya yazılır) ve orijinal arşivi "
-                         "_capri_backups klasörüne taşıyacak; oyun açılan dosyalarla aynı şekilde çalışır. "
-                         "Yedekler sayfasından tek tıkla geri alınabilir. Devam edilsin mi?"):
+                         f"{info.version_label} oyununun dosyaları şifreli {archive.name} arşivinde. Capri arşivi oyun "
+                         f"klasörüne açacak (~{size_mb} MB) ve orijinalini yedekleyecek; Yedekler'den geri alınabilir. "
+                         "Devam edilsin mi?"):
             raise TranslationCancelled()
         self._stage("prepare", f"{archive.name} arşivi açılıyor")
         self._progress_unit = "dosya"
@@ -1660,15 +1650,15 @@ class CapriBridge:
         ]
         archive = self._rgss_archive(info)
         if archive:
-            notes.append(f"Veri dosyaları şifreli {archive.name} arşivinde. Çeviri başlarken Capri arşivi oyun "
-                         "klasörüne açar (sana sorulur); orijinal arşiv yedeklenir.")
+            notes.append(f"Veriler şifreli {archive.name} arşivinde; çeviri başlarken açılır (iznin istenir), "
+                         "orijinali yedeklenir.")
         for note in notes:
             self._log(note)
         return {
             "engine": "rpgmaker", "lines": len(texts), "unique": unique, "notes": notes,
             "engine_detail": info.version_label,
-            "advice": [{"tone": "info", "text": f"Veriler şifreli {archive.name} arşivinde. Çeviri başlarken arşiv oyun klasörüne açılır "
-                                                "(iznin istenir), orijinali yedeklenir."}] if archive else [],
+            "advice": [{"tone": "info", "text": f"Veriler şifreli {archive.name} arşivinde; çeviri başlarken açılır, "
+                                                "orijinali yedeklenir."}] if archive else [],
             "sample": texts[0].original if texts else "",
             "summary": f"{_n(len(texts))} satır ({_n(unique)} benzersiz) bulundu.",
             "meta": f"{_n(unique)} satır",
@@ -1700,8 +1690,7 @@ class CapriBridge:
                                 "tıkla indirebilirsin (Ollama gerekmez).")
         else:
             if not gpu_runtime.ready():
-                raise UserError(f"{MODEL_LABELS[model]} için yerel model ortamı (PyTorch) kurulu değil. "
-                                "Yerel Modeller sayfasından tek tıkla kurabilirsin.")
+                raise UserError(f"{MODEL_LABELS[model]} için PyTorch kurulu değil; Yerel Modeller sayfasından tek tıkla kur.")
             status = prov.get_offline_model_status(model)
             if not status["is_ready"]:
                 raise UserError(
@@ -1744,11 +1733,10 @@ class CapriBridge:
                 self._notify("BepInEx hazır", note, "ok", "download")
                 return
             if not written and not failed and game["type"] != "renpy":
-                raise UserError("Oyuna yazılacak satır bulunamadı, oyunda bir değişiklik yapılmadı. Çeviriler önbellekte duruyor; "
-                                "Teknik günlükten ayrıntıya bakabilirsin.")
+                raise UserError("Oyuna yazılacak satır bulunamadı; oyunda değişiklik yapılmadı. Ayrıntı Teknik günlükte.")
             if failed and not written:
-                raise UserError(f"{_n(len(failed))} satırın hiçbiri çevrilemedi, oyuna bir şey yazılmadı. Teknik günlükte "
-                                "ayrıntı var; API anahtarını ve kotanı kontrol edip tekrar dene.")
+                raise UserError(f"{_n(len(failed))} satırın hiçbiri çevrilemedi. API anahtarını ve kotanı kontrol edip "
+                                "tekrar dene.")
             self._library.upsert(game["root"], status="translated", translated_at=time.time(), written=written,
                                  last_action="Çeviri tamamlandı", last_action_at=time.time(),
                                  last_result={"written": written, "failed": len(failed), "took": took})
@@ -1770,8 +1758,9 @@ class CapriBridge:
     def _prepare_retranslation(self, game: Dict[str, Any]) -> bool:
         """Zaten çevrilmiş oyun baştan çevrilirken dosyaları değişen motorlarda önce orijinaller geri yüklenir."""
         in_place = game["type"] in ("unity", "rpgmaker")
-        if not self._ask("Baştan çevir", ("Oyun orijinal dosyalarına döndürülüp baştan çevrilecek. " if in_place else "Oyun baştan çevrilecek. ")
-                         + "Önbellekteki satırlar yeniden kullanılır, onlar için API harcanmaz. Devam edilsin mi?"):
+        if not self._ask("Baştan çevir", "Oyun orijinaline döndürülüp baştan çevrilecek; önbellekteki satırlar ücretsiz. "
+                         "Devam edilsin mi?" if in_place else
+                         "Oyun baştan çevrilecek; önbellekteki satırlar ücretsiz. Devam edilsin mi?"):
             return False
         if in_place:
             self._stage("backup", "Orijinal dosyalar geri yükleniyor")
@@ -1788,9 +1777,8 @@ class CapriBridge:
         target_file = DATA_DIR / "fonts" / url.rsplit("/", 1)[1]
         if target_file.exists():
             return target_file
-        if not self._ask("Yazı tipi indirilecek", "Oyunun fontları bu dilin karakterlerini içermiyor; metinler oyunda görünmez. "
-                         "Capri, Google'ın açık kaynak Noto Sans yazı tipini (yaklaşık 5-8 MB, SIL Open Font License) "
-                         "GitHub'dan indirip çeviri klasörüne ekleyecek. Devam edilsin mi?"):
+        if not self._ask("Yazı tipi indirilecek", "Oyunun fontlarında bu dilin harfleri yok. Açık kaynak Noto Sans fontu (~5-8 MB, SIL OFL) GitHub'dan indirilip "
+                                                   "eklensin mi?"):
             return None
         import requests
         self._stage("write", "Yazı tipi indiriliyor")
@@ -2013,15 +2001,19 @@ class CapriBridge:
             import bepinex_installer
             installed = is_bepinex_installed(info.root)
             use_bridge = self._ask("BepInEx köprüsü", (
-                "Bu oyunun metinlerinin bir kısmı ya da tamamı dosyalarda açık değil (IL2CPP / paketli).\n\n"
-                + ("Çevirileri oyun içinde göstermek için XUnity.AutoTranslator çeviri dosyaları yazılsın mı?"
-                   if installed else
-                   "Çevirilerin oyun içinde görünmesi için BepInEx ve XUnity.AutoTranslator GitHub'dan indirilip "
-                   "oyun klasörüne kurulsun mu?\n\nKurulum tek tıkla geri alınabilir.")
-                + ("" if texts else "\n\nHayır dersen bu oyun çevrilemez: başka çevrilecek metin yok.")))
+                ("Bu oyunun metinlerinin bir kısmı dosyalarda açık değil (IL2CPP / paketli).\n\n"
+                 "Çeviriyi oyunda göstermek için XUnity.AutoTranslator dosyaları yazılsın mı?" if installed else
+                 "Bu oyunun metinlerinin bir kısmı dosyalarda açık değil (IL2CPP / paketli).\n\n"
+                 "Çeviriyi oyunda göstermek için BepInEx ve XUnity.AutoTranslator GitHub'dan indirilip kurulsun mu? "
+                 "Tek tıkla geri alınabilir.") if texts else
+                ("Bu oyunun metinleri dosyalarda açık değil (IL2CPP / paketli).\n\n"
+                 "Çeviriyi oyunda göstermek için XUnity.AutoTranslator dosyaları yazılsın mı?\n\n"
+                 "Hayır dersen bu oyun çevrilemez." if installed else
+                 "Bu oyunun metinleri dosyalarda açık değil (IL2CPP / paketli).\n\n"
+                 "Çeviriyi oyunda göstermek için BepInEx ve XUnity.AutoTranslator GitHub'dan indirilip kurulsun mu? "
+                 "Tek tıkla geri alınabilir.\n\nHayır dersen bu oyun çevrilemez.")))
             if not use_bridge and not texts:
-                raise UserError("Bu oyunun metinleri dosyalarda açık değil; BepInEx olmadan çeviri uygulanamaz. "
-                                "Fikrini değiştirirsen çeviriyi yeniden başlatıp izin verebilirsin.")
+                raise UserError("Metinler dosyalarda açık değil; BepInEx olmadan çevrilemez. İstersen çeviriyi yeniden başlatıp izin ver.")
         if self._want_backup(game):
             files = {info.root / t.source_file for t in texts if t.format_type == "tsv_file"}
             if info.resources_assets_path and any(t.source_file == "resources.assets" for t in texts):
@@ -2124,10 +2116,8 @@ class CapriBridge:
         from engine_unreal import write_translations_unreal
         if not unreal_pak.repak_path():
             if not self._ask("Ek araç kurulacak",
-                             "Bu oyunun metinleri .pak paketlerinin içinde. Paketleri açabilmek için Capri, açık kaynak "
-                             "repak aracını (github.com/trumank/repak, yaklaşık 2 MB) GitHub'dan indirip kendi tools "
-                             "klasörüne kuracak. Oyun dosyalarına dokunulmaz; çeviri ayrı bir yama paketi olarak eklenir. "
-                             "Devam edilsin mi?"):
+                             "Metinler .pak paketlerinde. Açmak için açık kaynak repak aracı (github.com/trumank/repak, ~2 MB) indirilsin "
+                             "mi? Oyun dosyalarına dokunulmaz; çeviri ayrı bir yama paketi olur."):
                 raise TranslationCancelled()
             self._stage("prepare", "repak aracı indiriliyor")
             unreal_pak.install_repak(log=self._log)
@@ -2137,9 +2127,8 @@ class CapriBridge:
             texts, staging = self._unreal_pak_texts(game, info)
             if not texts and info.has_iostore and not unreal_pak.retoc_path():
                 if not self._ask("Ek araç kurulacak",
-                                 "Metinler .pak paketlerinde bulunamadı; bu oyun IoStore (.utoc) biçimini de kullanıyor. Capri, bu "
-                                 "kapsayıcıları okumak için açık kaynak retoc aracını (github.com/trumank/retoc, yaklaşık 3 MB) "
-                                 "GitHub'dan indirip kendi tools klasörüne kuracak. Oyun dosyalarına dokunulmaz. Devam edilsin mi?"):
+                                 "Metinler .pak içinde yok; oyun IoStore (.utoc) kullanıyor. Okumak için açık kaynak retoc aracı "
+                                 "(github.com/trumank/retoc, ~3 MB) indirilsin mi? Oyun dosyalarına dokunulmaz."):
                     raise TranslationCancelled()
                 self._stage("prepare", "retoc aracı indiriliyor")
                 unreal_pak.install_retoc(log=self._log)
@@ -2147,8 +2136,7 @@ class CapriBridge:
                 self._stage("prepare", "Metinler IoStore kapsayıcılarından çıkarılıyor")
                 texts, staging = self._unreal_pak_texts(game, info)
         except unreal_pak.NeedsAesKey:
-            raise UserError("Bu oyunun paketleri AES ile şifreli. Oyunun AES anahtarını Sözlük → Bu oyun sekmesindeki "
-                            "'AES anahtarı' alanına girip tekrar dene.")
+            raise UserError("Paketler AES ile şifreli. Anahtarı Sözlük → Bu oyun sekmesindeki 'AES anahtarı' alanına girip tekrar dene.")
         if not texts:
             raise UserError("Paketlerde kaynak dilde (.locres) metin bulunamadı.")
         unique = sorted({t.original for t in texts if t.original.strip()})
@@ -2217,8 +2205,7 @@ class CapriBridge:
                 raise UserError("BepInEx yalnızca Unity oyunları içindir.")
             if bepinex_installer.is_installed(game["root"]):
                 raise UserError("BepInEx bu oyunda zaten kurulu.")
-            if not self._ask("BepInEx kurulumu", "BepInEx ve XUnity.AutoTranslator GitHub'dan indirilip oyun klasörüne "
-                             "kurulacak. Üzerine yazılan dosyalar yedeklenir ve kurulum tek tıkla kaldırılabilir."):
+            if not self._ask("BepInEx kurulumu", "BepInEx ve XUnity.AutoTranslator GitHub'dan indirilip oyuna kurulacak. Tek tıkla kaldırılabilir."):
                 return
             manifest = bepinex_installer.install(game["root"], log=self._log)
             from unity_bepinex import generate_bepinex_autotranslator_config
@@ -2234,8 +2221,7 @@ class CapriBridge:
         def task():
             import bepinex_installer
             game = self._require_game()
-            if not self._ask("BepInEx'i kaldır", "Capri'nin kurduğu BepInEx ve XUnity.AutoTranslator dosyaları silinecek, "
-                             "üzerine yazılan dosyalar geri yüklenecek."):
+            if not self._ask("BepInEx'i kaldır", "Capri'nin kurduğu BepInEx dosyaları silinecek, değişen dosyalar geri yüklenecek."):
                 return
             removed = bepinex_installer.uninstall(game["root"], log=self._log)
             game["analysis"] = None
@@ -2434,8 +2420,7 @@ class CapriBridge:
     def _restore_originals(self, game: Dict[str, Any]) -> None:
         backups = [b for b in list_game_backups(Path(game["root"])) if b.engine == game["type"]]
         if not backups:
-            raise UserError("Orijinal dosyaların yedeği yok. Düzenlemeleri uygulamak için 'Çeviriyi başlat' kullanın "
-                            "(önbellekteki satırlar için API harcanmaz).")
+            raise UserError("Orijinal yedek yok; düzenlemeler için 'Çeviriyi başlat'ı kullan (önbellekteki satırlar ücretsiz).")
         ok, _count, msg = restore_game_backup(backups[-1], Path(game["root"]), log=self._log)  # en eski = orijinal
         if not ok:
             raise RuntimeError(msg)
@@ -2452,11 +2437,9 @@ class CapriBridge:
         import unity_typed
         from engine_unity import detect_unity_game, extract_texts_unity
         if not self._ask("Unity bileşen okuyucusu", (
-                "Bu oyunun metinleri oyunun kendi bileşenlerinde (PlayMaker, UI Text/TextMeshPro ya da tek paket "
-                "data.unity3d). Capri bunları oyunun tip bilgisiyle okuyup doğrudan çevirebilir; bunun için bileşen "
-                f"okuyucusunun ({unity_typed.READER_SIZE_MB} MB) bir kez indirilmesi gerekir.\n\n"
-                f"Kaynak: PyPI, TypeTreeGeneratorAPI {unity_typed.READER_VERSION}; dosya SHA-256 ile doğrulanır. "
-                "İndirilsin mi?\n\nHayır dersen çeviri BepInEx ile oyun içinde yapılabilir.")):
+                "Bu oyunun metinleri Unity bileşenlerinde (PlayMaker, Naninovel, UI Text). Okumak için bileşen okuyucusu "
+                f"({unity_typed.READER_SIZE_MB} MB, PyPI: TypeTreeGeneratorAPI {unity_typed.READER_VERSION}, SHA-256 "
+                "doğrulamalı) bir kez indirilsin mi? Hayır dersen BepInEx ile çevrilebilir.")):
             game["reader_declined"] = True
             return texts, info
         self._status("Unity bileşen okuyucusu indiriliyor…")
@@ -2618,8 +2601,7 @@ class CapriBridge:
                      "bu satırlar için API harcanmaz.", "ok", "archive")
         if rejected:
             self._notify(f"{_n(rejected)} satır alınmadı",
-                         "Bu satırlar kaynakta olmayan etiket, kod, bağlantı ya da satır sonu ekliyordu; güvenlik için "
-                         "yamadan alınmadı.", "warn", "shield")
+                         "Bu satırlar kaynakta olmayan etiket, kod ya da bağlantı ekliyordu; alınmadı.", "warn", "shield")
         self._ui.emit("stats", self.get_stats())
         return True
 
@@ -2761,8 +2743,8 @@ class CapriBridge:
                 self._settings["local_model"] = model_id
                 save_settings(self._settings)
             self._ui.emit("models", self.model_status())
-            self._notify("Yerel model hazır", f"{spec['label']} indirildi ve doğrulandı. Sağlayıcılar'dan \"Yerel model "
-                         "(dahili)\" motorunu seçerek kullanabilirsin.", "ok", "cpu")
+            self._notify("Yerel model hazır", f"{spec['label']} indirildi. Kullanmak için Sağlayıcılar → Yerel model.",
+                         "ok", "cpu")
         return self._run_task("Model indirme", task)
 
     def remove_local_model(self, model_id: str) -> Dict[str, Any]:
@@ -3354,9 +3336,9 @@ class CapriBridge:
         size = gpu_runtime.estimate_mb(cuda)
         kind = (f"NVIDIA ekran kartın için CUDA destekli PyTorch" if cuda else "NVIDIA ekran kartı bulunamadığı için CPU sürümü PyTorch")
         if not self._ask("Yerel model ortamı kurulacak",
-                         f"Yerel modeller (OPUS-MT, NLLB) PyTorch ve Transformers kütüphanelerine ihtiyaç duyar. Capri, {kind} "
-                         f"ile birlikte bu kütüphaneleri resmi kaynaklardan (download.pytorch.org, pypi.org) indirip kendi "
-                         f"klasörüne (runtime) kuracak. İndirme yaklaşık {_n(size)} MB; bir kez yapılır. Devam edilsin mi?"):
+                         f"OPUS-MT ve NLLB için PyTorch ve Transformers gerekiyor. Capri, {kind} ile birlikte bunları "
+                         f"resmi kaynaklardan (download.pytorch.org, pypi.org) indirip kuracak (~{_n(size)} MB, bir kez). "
+                         "Devam edilsin mi?"):
             return False
         self._status("Yerel model ortamı kuruluyor…")
         torch = gpu_runtime.install(log=self._log, progress=self._progress)
@@ -3404,9 +3386,8 @@ class CapriBridge:
             status = prov.get_offline_model_status(kind)
             if status.get("compact"):
                 raise UserError(f"{status['label']} zaten küçültülmüş.")
-            if not self._ask("Modeli küçült", f"{status['label']} fp16 biçimine dönüştürülecek: dosya boyutu yaklaşık "
-                             "yarıya iner ve model daha hızlı yüklenir. Çeviri kalitesi pratikte değişmez.\n\n"
-                             "Yeni model deneme çevirisiyle doğrulanır; eski dosya Geri Dönüşüm Kutusu'na taşınır."):
+            if not self._ask("Modeli küçült", f"{status['label']} fp16'ya dönüştürülecek: boyut yarıya iner, kalite "
+                             "değişmez. Eski dosya Geri Dönüşüm Kutusu'na taşınır."):
                 return
             self._status(f"{status['label']} küçültülüyor…")
             result = prov.compact_offline_model(kind, log=self._log)
@@ -3447,8 +3428,7 @@ class CapriBridge:
             import rgss_archive
             game = self._require_game()
             if not self._ask("Şifreli arşivi geri koy",
-                             "Capri'nin açtığı dosyalar (çevrilmiş veri dosyaları dahil) silinecek ve orijinal arşiv "
-                             "yerine konacak. Oyun ilk hâline döner. Devam edilsin mi?"):
+                             "Açılan dosyalar silinip orijinal arşiv geri konacak. Devam edilsin mi?"):
                 return
             removed = rgss_archive.restore(Path(game["root"]), log=self._log)
             game.update(info=None, texts=None, analysis=None)

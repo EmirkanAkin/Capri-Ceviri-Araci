@@ -368,6 +368,9 @@ textarea.input.code { font-family: var(--mono); font-size: 12.5px; }
 .prov-name { font-weight: 600; margin-top: 12px; }
 .prov-tag { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
 .prov .pill { margin-top: 12px; }
+.prov-group { grid-column: 1 / -1; color: var(--muted); font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; margin: 6px 0 -4px; }
+.prov-group:first-child { margin-top: 0; }
+.group-head { color: var(--muted); font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; margin: 26px 0 10px; }
 .prov-star { position: absolute; top: 14px; right: 14px; font-size: 11.5px; font-weight: 600; color: var(--lime-ink); background: var(--lime); padding: 1px 8px; border-radius: 999px; }
 .prov-detail { margin-top: 14px; }
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 18px; margin-top: 18px; }

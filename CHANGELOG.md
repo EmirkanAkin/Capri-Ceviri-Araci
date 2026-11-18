@@ -1,5 +1,36 @@
 # Capri — Değişim Günlüğü
 
+## [1.0.7] - 2026-11-18
+### Yeni
+- **Sade sağlayıcılar:** Sağlayıcılar sayfası "Bulut" ve "Bilgisayarında" olarak ikiye ayrıldı. Capri'nin içinde
+  çalışan bütün yerel motorlar (TranslateGemma, OPUS-MT, NLLB) tek "Yerel model" kartında; hangisinin kullanılacağı
+  kartın içinden seçiliyor. Ollama ayrı bir program gerektirdiği için ayrı kartta kaldı.
+- **Kısa açıklamalar:** Arayüzdeki ~80 uzun açıklama ve onay penceresi kısaltıldı (8 hazır dilde de). Ana sayfadaki
+  motor etiketlerine "Ekran (OCR)" eklendi.
+- **README:** Kısaltıldı; GIF'ler ve ekran görüntüleri temiz bir kurulumdan yeniden alındı (sarımsı lekeler giderildi).
+- **Naninovel oyunları:** Naninovel motoruyla yapılmış Unity görsel romanları artık dosyadan çevriliyor. Derlenmiş
+  senaryolar (`Naninovel.Script`) Unity'nin yönetilen referans kayıt defterinde (`[SerializeReference]`) duruyor;
+  UnityPy bunun yalnızca tek kayıtlı biçimini okuyabildiği için Capri iki biçimi de (sürüm 1: Unity 2019.3–2021.1,
+  sürüm 2: 2021.2+) kendisi okuyup yazıyor. Kaynak, oyunun İngilizce yerelleştirmesi (yoksa İngilizce yazılmış
+  senaryonun kendisi); yalnızca diyalog (`PrintText`) ve seçenek (`AddChoice`) metinleri çevriliyor, konuşmacı
+  kimliği, etiketler, atlama hedefleri değişmiyor. Menü metinleri ("managed text" belgeleri) de çevriliyor; dil
+  listesinde English'in adı Türkçe oluyor. Her senaryo okunup yeniden yazıldığında bayt bayt aynı çıkmazsa ona
+  dokunulmuyor; kayıttan sonra dosya yeniden okunup doğrulanıyor. Örnek bir oyunda: 117 senaryo, 14.333 satır + 272
+  menü metni; 53.476 nesneden yalnızca 119'u değişti, oyun açılışta hatasız yükleniyor.
+### Düzeltmeler
+- **Ren'Py:** Diyaloğu bir yardımcıya argüman olarak veren oyunlarda (`call show_line(..., text="…")`) arayüz
+  metni taraması 6.000 metinde kesiliyordu; alfabetik sırada sonra gelen karakterlerin sahneleri İngilizce kalıyordu
+  (bir oyunda 17.273 diyalogun 11.772'si). Sınır kaldırıldı (aşılırsa günlüğe uyarı düşer). `look="smile"` gibi
+  görünüm kodları artık çeviriye gönderilmiyor; "A-Alright.", "Aaah..." gibi kısa ünlemler dosya adı sanılmıyor.
+- **Unity:** Naninovel oyunlarında sahnedeki UI kalıp yazıları ("Lorem ipsum", "Choice text") metin sayılıp "66 satır"
+  gibi yanıltıcı bir sonuç veriyordu; artık alınmıyor. TextMeshPro'da eksik harf denetimi dinamik atlasları ve yedek
+  font zincirini de hesaba katıyor (gereksiz ğ→g, ş→s dönüşümü yapılmıyor).
+- **Unity:** Tek parça `.assets` dosyalarına bileşen metni yazılırken nesneler eşleşmiyor, hiçbir şey yazılmıyordu.
+- **Unity / Naninovel:** Capri oyun klasörü dışından çalıştırıldığında senaryoların tip bilgisi
+  (`globalgamemanagers.assets`) bulunamıyor, yalnızca menü metinleri yazılıp çeviri "tamamlandı" görünüyordu. Bağlı
+  dosyalar artık oyunun klasöründe aranıyor; bir senaryo bile yazılamazsa oyun dosyasına dokunulmuyor ve hata gösteriliyor.
+- Yerel model kartının durumu, Yerel Modeller sayfası açılmadan da doğru görünüyor.
+
 ## [1.0.6] - 2026-11-16
 ### Yeni
 - **Unity bileşen metinleri, BepInEx'siz:** Metnini tablo yerine bileşenlerinde tutan Unity oyunları (PlayMaker

@@ -586,9 +586,14 @@ def scan(info: Any, log: LogFn = print, source: str = "en") -> TypedScan:
     import UnityPy
     from engine_unity import UnityTextItem
 
+    import unity_naninovel
+
     items: List[Any] = []
     counts: Dict[str, int] = defaultdict(int)
     tmp_glyphs: Set[int] = set()
+    # Naninovel: sahnedeki UI Text/TMP yazıları prefab yer tutucularıdır ("Lorem ipsum", "Choice text"); oyun
+    # açılınca managed text belgelerinden doldurulur. Bu yüzden alınmaz, gerçek metin senaryolardan okunur.
+    naninovel = unity_naninovel.is_naninovel(info)
     for path in containers(info):
         try:
             env = UnityPy.load(str(path))
@@ -639,7 +644,7 @@ def scan(info: Any, log: LogFn = print, source: str = "en") -> TypedScan:
                         if font:
                             used_fonts.append(font)
                     value = tree.get(field) or ""
-                    if is_display_text(value):
+                    if is_display_text(value) and not naninovel:
                         items.append(UnityTextItem(path.name, _item_key("ui", obj.assets_file.name, obj.path_id),
                                                    len(items), json.dumps([field]), value, FORMAT))
                         counts["ui"] += 1
@@ -656,6 +661,12 @@ def scan(info: Any, log: LogFn = print, source: str = "en") -> TypedScan:
                 items.append(UnityTextItem(path.name, _item_key("fsm", obj.assets_file.name, obj.path_id),
                                            len(items), json.dumps(tree_path), value, FORMAT))
                 counts["fsm"] += 1
+        if naninovel:
+            nani_items, nani_counts = unity_naninovel.scan(env, path.name, log)
+            items.extend(nani_items)
+            for name, value in nani_counts.items():
+                if value:
+                    counts[name] += value
         if used_fonts:
             tmp_glyphs = tmp_effective_glyphs(objects, fonts, settings, used_fonts)
         if skipped:
@@ -664,7 +675,9 @@ def scan(info: Any, log: LogFn = print, source: str = "en") -> TypedScan:
         gc.collect()
     if counts:
         log("Bileşen metinleri: " + ", ".join(f"{label} {counts[key]}" for key, label in
-                                              (("fsm", "PlayMaker"), ("ui", "arayüz"), ("xml", "tablo")) if counts.get(key)))
+                                              (("fsm", "PlayMaker"), ("ui", "arayüz"), ("xml", "tablo"),
+                                               ("naninovel", "Naninovel senaryo"), ("naninovel_ui", "Naninovel arayüz"))
+                                              if counts.get(key)))
     return TypedScan(items, tmp_glyphs, dict(counts))
 
 
@@ -694,15 +707,50 @@ def write(info: Any, translations: Dict[str, str], items: List[Any], log: LogFn 
             kind, file_name, path_id = item.asset_name.split(":", 2)
             by_object[(file_name, int(path_id))].append(item)
         env = UnityPy.load(path.read_bytes())   # bellekten: dosya açık kalırsa Windows yerine yazmaya izin vermez
+        # Bellekten açılan dosyanın bağlı olduğu dosyalar (globalgamemanagers.assets…) o anki çalışma klasöründe
+        # aranırdı; oyunun klasörü gösterilmezse betik türleri çözülemez ve hiçbir senaryo yazılamaz
+        env.path = str(Path(info.data_dir))
         if not attach_generator(env, info, log):
             continue
         expected: Dict[Tuple[str, int], List[Tuple[Any, str]]] = defaultdict(list)
+        failures: List[str] = []
         for obj in env.objects:
-            key = (obj.assets_file.name, obj.path_id)
+            key = (_file_name(env, obj, container), obj.path_id)
             wanted = by_object.get(key)
             if not wanted:
                 continue
             kind = wanted[0].asset_name.split(":", 1)[0]
+            if kind == "nani" and obj.type.name == "MonoBehaviour":
+                import unity_naninovel
+                try:
+                    done = unity_naninovel.apply_script(obj, env.typetree_generator, wanted, translations)
+                except Exception as error:
+                    failures.append(f"#{obj.path_id}: {error}")
+                    continue
+                if done:
+                    written += len(done)
+                    expected[key].append(("nani", done))
+                continue
+            if kind == "mtext" and obj.type.name == "TextAsset":
+                import unity_naninovel
+                data = obj.read()
+                script = data.m_Script if isinstance(data.m_Script, str) else bytes(data.m_Script).decode("utf-8")
+                replacements = {}
+                for item in wanted:
+                    if language_name and item.original.strip().casefold() == "english" and \
+                            item.key_id.lower().split("-")[0] == "en":
+                        new = language_name   # dil listesindeki "en: English" satırı
+                    else:
+                        new = translations.get(item.original)
+                    if new and new != item.original:
+                        replacements[(item.line_index, item.key_id)] = (item.original, new)
+                script, changed = unity_naninovel.rewrite_managed_text(script, replacements)
+                if changed:
+                    data.m_Script = script
+                    data.save()
+                    written += changed
+                    expected[key].append(("xml", script))
+                continue
             if kind == "xml" and obj.type.name == "TextAsset":
                 data = obj.read()
                 script = data.m_Script if isinstance(data.m_Script, str) else bytes(data.m_Script).decode("utf-8")
@@ -744,6 +792,9 @@ def write(info: Any, translations: Dict[str, str], items: List[Any], log: LogFn 
             if changed:
                 obj.save_typetree(tree, nodes=node)
                 written += changed
+        if failures:   # yarım çeviri "tamamlandı" diye bildirilmesin: dosyaya hiç dokunulmaz
+            raise RuntimeError(f"{container}: {len(failures)} Naninovel senaryosu yazılamadı ({failures[0]}); "
+                               "oyun dosyası değiştirilmedi")
         if not expected:
             continue
         log(f"{container} kaydediliyor…")
@@ -752,25 +803,42 @@ def write(info: Any, translations: Dict[str, str], items: List[Any], log: LogFn 
         data_bytes = env.file.save(packer="lz4") if isinstance(env.file, BundleFile) else env.file.save()
         del env
         gc.collect()
-        if not _verify(data_bytes, info, expected):
+        if not _verify(data_bytes, info, expected, container, str(Path(info.data_dir))):
             raise RuntimeError(f"{container}: kaydedilen paket doğrulanamadı; oyun dosyası değiştirilmedi")
         (replace_file or _write_file)(path, data_bytes)
         log(f"Kaydedildi: {container} ({len(data_bytes) / 1048576:.0f} MB)")
     return written
 
 
-def _verify(data: bytes, info: Any, expected: Dict[Tuple[str, int], List[Tuple[Any, str]]]) -> bool:
+def _file_name(env: Any, obj: Any, container: str) -> str:
+    """Nesnenin bulunduğu iç dosyanın adı. Tek parça .assets bellekten açılınca UnityPy dosya adını bilmez;
+    o zaman ad kapsayıcının kendisidir (taramada da öyle kaydedilir)."""
+    from UnityPy.files import BundleFile
+
+    return obj.assets_file.name if isinstance(env.file, BundleFile) else container
+
+
+def _verify(data: bytes, info: Any, expected: Dict[Tuple[str, int], List[Tuple[Any, str]]], container: str = "",
+            folder: str = "") -> bool:
     """Yeni paket açılıyor ve değişen her alan yazılan değeri taşıyor mu."""
     import UnityPy
 
     try:
         env = UnityPy.load(data)
+        if folder:
+            env.path = folder
         if not attach_generator(env, info, lambda _m: None):
             return False
         found = 0
         for obj in env.objects:
-            checks = expected.get((obj.assets_file.name, obj.path_id))
+            checks = expected.get((_file_name(env, obj, container), obj.path_id))
             if not checks:
+                continue
+            if checks[0][0] == "nani":
+                import unity_naninovel
+                if not unity_naninovel.verify_script(obj, env.typetree_generator, checks[0][1]):
+                    return False
+                found += 1
                 continue
             if checks[0][0] == "xml":
                 data_obj = obj.read()

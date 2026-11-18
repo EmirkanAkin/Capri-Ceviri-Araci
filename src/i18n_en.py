@@ -29,8 +29,7 @@ EN = {
     "Teknik ayrıntılar": "Technical details", "Ayrıntılı işlem kaydı": "Detailed activity log",
     "Günlük panoya kopyalandı": "Log copied to clipboard", "İşlem": "Activity", "Seçenekler": "Options", "Bitince": "When finished",
     "Hoş geldin": "Welcome", "Nasıl çalışır?": "How it works?", "Oyununu Türkçeye çevir.": "Translate your game.",
-    "Oyun klasörünü seç; motoru otomatik algılayıp yedekleyelim ve seçtiğin yapay zekayla tek tıkla çevirelim.":
-        "Pick your game folder; we detect the engine, back it up and translate it in one click with the AI you choose.",
+    "Oyun klasörünü seç; Capri motoru algılar, yedek alır ve tek tıkla çevirir.": "Pick the game folder; Capri detects the engine, makes a backup and translates in one click.",
     "Oyun klasörünü seç": "Pick the game folder", "Otomatik analiz": "Automatic analysis", "Tek tıkla çeviri": "One-click translation",
     "etiketler korunur": "tags are preserved", "Ekran (OCR)": "Screen (OCR)", "Proje açılamadı": "Couldn't open project",
     "kütüphanede ara ·": "search library ·", "oyun ekle ·": "add game ·", "bildirimler ·": "notifications ·",
@@ -39,8 +38,7 @@ EN = {
     # ── İstatistikler ve kütüphane ─────────────────────────────────────────
     "Çevrilen oyun": "Translated games", "Önbellekteki çeviri": "Cached translations", "Oyuna yazılan satır": "Lines written to games",
     "Son çeviriler": "Recent translations", "Son çevirinin süresi": "Last translation took",
-    "Analiz ettiğin ve çevirdiğin oyunlar. Bir karta tıklayarak projeyi aç.":
-        "Games you analyzed and translated. Click a card to open the project.",
+    "Eklediğin oyunlar. Açmak için karta tıkla.": "Games you've added. Click a card to open it.",
     "Kütüphanen henüz boş": "Your library is empty",
     "İlk oyununu ekle; motor otomatik algılanır, kapak görseli Steam'den gelir.":
         "Add your first game; the engine is detected automatically and cover art comes from Steam.",
@@ -63,8 +61,7 @@ EN = {
     "Çeviri öncesi yedek al": "Back up before translating", "Değişen dosyalar tek tıkla orijinaline döner.":
         "Changed files return to their originals in one click.",
     "Kalite editörü geçişi": "Quality editor pass",
-    "Sorunlu taslakları (İngilizce kalıntı, robotik ifade) bağlamıyla bir sohbet modeline düzelttirir.":
-        "Has a chat model fix problematic drafts (leftover English, robotic phrasing) with their context.",
+    "İngilizce kalan ya da yapay duran çevirileri yeniden düzeltir.": "Re-fixes translations that stayed English or sound unnatural.",
     "Yetişkin (NSFW) sözlüğü": "Adult (NSFW) glossary", "Argo ve yetişkin sahneleri doğal günlük dille aktarır.":
         "Renders slang and adult scenes in natural everyday language.",
     "Ortak çeviri belleği": "Shared translation memory",
@@ -75,8 +72,7 @@ EN = {
     "Capri arka plandayken çeviri bitince ekranın köşesinde bildirim çıkar.":
         "When Capri is in the background, a notification appears in the corner when the translation finishes.",
     "Analiz": "Analysis",
-    "Bir oyun eklediğinde burada kaç satır çevrileceğini, ne kadar süreceğini ve dikkat etmen gereken bir şey olup olmadığını görürsün.":
-        "When you add a game, you'll see here how many lines will be translated, how long it takes and anything to watch out for.",
+    "Oyun ekleyince satır sayısı, süre ve uyarılar burada görünür.": "Once you add a game, its line count, time estimate and warnings appear here.",
     "Otomatik": "Auto", "Ana motorla aynı ({0})": "Same as main engine ({0})",
 
     # ── Analiz paneli ──────────────────────────────────────────────────────
@@ -88,8 +84,7 @@ EN = {
     "Tüm satırlar önbellekte hazır; çeviri birkaç saniyede biter, API harcanmaz.":
         "All lines are ready in the cache; the translation finishes in seconds without using the API.",
     "Analiz bekleniyor…": "Waiting for analysis…", "Analiz ediliyor": "Analyzing", "Oyun analiz ediliyor": "Analyzing game",
-    "Oyunun metinleri taranıyor. Büyük oyunlarda biraz sürebilir; bu sırada başka bir projeye geçebilirsin.":
-        "Scanning the game's text. Large games may take a while; you can switch to another project meanwhile.",
+    "Metinler taranıyor; bu sırada başka bir projeye geçebilirsin.": "Scanning the text; you can switch to another project meanwhile.",
     "Metinler, fontlar ve dosya yapısı kontrol ediliyor. Sonucu bir sonraki açılışta anında gelir.":
         "Checking text, fonts and file layout. The result appears instantly next time.",
     "Analiz tamamlanamadı: {0}": "Analysis couldn't finish: {0}", "{0} satır ({1} benzersiz) bulundu.": "{0} lines ({1} unique) found.",
@@ -103,16 +98,11 @@ EN = {
         "The game already has {0} translation files; work continues on top of them.",
     "{0} fontta {1} harfleri eksik. Capri çeviride otomatik font yaması uygular.":
         "{0} fonts are missing {1} letters. Capri applies an automatic font patch while translating.",
-    "Oyunun fontları {0} karakterlerini içermiyor. Bu yazı sistemi için otomatik font yaması yok; oyuna uygun bir font eklemezsen metinler görünmeyebilir.":
-        "The game's fonts don't contain {0} characters. There is no automatic font patch for this script; without a suitable font the text may not show.",
-    "Utage senaryosu bulundu: çeviri oyunun İngilizce metninin yerine yazılır. Oyunda dil seçeneğinden English'i seçince Türkçe görünür.":
-        "Utage scenario found: the translation replaces the game's English text. Choose English in the game's language option to see it.",
-    "Utage senaryosu dosyada açık: {0} satır doğrudan çevrilir (BepInEx gerekmez). Oyunda dil olarak English seçilince Türkçe görünür.":
-        "Utage scenario is readable: {0} lines are translated directly (no BepInEx needed). Choose English in the game to see the translation.",
-    "Veri dosyaları şifreli {0} arşivinde. Çeviri başlarken Capri arşivi oyun klasörüne açar (sana sorulur); orijinal arşiv yedeklenir.":
-        "Data files are in an encrypted {0} archive. When translation starts, Capri extracts it into the game folder (you'll be asked); the original is backed up.",
-    "Veriler şifreli {0} arşivinde. Çeviri başlarken arşiv oyun klasörüne açılır (iznin istenir), orijinali yedeklenir.":
-        "Data is in an encrypted {0} archive. When translation starts it is extracted into the game folder (with your permission); the original is backed up.",
+    "Oyunun fontlarında {0} karakterleri yok; uygun bir font eklemezsen metinler görünmeyebilir.": "The game's fonts lack {0} characters; text may not show unless you add a suitable font.",
+    "Utage senaryosu: oyunda dil olarak English'i seçince Türkçe görünür.": "Utage script: choose English as the game language to see the translation.",
+    "Utage senaryosu açık: {0} satır. BepInEx gerekmez; oyunda English'i seç.": "Readable Utage script: {0} lines. No BepInEx needed; choose English in the game.",
+    "Veriler şifreli {0} arşivinde; çeviri başlarken açılır (iznin istenir), orijinali yedeklenir.": "Data is in the encrypted {0} archive; it's extracted when translation starts (with your permission) and the original is backed up.",
+    "Veriler şifreli {0} arşivinde; çeviri başlarken açılır, orijinali yedeklenir.": "Data is in the encrypted {0} archive; it's extracted when translation starts and the original is backed up.",
     "Şifreli arşiv · {0}": "Encrypted archive · {0}", "Metinler .pak paketlerinde": "Text is inside .pak packages",
     "Dosyalarda okunabilir metin yok": "No readable text in the files", "Eksik: {0}{1}": "Missing: {0}{1}",
     "Unreal {0} · Proje: {1}": "Unreal {0} · Project: {1}", "PAK: {0} · IoStore: {1}": "PAK: {0} · IoStore: {1}",
@@ -157,8 +147,7 @@ EN = {
     "Anahtar yanlış, süresi dolmuş ya da yetkisiz olabilir. Sağlayıcılar sayfasından kontrol et.":
         "The key may be wrong, expired or unauthorized. Check it on the Providers page.",
     "API kotası doldu": "API quota exhausted",
-    "Sağlayıcının kullanım sınırına ulaşıldı. Biraz bekleyip kaldığın yerden devam et ya da başka bir anahtar ekle. Yapılan çeviriler kaybolmadı.":
-        "The provider's usage limit was reached. Wait a bit and continue, or add another key. No translations were lost.",
+    "Kullanım sınırı doldu. Biraz bekleyip devam et ya da başka bir anahtar ekle; çeviriler kaybolmadı.": "Usage limit reached. Wait a bit and continue, or add another key; no translations were lost.",
     "İnternet bağlantısı kurulamadı": "Couldn't connect to the internet",
     "Bağlantını kontrol edip kaldığın yerden devam et. Yapılan çeviriler kaybolmadı.":
         "Check your connection and continue where you left off. No translations were lost.",
@@ -166,8 +155,7 @@ EN = {
     "Bağlantın yavaş ya da sağlayıcı yoğun olabilir. Biraz sonra tekrar dene.":
         "Your connection may be slow or the provider busy. Try again a bit later.",
     "Oyun dosyalarına yazılamadı": "Couldn't write to the game files",
-    "Oyun açıksa kapat. Klasör Program Files altındaysa Capri'yi yönetici olarak çalıştır ya da oyunu başka bir klasöre taşı.":
-        "Close the game if it's running. If the folder is under Program Files, run Capri as administrator or move the game elsewhere.",
+    "Oyun açıksa kapat. Program Files altındaysa Capri'yi yönetici olarak çalıştır.": "Close the game if it's running. If it's under Program Files, run Capri as administrator.",
     "Diskte yer kalmadı": "Out of disk space", "Biraz yer açıp kaldığın yerden devam et.": "Free up some space and continue where you left off.",
     "Bellek yetmedi": "Out of memory",
     "Diğer uygulamaları kapatıp tekrar dene. Sürerse bulut motoruna geç; yapılan çeviriler kaybolmadı.":
@@ -176,8 +164,7 @@ EN = {
     "Oyun klasörü taşınmış ya da silinmiş olabilir. Oyun dosyalarını doğrulayıp yeniden dene.":
         "The game folder may have been moved or deleted. Verify the game files and try again.",
     "Uygulamanın bir parçası eksik": "Part of the app is missing",
-    "Bu bir Capri paketleme hatası. Son sürümü indirip aynı klasöre açman sorunu çözer; ayarların ve çevirilerin korunur.":
-        "This is a Capri packaging error. Download the latest version into the same folder; your settings and translations are kept.",
+    "Capri paketleme hatası. Son sürümü aynı klasöre aç; ayarların korunur.": "Capri packaging error. Extract the latest version into the same folder; your settings are kept.",
     "Bu motor için gereken kütüphaneler kurulu değil. Yerel Modeller sayfasından tek tıkla kurabilirsin.":
         "The libraries this engine needs aren't installed. You can install them from the Local Models page in one click.",
     "Devam eden bir işlem var, lütfen bitmesini bekleyin.": "Something is still running; please wait for it to finish.",
@@ -190,12 +177,9 @@ EN = {
     "Bırakılan öğe açılamadı": "Couldn't open the dropped item", "Önce bir oyun klasörü seçin.": "Choose a game folder first.",
     "Önce bir proje aç": "Open a project first", "Önce bir proje aç.": "Open a project first.",
     "Bu oyunda çevrilecek metin bulunamadı.": "No translatable text found in this game.",
-    "Bu oyunun metinleri dosyalarda açık değil; BepInEx olmadan çeviri uygulanamaz. Fikrini değiştirirsen çeviriyi yeniden başlatıp izin verebilirsin.":
-        "This game's text isn't stored in readable files; the translation can't be applied without BepInEx. If you change your mind, restart the translation and allow it.",
-    "Oyuna yazılacak satır bulunamadı, oyunda bir değişiklik yapılmadı. Çeviriler önbellekte duruyor; Teknik günlükten ayrıntıya bakabilirsin.":
-        "No lines to write were found, so the game wasn't changed. Translations stay in the cache; see the technical log for details.",
-    "{0} satırın hiçbiri çevrilemedi, oyuna bir şey yazılmadı. Teknik günlükte ayrıntı var; API anahtarını ve kotanı kontrol edip tekrar dene.":
-        "None of the {0} lines could be translated, so nothing was written. See the technical log; check your API key and quota, then try again.",
+    "Metinler dosyalarda açık değil; BepInEx olmadan çevrilemez. İstersen çeviriyi yeniden başlatıp izin ver.": "The text isn't readable in the files; it can't be translated without BepInEx. Restart the translation to allow it.",
+    "Oyuna yazılacak satır bulunamadı; oyunda değişiklik yapılmadı. Ayrıntı Teknik günlükte.": "No lines to write were found; the game wasn't changed. Details are in the technical log.",
+    "{0} satırın hiçbiri çevrilemedi. API anahtarını ve kotanı kontrol edip tekrar dene.": "None of the {0} lines could be translated. Check your API key and quota, then try again.",
     "Gemini API anahtarı yok. Sağlayıcılar sayfasından ekleyin.": "No Gemini API key. Add one on the Providers page.",
     "{0} API anahtarı yok. Sağlayıcılar sayfasından ekleyin.": "No {0} API key. Add one on the Providers page.",
     "{0} yalnızca Türkçeye çevirebilir.": "{0} can only translate into Turkish.",
@@ -203,8 +187,7 @@ EN = {
     "Kaynak dil “Otomatik” ya da hedef listesinde değil.": "The source language is “Auto” or not in the target list.",
     "{0} modeli eksik ({1}/{2} dosya). Yerel Modeller sayfasından indirin.":
         "{0} model is missing ({1}/{2} files). Download it from the Local Models page.",
-    "{0} için yerel model ortamı (PyTorch) kurulu değil. Yerel Modeller sayfasından tek tıkla kurabilirsin.":
-        "The local model runtime (PyTorch) for {0} isn't installed. Install it from the Local Models page in one click.",
+    "{0} için PyTorch kurulu değil; Yerel Modeller sayfasından tek tıkla kur.": "PyTorch isn't installed for {0}; install it with one click on the Local Models page.",
     "Bu proje için henüz çeviri yok. Stüdyo'dan çeviriyi başlat.": "No translations for this project yet. Start translating from the Studio.",
     "Bu oyunda henüz çeviri yapılmadı.": "This game hasn't been translated yet.", "Henüz çeviri yok.": "No translations yet.",
     "Bu model için önbellekte çeviri yok.": "No cached translations for this model.",
@@ -212,29 +195,26 @@ EN = {
     "Önce çeviriyi başlatın; Türkçe çeviri klasörü yok.": "Start the translation first; there's no translation folder.",
     "Önce çeviriyi başlat; düzeltilecek çeviri yok.": "Start the translation first; there's nothing to fix.",
     "Kaynak metinle bırakıldı; tekrar çalıştırınca yeniden denenir.": "Left as source text; it will be retried next run.",
-    "Bu satırlar için geçerli çeviri alınamadı ve İngilizce bırakıldı. Editörde düzeltebilir ya da çeviriyi tekrar başlatarak yeniden deneyebilirsin.":
-        "No valid translation was received for these lines, so they were left in English. Fix them in the editor or restart the translation to retry.",
+    "Bu satırlar çevrilemedi ve İngilizce kaldı. Editörde düzeltebilir ya da çeviriyi yeniden başlatabilirsin.": "These lines couldn't be translated and stayed in English. Fix them in the editor or restart the translation.",
     "{0} metin çevrilemedi": "{0} texts couldn't be translated", "Bilinmeyen sağlayıcı.": "Unknown provider.",
     "Giriş dosyası/klasörü bulunamadı.": "Input file/folder not found.", "Seçilen yedek bulunamadı.": "The selected backup wasn't found.",
     "Bu oyun için kayıtlı yedek bulunamadı.": "No saved backup found for this game.",
 
     # ── Editör ─────────────────────────────────────────────────────────────
     "Çevirileri düzenle": "Edit translations",
-    "Önbellekteki çevirileri ara, düzelt ve kaydet. “Oyuna uygula” düzenlemeleri oyun dosyalarına yazar — API harcamaz. Turuncu çizgili satırlar incelenmeli.":
-        "Search, fix and save cached translations. “Apply to game” writes your edits to the game files without using the API. Lines with an orange stripe need review.",
+    "Çevirileri ara, düzelt ve oyuna uygula (API harcamaz). Turuncu satırlar incelenmeli.": "Search, fix and apply translations to the game (no API cost). Orange lines need review.",
     "Editörü kullanmak için önce kütüphaneden bir proje aç.": "Open a project from the library to use the editor.",
     "Sadece incelenecekler": "Only lines to review", "İncelenmeli": "Needs review", "Kaynak": "Source", "Karşılığı": "Translation",
     "Önce değişiklikleri kaydet": "Save your changes first", "Düzenlemeler oyuna uygulandı": "Edits applied to the game",
     "Düzenlemeler uygulandı: {0} satır.": "Edits applied: {0} lines.", "Düzeltmeler oyuna yazıldı: {0} satır.": "Fixes written to the game: {0} lines.",
     "{0} · {1} satır güncellendi": "{0} · {1} lines updated",
-    "Orijinal dosyaların yedeği yok. Düzenlemeleri uygulamak için 'Çeviriyi başlat' kullanın (önbellekteki satırlar için API harcanmaz).":
-        "There's no backup of the original files. Use 'Start translation' to apply edits (cached lines don't use the API).",
+    "Orijinal yedek yok; düzenlemeler için 'Çeviriyi başlat'ı kullan (önbellekteki satırlar ücretsiz).": "No original backup; use 'Start translation' to apply edits (cached lines are free).",
     "“{0}” için sonuç yok.": "No results for “{0}”.",
     "Yamayı dışa aktar": "Export patch", "Yama içe aktar": "Import patch", "Yama dışa aktarıldı": "Patch exported",
     "Yama içe aktarıldı": "Patch imported", "Yama okunamadı": "Couldn't read the patch", "Dosya geçerli bir Capri yaması değil.":
         "The file isn't a valid Capri patch.", "Yama bu oyuna uymuyor": "The patch doesn't match this game",
     "Yama {0} için, açık oyun {1}.": "The patch is for {0}, the open game is {1}.", "Dışa aktarılacak çeviri yok": "No translations to export",
-    "{0} önbelleği boş.": "{0} cache is empty.", "Toplulukla paylaş": "Share with the community",
+    "{0} önbelleği boş.": "{0} cache is empty.", 
     "{0} satır ({1}). 'Çeviriyi başlat' ile oyuna uygula — bu satırlar için API harcanmaz.":
         "{0} lines ({1}). Apply them with 'Start translation' — these lines don't use the API.",
     "Önce yamanın ait olduğu oyunu aç.": "Open the game the patch belongs to first.",
@@ -242,16 +222,7 @@ EN = {
         "Capri patch (*.capripatch;*.omnipatch;*.zip)",
 
     # ── Topluluk yamaları ──────────────────────────────────────────────────
-    "Topluluk yamaları": "Community patches",
-    "Başkalarının paylaştığı çeviriler. Uygulanan satırlar için API harcanmaz.":
-        "Translations shared by others. Applied lines don't use the API.",
-    "Oyun adıyla ara": "Search by game name", "Yamalar aranıyor…": "Searching patches…", "Liste alınamadı": "Couldn't load the list",
-    "Henüz paylaşılmış yama yok": "No patches shared yet", "Eşleşen yama yok": "No matching patches",
-    "Bir oyunu çevirdikten sonra Çeviri Editörü'nden yamayı dışa aktarıp \"Toplulukla paylaş\" diyerek ilk sen paylaşabilirsin.":
-        "After translating a game, export the patch from the Translation Editor and choose \"Share with the community\" to be the first.",
-    "Açık oyun: {0} · {1}": "Open game: {0} · {1}", "Yamayı uygulamak için önce oyunu aç.": "Open the game to apply a patch.",
-    "Sayfa": "Page", "İndir ve uygula": "Download and apply", "İndiriliyor": "Downloading", "Uygulandı": "Applied",
-    "Dosya eklenmemiş": "No file attached", "Yama indirilemedi": "Couldn't download the patch",
+      "İndiriliyor": "Downloading", 
 
     # ── Yedekler ───────────────────────────────────────────────────────────
     "Etkin projenin çeviri öncesi alınan yedekleri burada listelenir.": "Backups taken before translating the active project are listed here.",
@@ -268,10 +239,8 @@ EN = {
     "{0} arşivi açılıyor": "Extracting {0} archive", "{0} oyun klasörüne çıkarıldı; orijinali yedeklendi.": "{0} extracted into the game folder; the original was backed up.",
     "{0} · {1} dosya çıkarıldı · orijinal arşiv {2} MB": "{0} · {1} files extracted · original archive {2} MB",
     "{0} · {1} açılmış dosya kaldırıldı": "{0} · {1} extracted files removed",
-    "{0} oyununun dosyaları şifreli {1} arşivinde. Çeviri için Capri arşivi oyun klasörüne açacak (yaklaşık {2} MB dosya yazılır) ve orijinal arşivi _capri_backups klasörüne taşıyacak; oyun açılan dosyalarla aynı şekilde çalışır. Yedekler sayfasından tek tıkla geri alınabilir. Devam edilsin mi?":
-        "{0}'s files are in an encrypted {1} archive. To translate, Capri will extract it into the game folder (about {2} MB is written) and move the original archive to _capri_backups; the game runs the same with the extracted files. You can undo this from the Backups page in one click. Continue?",
-    "Capri'nin açtığı dosyalar (çevrilmiş veri dosyaları dahil) silinecek ve orijinal arşiv yerine konacak. Oyun ilk hâline döner. Devam edilsin mi?":
-        "Files extracted by Capri (including translated data files) will be deleted and the original archive put back. The game returns to its original state. Continue?",
+    "{0} oyununun dosyaları şifreli {1} arşivinde. Capri arşivi oyun klasörüne açacak (~{2} MB) ve orijinalini yedekleyecek; Yedekler'den geri alınabilir. Devam edilsin mi?": "{0}'s files are in the encrypted {1} archive. Capri will extract it into the game folder (~{2} MB) and back up the original; you can undo this from Backups. Continue?",
+    "Açılan dosyalar silinip orijinal arşiv geri konacak. Devam edilsin mi?": "The extracted files will be deleted and the original archive restored. Continue?",
     "{0}: çevrilecek veri dosyası bulunamadı.": "{0}: no data files to translate.",
 
     # ── BepInEx, Unreal ve araçlar ─────────────────────────────────────────
@@ -279,10 +248,8 @@ EN = {
     "BepInEx hazır": "BepInEx ready", "BepInEx kaldırıldı": "BepInEx removed", "BepInEx'i kaldır": "Remove BepInEx",
     "BepInEx bu oyunda zaten kurulu.": "BepInEx is already installed in this game.", "BepInEx yalnızca Unity oyunları içindir.":
         "BepInEx is for Unity games only.", "BepInEx ve XUnity.AutoTranslator kuruluyor…": "Installing BepInEx and XUnity.AutoTranslator…",
-    "BepInEx ve XUnity.AutoTranslator GitHub'dan indirilip oyun klasörüne kurulacak. Üzerine yazılan dosyalar yedeklenir ve kurulum tek tıkla kaldırılabilir.":
-        "BepInEx and XUnity.AutoTranslator will be downloaded from GitHub and installed into the game folder. Overwritten files are backed up and the installation can be removed in one click.",
-    "Capri'nin kurduğu BepInEx ve XUnity.AutoTranslator dosyaları silinecek, üzerine yazılan dosyalar geri yüklenecek.":
-        "The BepInEx and XUnity.AutoTranslator files Capri installed will be deleted and overwritten files restored.",
+    "BepInEx ve XUnity.AutoTranslator GitHub'dan indirilip oyuna kurulacak. Tek tıkla kaldırılabilir.": "BepInEx and XUnity.AutoTranslator will be downloaded from GitHub and installed into the game. Removable with one click.",
+    "Capri'nin kurduğu BepInEx dosyaları silinecek, değişen dosyalar geri yüklenecek.": "The BepInEx files Capri installed will be removed and changed files restored.",
     "{0} dosya silindi; oyun klasörü kurulum öncesi hâline döndü.": "{0} files deleted; the game folder is back to its pre-install state.",
     "BepInEx {0} + XUnity.AutoTranslator {1} · {2} {3}": "BepInEx {0} + XUnity.AutoTranslator {1} · {2} {3}",
     "Ek araç kurulacak": "An extra tool will be installed", "repak aracı indiriliyor": "Downloading the repak tool",
@@ -291,39 +258,31 @@ EN = {
         "IoStore containers can now be read.",
     "Metinler .pak paketlerinden çıkarılıyor": "Extracting text from .pak packages", "Metinler IoStore kapsayıcılarından çıkarılıyor":
         "Extracting text from IoStore containers",
-    "Bu oyunun metinleri .pak paketlerinin içinde. Paketleri açabilmek için Capri, açık kaynak repak aracını (github.com/trumank/repak, yaklaşık 2 MB) GitHub'dan indirip kendi tools klasörüne kuracak. Oyun dosyalarına dokunulmaz; çeviri ayrı bir yama paketi olarak eklenir. Devam edilsin mi?":
-        "This game's text is inside .pak packages. To open them, Capri will download the open-source repak tool (github.com/trumank/repak, about 2 MB) from GitHub into its tools folder. Game files are not touched; the translation is added as a separate patch package. Continue?",
-    "Metinler .pak paketlerinde bulunamadı; bu oyun IoStore (.utoc) biçimini de kullanıyor. Capri, bu kapsayıcıları okumak için açık kaynak retoc aracını (github.com/trumank/retoc, yaklaşık 3 MB) GitHub'dan indirip kendi tools klasörüne kuracak. Oyun dosyalarına dokunulmaz. Devam edilsin mi?":
-        "No text was found in .pak packages; this game also uses IoStore (.utoc). To read these containers, Capri will download the open-source retoc tool (github.com/trumank/retoc, about 3 MB) from GitHub into its tools folder. Game files are not touched. Continue?",
-    "Bu oyunun paketleri AES ile şifreli. Oyunun AES anahtarını Sözlük → Bu oyun sekmesindeki 'AES anahtarı' alanına girip tekrar dene.":
-        "This game's packages are AES-encrypted. Enter the game's AES key in Glossary → This game → 'AES key' and try again.",
+    "Metinler .pak paketlerinde. Açmak için açık kaynak repak aracı (github.com/trumank/repak, ~2 MB) indirilsin mi? Oyun dosyalarına dokunulmaz; çeviri ayrı bir yama paketi olur.": "The text is inside .pak files. Download the open-source repak tool (github.com/trumank/repak, ~2 MB) to open them? Game files are not touched; the translation becomes a separate patch package.",
+    "Metinler .pak içinde yok; oyun IoStore (.utoc) kullanıyor. Okumak için açık kaynak retoc aracı (github.com/trumank/retoc, ~3 MB) indirilsin mi? Oyun dosyalarına dokunulmaz.": "The text isn't in the .pak files; the game uses IoStore (.utoc). Download the open-source retoc tool (github.com/trumank/retoc, ~3 MB) to read it? Game files are not touched.",
+    "Paketler AES ile şifreli. Anahtarı Sözlük → Bu oyun sekmesindeki 'AES anahtarı' alanına girip tekrar dene.": "The packages are AES-encrypted. Enter the key in Glossary → This game → 'AES key' and try again.",
     "Paketlerde kaynak dilde (.locres) metin bulunamadı.": "No source-language (.locres) text found in the packages.",
     "Bu oyunda çevrilebilir .locres metni bulunamadı.": "No translatable .locres text found in this game.",
     "Yama paketi oluşturuluyor": "Building the patch package", "Yama paketi eklendi": "Patch package added",
     "{0} · Paks/~mods klasörüne yazıldı. Kaldırmak için bu dosyayı silmen yeterli.": "{0} · written to Paks/~mods. Delete this file to remove it.",
     "Yazı tipi indirilecek": "A font will be downloaded", "Yazı tipi indiriliyor": "Downloading font",
-    "Oyunun fontları bu dilin karakterlerini içermiyor; metinler oyunda görünmez. Capri, Google'ın açık kaynak Noto Sans yazı tipini (yaklaşık 5-8 MB, SIL Open Font License) GitHub'dan indirip çeviri klasörüne ekleyecek. Devam edilsin mi?":
-        "The game's fonts don't contain this language's characters, so the text won't show. Capri will download Google's open-source Noto Sans font (about 5-8 MB, SIL Open Font License) from GitHub into the translation folder. Continue?",
+    "Oyunun fontlarında bu dilin harfleri yok. Açık kaynak Noto Sans fontu (~5-8 MB, SIL OFL) GitHub'dan indirilip eklensin mi?": "The game's fonts lack this language's letters. Download the open-source Noto Sans font (~5-8 MB, SIL OFL) from GitHub and add it?",
 
     # ── Sözlük ─────────────────────────────────────────────────────────────
     "Terim sözlüğü": "Term glossary", "Terim ekle": "Add term", "Terimlerde ara": "Search terms", "Kaynak terim": "Source term",
-    "Tam eşleşen metinler model kullanılmadan bu karşılıklarla çevrilir (menüler, karakter adları, özel terimler).":
-        "Exactly matching text is translated with these entries without using a model (menus, character names, special terms).",
+    "Tam eşleşen metinler bu karşılıklarla çevrilir (menüler, adlar, terimler).": "Exact matches are translated with these entries (menus, names, terms).",
     "Bu oyun · {0}": "This game · {0}", "Oyuna özel bağlam": "Game-specific context", "Oyun hakkında notlar": "Notes about the game",
     "Hitap": "Form of address", "Sen (samimi)": "Informal (you)", "Siz (resmi)": "Formal (you)", "Romantik": "Romantic",
-    "Bu bilgiler Gemini, OpenAI ve Claude'a talimat olarak gönderilir; terimler tüm motorlarda tam eşleşmede kullanılır.":
-        "This information is sent to Gemini, OpenAI and Claude as instructions; terms are used on exact matches with every engine.",
+    "Bu bilgiler yapay zekâya talimat olarak gider; terimler tüm motorlarda kullanılır.": "This info is sent to the AI as instructions; terms are used by every engine.",
     "Oyuna özel bilgiler — {0}:": "Game-specific information — {0}:", "Sözlük (*.json;*.csv)": "Glossary (*.json;*.csv)",
     "{0} terim dışa aktarıldı.": "{0} terms exported.", "0x… (64 hane onaltılık veya base64)": "0x… (64 hex digits or base64)",
 
     # ── Metin ve JSON çevirici ─────────────────────────────────────────────
-    "Metni yaz ya da yapıştır; seçtiğin motorla anında çevrilsin. Satır yapısı ve oyun etiketleri korunur.":
-        "Type or paste text and it's translated instantly with your chosen engine. Line breaks and game tags are kept.",
+    "Metni yaz ya da yapıştır; etiketler korunarak anında çevrilir.": "Type or paste text; it's translated instantly with tags kept.",
     "Çevrilecek metni yaz veya yapıştır…": "Type or paste text to translate…", "Çeviri burada görünecek.": "The translation will appear here.",
     "Yazarken çevir": "Translate as you type", "Çeviri panoya kopyalandı": "Translation copied to clipboard", "Dilleri değiştir": "Swap languages",
     "Bu yön değiştirilemez": "This direction can't be swapped", "Motor bağımsız JSON": "Engine-independent JSON",
-    "Kendi motorunu kullanan oyunlarda (ör. VNE, Electron) metin dosyalarını çevir. Anahtarlar ve kod parçaları korunur; düz ve iç içe yapılar desteklenir.":
-        "Translate text files of games with their own engine (e.g. VNE, Electron). Keys and code fragments are kept; flat and nested structures are supported.",
+    "Kendi motorunu kullanan oyunların JSON dosyalarını çevir; anahtarlar ve kodlar korunur.": "Translate JSON files of games with custom engines; keys and code are kept.",
     "JSON dosyasını bırak": "Drop a JSON file", "JSON dosyasını ya da klasörünü bırak": "Drop a JSON file or folder",
     "Tek bir .json dosyası ya da içinde .json dosyaları olan bir klasör.": "A single .json file or a folder containing .json files.",
     "JSON girişi seçildi": "JSON input selected", "JSON çevirisi tamamlandı": "JSON translation finished",
@@ -336,20 +295,16 @@ EN = {
 
     # ── Ekran çevirisi ─────────────────────────────────────────────────────
     "Oyun ekranını çevir": "Translate the game screen",
-    "Kısayola bas: ekran donar, çevirmek istediğin yeri sürükleyip seç, çeviri hemen yanında belirir. Sabit modda seçtiğin alan canlı izlenir ve metin her değiştiğinde yeniden çevrilir.":
-        "Press the shortcut: the screen freezes, drag over the area you want translated and the translation appears next to it. In pinned mode the area is watched live and re-translated whenever the text changes.",
+    "Kısayola bas, alanı seç, çeviri yanında çıksın. Sabit modda alan izlenir, metin değiştikçe çevrilir.": "Press the shortcut, select an area and the translation appears next to it. In pinned mode the area is watched and re-translated as it changes.",
     "Alan seç": "Select area", "Alan seç ve çevir": "Select area and translate", "Alanı sabitle (canlı)": "Pin area (live)",
     "Sabitlemeyi kaldır": "Unpin", "Tek seferlik": "One-time", "Sabit / kapat": "Pin / close",
-    "Tek seferlik: diyalog, menü ya da görev metnini seç, çeviri açılır pencerede görünsün.":
-        "One-time: select a dialogue, menu or quest text and the translation appears in a popup.",
-    "Altyazı ve diyalog kutuları için: seçilen alan sürekli izlenir, değişen metin otomatik çevrilir.":
-        "For subtitles and dialogue boxes: the selected area is watched and changing text is translated automatically.",
+    "Tek seferlik: alanı seç, çeviri pencerede çıksın.": "One-off: select an area and the translation pops up.",
+    "Altyazılar için: alan izlenir, metin değiştikçe çevrilir.": "For subtitles: the area is watched and re-translated as text changes.",
     "Ekran çevirisi motoru": "Screen translation engine",
-    "En hızlısı ekran kartında çalışan OPUS'tur (~50 ms). Gemini daha doğal ama ~1 sn sürer.":
-        "The fastest is OPUS on your graphics card (~50 ms). Gemini is more natural but takes ~1 s.",
+    "En hızlısı OPUS (~50 ms); Gemini daha doğal (~1 sn).": "OPUS is fastest (~50 ms); Gemini is more natural (~1 s).",
     "Canlı yenileme aralığı ·": "Live refresh interval ·", "Sabit çeviri penceresi": "Pinned translation window",
     "Alanın altında": "Below the area", "Orijinalin üstünde": "Over the original", "Seçim ekranında": "On the selection screen",
-    "Kısayollar": "Shortcuts", "Kısayollar ve ayarlar": "Shortcuts and settings", "Kısayola bas…": "Press a shortcut…",
+    "Kısayollar": "Shortcuts", "Kısayollar ve ayarlar": "Shortcuts and settings", 
     "Tuş kombinasyonuna bas…": "Press a key combination…", "Kısayol kutusuna tıklayıp yeni tuş kombinasyonuna bas.":
         "Click the shortcut box and press a new key combination.", "Kısayol kaydedilemedi": "Couldn't save the shortcut",
     "Bu kısayol diğer işlem için kullanılıyor": "This shortcut is used by the other action", "Başka uygulamada kullanılıyor": "Used by another app",
@@ -358,72 +313,47 @@ EN = {
     "Canlı": "Live", "Canlı ekran çevirisi açık": "Live screen translation on", "Canlı ekran çevirisi kapatıldı": "Live screen translation off",
     "Canlı çeviri açık": "Live translation on", "OCR {0} ms · çevriliyor…": "OCR {0} ms · translating…", "OCR {0} ms": "OCR {0} ms",
     "Ekran yakalanamadı": "Couldn't capture the screen", "Ekran çevirisi kullanılamıyor": "Screen translation unavailable",
-    "Oyun “özel tam ekran” modundaysa ekran üstüne pencere çizilemez; oyunu “kenarlıksız / pencereli tam ekran” çalıştır.":
-        "Windows can't be drawn over a game in “exclusive fullscreen”; run the game in “borderless / windowed fullscreen”.",
-    "Metinler Windows'un yerleşik OCR motoruyla okunur; ek model indirmek gerekmez.":
-        "Text is read with Windows' built-in OCR; no extra model download needed.",
-    "Daha iyi tanıma için Windows'a İngilizce dil paketini ekleyebilirsin (Ayarlar › Saat ve dil › Dil ve bölge).":
-        "For better recognition, add the English language pack to Windows (Settings › Time & language › Language & region).",
-    "Çeviri pencereleri ekran yakalamaya görünmez yapılır, bu yüzden orijinal yazının üstünde dursalar bile kendi yazılarını okumazlar.":
-        "Translation windows are hidden from screen capture, so they never read their own text even when placed over the original.",
+    "Oyun “özel tam ekran”daysa pencere çizilemez; “kenarlıksız” modda çalıştır.": "In “exclusive fullscreen” no window can be drawn on top; run the game “borderless”.",
+    "Windows'un yerleşik OCR'ı kullanılır; indirme gerekmez.": "Uses Windows' built-in OCR; nothing to download.",
+    "Daha iyi tanıma için Windows'a İngilizce dil paketini ekle.": "For better recognition, add the English language pack to Windows.",
+    "Çeviri pencereleri ekran yakalamaya görünmez; Capri kendi yazısını okumaz.": "Translation windows are invisible to screen capture; Capri never reads its own text.",
     "{0}×{1} piksellik alan izleniyor. Kapatmak için {2} veya penceredeki ✕.": "Watching a {0}×{1} px area. Close with {2} or the ✕ on the window.",
     "alan seç ve çevir ·": "select area and translate ·", "alanı sabitle / kaldır (Ekran Çevirisi sayfasından değiştirilebilir).":
         "pin / unpin area (change it on the Screen Translation page).", "veya sağ tık iptal eder.": "or right-click to cancel.",
     "Diyalog": "Dialogue", "Görev": "Quest", "Etiketli": "Tagged",
 
     # ── Sağlayıcılar ve modeller ───────────────────────────────────────────
-    "Bir motora tıklayıp ayarlarını yap. API anahtarları Windows Kimlik Bilgisi Yöneticisi'nde, Windows hesabına bağlı olarak şifreli saklanır.":
-        "Click an engine to configure it. API keys are stored encrypted in Windows Credential Manager, tied to your Windows account.",
+    "Bir motor seç ve ayarla. API anahtarları Windows'ta şifreli saklanır.": "Pick an engine and set it up. API keys are stored encrypted in Windows.",
     "API anahtarı": "API key", "API anahtarları (her satıra bir tane)": "API keys (one per line)", "Sunucu adresi": "Server address",
     "Yerel sunucu": "Local server", "Sağlayıcı ayarları kaydedildi": "Provider settings saved", "Sağlayıcılara git": "Go to Providers",
     "{0} varsayılan motor yapıldı": "{0} set as the default engine", "Hazır · {0} anahtar": "Ready · {0} keys",
     "Otomatik — tüm modelleri hız sırasıyla dene (önerilen)": "Auto — try every model by speed (recommended)",
-    "Binlerce satırı dakikalar içinde, doğal ve akıcı çevirir. “Otomatik” modda anahtarının erişebildiği tüm modeller hız sırasıyla denenir; biri kotaya takılırsa sıradakine geçilir. Birden fazla anahtar paralel kullanılır.":
-        "Translates thousands of lines in minutes, naturally and fluently. In “Auto” mode the fastest models your key can use are tried in order; if one hits its quota the next is used. Multiple keys run in parallel.",
+    "Hızlı ve doğal çeviri. Birden fazla anahtar paralel kullanılır; kotası dolan modelden sonrakine geçilir.": "Fast, natural translation. Multiple keys are used in parallel; when a model hits its quota, the next one takes over.",
     "GPT modelleriyle bağlamsal, akıcı çeviri.": "Contextual, fluent translation with GPT models.",
     "Diyalog akıcılığı ve karakter tonunu korumada güçlü.": "Strong at keeping dialogue flow and character tone.",
-    "Dilbilgisine sadık profesyonel çeviri (Free anahtarlar “:fx” ile biter). Oyun etiketleri otomatik korunur.":
-        "Grammatically faithful professional translation (Free keys end with “:fx”). Game tags are preserved automatically.",
-    "Bilgisayarında çalışan açık kaynak modeller (Qwen 2.5, Llama 3…). İnternet ve kota gerekmez; Ollama uygulaması açık olmalı.":
-        "Open-source models running on your computer (Qwen 2.5, Llama 3…). No internet or quota needed; the Ollama app must be running.",
+    "Dilbilgisine sadık çeviri (Free anahtarlar “:fx” ile biter).": "Grammatically faithful translation (Free keys end in “:fx”).",
     "Bulut · en hızlı": "Cloud · fastest", "Bulut · GPT": "Cloud · GPT", "Bulut · edebi ton": "Cloud · literary tone",
-    "Bulut · makine çevirisi": "Cloud · machine translation", "Yerel LLM · sansürsüz": "Local LLM · uncensored",
-    "Çevrimdışı · EN→TR": "Offline · EN→TR", "Çevrimdışı · çok dilli": "Offline · multilingual", "(çevrimdışı)": "(offline)",
-    "Gemini hızlı ve doğaldır; birden fazla anahtar girersen paralel çalışır. OpenAI, Claude ve DeepL bulut seçenekleridir. OPUS (EN→TR) ve NLLB (200 dil) ekran kartında internetsiz çalışır. Ollama yerel LLM ile sansürsüz çeviri sağlar.":
-        "Gemini is fast and natural; with several keys it runs in parallel. OpenAI, Claude and DeepL are cloud options. OPUS (EN→TR) and NLLB (200 languages) run offline on your graphics card. Ollama gives uncensored translation with a local LLM.",
-    "İnternet ve kota gerektirmeyen, ekran kartında çalışan nöral çeviri modelleri.":
-        "Neural translation models running on your graphics card, with no internet or quota needed.",
+    "Bulut · makine çevirisi": "Cloud · machine translation", 
+      "(çevrimdışı)": "(offline)",
+    "Gemini hızlı ve doğaldır; birden fazla anahtar paralel çalışır. OpenAI, Claude ve DeepL diğer bulut seçenekleri. Yerel modeller internetsiz çalışır.": "Gemini is fast and natural; multiple keys run in parallel. OpenAI, Claude and DeepL are other cloud options. Local models work offline.",
+    "İnternetsiz ve kotasız çalışan çeviri modelleri.": "Translation models that work offline with no quota.",
     "Çevrimdışı modeller": "Offline models", "OPUS-MT · İngilizce → Türkçe": "OPUS-MT · English → Turkish",
-    "Helsinki-NLP İngilizce → Türkçe modeli. Hafif ve hızlı, ekran kartında internetsiz çalışır.":
-        "Helsinki-NLP English → Turkish model. Light and fast, runs offline on your graphics card.",
-    "Helsinki-NLP opus-mt-tc-big-en-tr. ~450 MB, hızlı ve hafif.": "Helsinki-NLP opus-mt-tc-big-en-tr. ~450 MB, fast and light.",
     "NLLB-200 · 600M · çok dilli": "NLLB-200 · 600M · multilingual",
-    "Meta'nın 200 dilli modeli; ekran kartında internetsiz çalışır. Türkçe dışındaki hedef dillere de çevirebilir (Almanca, İspanyolca, Rusça, Japonca…).":
-        "Meta's 200-language model; runs offline on your graphics card. It can also translate into languages other than Turkish (German, Spanish, Russian, Japanese…).",
-    "facebook/nllb-200-distilled-600M. 200 dil; Türkçe dışı hedeflere de çevirir.": "facebook/nllb-200-distilled-600M. 200 languages; also translates into non-Turkish targets.",
     "Model kullanıma hazır.": "Model ready to use.", "Model sayfası": "Model page", "Modeli küçült": "Compress model",
     "Optimize edilmedi": "Not optimized", "Hazır · optimize edildi": "Ready · optimized", "{0} hazır": "{0} ready",
     "{0} küçültüldü": "{0} compressed", "{0} küçültülüyor…": "Compressing {0}…", "{0} zaten küçültülmüş.": "{0} is already compressed.",
-    "{0} fp16 biçimine dönüştürülecek: dosya boyutu yaklaşık yarıya iner ve model daha hızlı yüklenir. Çeviri kalitesi pratikte değişmez. Yeni model deneme çevirisiyle doğrulanır; eski dosya Geri Dönüşüm Kutusu'na taşınır.":
-        "{0} will be converted to fp16: the file shrinks by about half and loads faster. Translation quality practically doesn't change. The new model is verified with a test translation; the old file goes to the Recycle Bin.",
+    "{0} fp16'ya dönüştürülecek: boyut yarıya iner, kalite değişmez. Eski dosya Geri Dönüşüm Kutusu'na taşınır.": "{0} will be converted to fp16: half the size, same quality. The old file goes to the Recycle Bin.",
     "Tüm dosyalar yerinde ({0} MB).": "All files present ({0} MB).", "{0} indiriliyor…": "Downloading {0}…", "{0} indirildi": "{0} downloaded",
     "{0} durduruldu": "{0} stopped", "Model indirirken de otomatik önerilir.": "It's also suggested automatically when downloading a model.",
     "Yerel model ortamı eksik": "Local model runtime missing", "Yerel model ortamı hazır": "Local model runtime ready",
     "Yerel model ortamı kurulacak": "The local model runtime will be installed", "Yerel model ortamı kuruldu": "Local model runtime installed",
     "Yerel model ortamı kurulu değil": "Local model runtime not installed", "Yerel model ortamı kuruluyor…": "Installing local model runtime…",
     "Ortamı kur": "Install runtime", "PyTorch ve Transformers zaten kurulu.": "PyTorch and Transformers are already installed.",
-    "OPUS-MT ve NLLB, PyTorch + Transformers ile çalışır. Capri ekran kartına uygun resmi PyTorch sürümünü seçip indirir ve kendi klasörüne kurar (NVIDIA kartta ≈2,9 GB, kartsız ≈260 MB). Bulut motorları ve ekran çevirisi bu ortam olmadan da çalışır.":
-        "OPUS-MT and NLLB run on PyTorch + Transformers. Capri picks the official PyTorch build for your graphics card and installs it into its own folder (≈2.9 GB with NVIDIA, ≈260 MB without). Cloud engines and screen translation work without it.",
-    "Yerel modeller (OPUS-MT, NLLB) PyTorch ve Transformers kütüphanelerine ihtiyaç duyar. Capri, {0} ile birlikte bu kütüphaneleri resmi kaynaklardan (download.pytorch.org, pypi.org) indirip kendi klasörüne (runtime) kuracak. İndirme yaklaşık {1} MB; bir kez yapılır. Devam edilsin mi?":
-        "Local models (OPUS-MT, NLLB) need the PyTorch and Transformers libraries. Capri will download them with {0} from the official sources (download.pytorch.org, pypi.org) into its own folder (runtime). The download is about {1} MB and happens once. Continue?",
+    "OPUS-MT ve NLLB için PyTorch gerekir (NVIDIA kartta ≈2,9 GB, kartsız ≈260 MB). Bulut motorları ve ekran çevirisi bunsuz da çalışır.": "OPUS-MT and NLLB need PyTorch (≈2.9 GB with an NVIDIA card, ≈260 MB without). Cloud engines and screen translation work without it.",
+    "OPUS-MT ve NLLB için PyTorch ve Transformers gerekiyor. Capri, {0} ile birlikte bunları resmi kaynaklardan (download.pytorch.org, pypi.org) indirip kuracak (~{1} MB, bir kez). Devam edilsin mi?": "OPUS-MT and NLLB need PyTorch and Transformers. Capri will download them with {0} from the official sources (download.pytorch.org, pypi.org) and install them (~{1} MB, once). Continue?",
     "Yerel modellere git": "Go to Local Models", "GPU hızlandırma (CUDA)": "GPU acceleration (CUDA)", "Ekran kartı algılanmadı": "No graphics card detected",
     "GPU hazırlandı": "GPU prepared", "Şimdi optimize et": "Optimize now", "Yerel motor seçiliyse açılışta hazırla": "Prepare at startup when a local engine is selected",
-    "Bu ayar neden var?": "Why does this setting exist?",
     "{0} · {1} TFLOPS (FP16) · {2}/{3} GB boş{4}": "{0} · {1} TFLOPS (FP16) · {2}/{3} GB free{4}",
-    "Ekran kartı ilk kez kullanıldığında sürücü bağlamı ve cuBLAS çekirdekleri hazırlanır; bu, ilk çeviride 1-3 saniyelik bir donma yaratır. Optimizasyon bunu önceden yapar, RTX kartlarda":
-        "The first time the graphics card is used, the driver context and cuBLAS kernels are prepared, causing a 1-3 second freeze on the first translation. Optimization does this ahead of time, on RTX cards",
-    "hızlandırmayı açar, kullanılmayan VRAM'i boşaltarak “bellek yetmedi” hatalarını azaltır ve seçili yerel modeli (OPUS/NLLB) VRAM'e yükler. Böylece OPUS/NLLB çevirileri, canlı önizleme ve ekran çevirisi ilk tıklamadan itibaren anında yanıt verir. Gemini gibi bulut motorları GPU kullanmaz; bu ayar yalnızca yerel modelleri hızlandırır.":
-        "enables acceleration, frees unused VRAM to reduce “out of memory” errors and loads the selected local model (OPUS/NLLB) into VRAM. OPUS/NLLB translations, live preview and screen translation then respond instantly from the first click. Cloud engines like Gemini don't use the GPU; this only speeds up local models.",
     "Hız": "Speed",
 
     # ── Güncellemeler ──────────────────────────────────────────────────────
@@ -441,34 +371,17 @@ EN = {
     "İndirilen paket eksik; güncelleme uygulanmadı. Daha sonra tekrar dene.": "The downloaded package is incomplete; the update wasn't applied. Try again later.",
     "Kurulacak bir güncelleme yok.": "There's no update to install.", "Kaynak koddan çalışıyorsun; güncellemek için 'git pull' kullan.":
         "You're running from source; use 'git pull' to update.",
-    "Yeni sürüm çıktığında Capri haber verir; tek tıkla indirip kurar ve yeniden açılır. Ayarların, önbelleklerin, modellerin ve API anahtarların korunur.":
-        "When a new version is out, Capri lets you know; it downloads, installs and reopens in one click. Your settings, caches, models and API keys are kept.",
+    "Yeni sürüm çıkınca Capri haber verir ve tek tıkla günceller; ayarların korunur.": "Capri tells you when a new version is out and updates with one click; your settings are kept.",
 
     # ── Sürüm notları (WHATS_NEW) ──────────────────────────────────────────
-    "Çeviri bitince Capri'ye özel ince bir ses (ayarlardan kapatılabilir)": "A subtle Capri sound when a translation finishes (can be turned off in settings)",
-    "Ren'Py: DLC/Live2D içeren oyunlarda \"translate komutu başarısız\" hatası düzeltildi":
-        "Ren'Py: fixed the \"translate command failed\" error in games with DLC/Live2D",
-    "Ren'Py: Rusça, Japonca gibi dillerde yazılmış oyunların metin sayısı artık doğru":
-        "Ren'Py: line counts for games written in Russian, Japanese, etc. are now correct",
-    "Ren'Py: oyunun paketli İngilizcesi varsa çeviri ondan yapılıyor": "Ren'Py: if the game ships a packed English version, it's used as the source",
-    "Gemini çevirisi yaklaşık 5 kat hızlı; yarıda takılma düzeltildi": "Gemini translation is about 5× faster; stalls fixed",
-    "İlerleme çubuğu sürekli ilerliyor, kalan süre gerçekçi": "The progress bar moves steadily and the time left is realistic",
-    "Unity oyunlarında yazma hatası (UnityPy.resources) düzeltildi": "Fixed a write error in Unity games (UnityPy.resources)",
-    "Güncelleme artık siyah pencere açmadan arayüzden kuruluyor": "Updates now install from the app without a black window",
-    "GPU paneli \"Algılanıyor\"da kalmıyor; Durdur düğmesi yenilendi": "The GPU panel no longer sticks on \"Detecting\"; the Stop button was refreshed",
-    "Oyna düğmesi, sözlük içe/dışa aktarma, yama paylaşma": "Play button, glossary import/export, patch sharing",
 
     # ── Rehber ─────────────────────────────────────────────────────────────
     "1 · Oyunu ekle": "1 · Add the game", "2 · Motoru seç": "2 · Choose the engine", "3 · Çevir, durdur, devam et": "3 · Translate, stop, continue",
     "4 · Düzelt ve paylaş": "4 · Fix and share",
-    "“Oyun ekle” ile oyun klasörünü seç. Motor otomatik algılanır ve oyun analiz edilir; indirme sarmalayıcısı klasörü seçsen bile içteki oyun bulunur. Kapak görseli Steam'den gelir.":
-        "Choose the game folder with “Add game”. The engine is detected and the game analyzed automatically; even if you pick a download wrapper folder, the game inside is found. Cover art comes from Steam.",
-    "“Çeviriyi başlat” önce dosyaları yedekler. İstediğin an “Durdur”a bas; çeviriler önbellekte kalır ve tekrar başlatınca kaldığı yerden, aynı satırlar için API harcamadan devam eder.":
-        "“Start translation” backs up the files first. Press “Stop” anytime; translations stay in the cache and restarting continues where it left off without paying again for the same lines.",
-    "Çeviri Editörü'nde satırları düzelt, “Oyuna uygula” ile yaz. Yamayı .capripatch olarak dışa aktarıp arkadaşlarınla paylaşabilir, onların yamasını içe aktarabilirsin.":
-        "Fix lines in the Translation Editor and write them with “Apply to game”. Export the patch as .capripatch to share with friends, or import theirs.",
-    "Yedekler sayfasından istediğin yedeği geri yükleyerek oyunu orijinal hâline döndür. Unity IL2CPP oyunlarında çeviri BepInEx + XUnity.AutoTranslator dosyaları olarak yazılır (onayın istenir).":
-        "Restore any backup from the Backups page to return the game to its original state. In Unity IL2CPP games the translation is written as BepInEx + XUnity.AutoTranslator files (with your approval).",
+    "“Oyun ekle” ile oyun klasörünü seç; motor otomatik algılanır.": "Pick the game folder with “Add game”; the engine is detected automatically.",
+    "“Çeviriyi başlat” önce yedek alır. Durdurursan kaldığın yerden, yeniden ödemeden devam eder.": "“Start translation” backs up first. If you stop, it resumes where it left off without paying again.",
+    "Çeviri Editörü'nde satırları düzelt ve oyuna uygula; yamayı .capripatch olarak paylaş.": "Fix lines in the Translation Editor and apply them to the game; share the patch as .capripatch.",
+    "Yedekler sayfasından oyunu tek tıkla orijinal hâline döndür.": "Restore the game to its original state from the Backups page with one click.",
     "Tek tıkla çevir; istediğin an durdur, düzelt ya da orijinal dosyalarına dön.": "Translate in one click; stop, fix or return to the original files anytime.",
     "Analiz, çeviri ve yedek işlemleri burada özetlenir.": "Analysis, translation and backup activity is summarized here.",
     "Klasör, oyunun .exe dosyası ya da masaüstü kısayolu olabilir": "It can be the folder, the game's .exe or a desktop shortcut",
@@ -477,7 +390,7 @@ EN = {
     "Haritayı açmak için {0} tuşuna bas.": "Press {0} to open the map.",
     "Birkaç saniye": "A few seconds", "Kalmadı": "Nothing left", "Giriş": "Input",
     "Çeviri": "Translation", "Şimdi dene": "Try now", "Projeyi aç {0}": "Open project {0}", "Motor: {0}": "Engine: {0}",
-    "Model dosyaları eksik": "Model files missing", "Modeller yükleniyor…": "Loading models…", "Ön yüklenen model": "Preloaded model",
+     "Modeller yükleniyor…": "Loading models…", "Ön yüklenen model": "Preloaded model",
     "Boş / toplam VRAM": "Free / total VRAM", "CUDA başlatma (bir kez)": "CUDA startup (once)", "FP16 matris hızı": "FP16 matrix speed",
     "Görev tamamlandı! \\C[3]50 altın\\C[0] kazandın.": "Quest complete! You earned \\C[3]50 gold\\C[0].",
     "{0} çevrilebilir oyun bulundu.": "{0} translatable games found.", "Bu öneriyi gizle": "Hide this suggestion",
@@ -488,35 +401,13 @@ EN = {
     "resources.assets metinleri; IL2CPP oyunlarda BepInEx köprüsü.": "resources.assets text; BepInEx bridge for IL2CPP games.",
     "{0} (çevrimdışı)": "{0} (offline)", "Otomatik Algıla (Auto)": "Auto-detect", "fp16 · küçültülmüş": "fp16 · compressed",
     "Önce {0}, sonra diğerleri": "First {0}, then the others",
-    "Toplam yaklaşık {0} satır · yaklaşık {1} kelime": "Total about {0} lines · about {1} words",
     "Toplam {0} satır · {1} kelime": "Total {0} lines · {1} words",
     "Arayüz dili": "Interface language", "Arayüz çevriliyor…": "Translating the interface…",
-    "Arayüz {0} diline çevrildi.": "The interface was translated into {0}.",
-    "Bu dilin arayüzü için bir bulut çeviri anahtarı gerekiyor (Gemini, OpenAI, Claude veya DeepL). Şimdilik İngilizce gösteriliyor.":
-        "This interface language needs a cloud translation key (Gemini, OpenAI, Claude or DeepL). Showing English for now.",
+    "Bu arayüz dili için bir bulut anahtarı gerekiyor (Gemini, OpenAI, Claude veya DeepL). Şimdilik İngilizce.": "This interface language needs a cloud key (Gemini, OpenAI, Claude or DeepL). Showing English for now.",
     "Hedef dil de {0} yapıldı.": "The target language was also set to {0}.",
 
     # ── Analiz notları, uyarılar, onaylar, hata ve sağlayıcı mesajları ─────────
     # Yenilikler (1.0.5)
-    "Unity: Utage ve I2 Localization oyunları artık doğrudan çevriliyor (BepInEx gerekmeden)":
-        "Unity: Utage and I2 Localization games are now translated directly (no BepInEx needed)",
-    "Unity: oyunun fontunda olmayan harfler kutu yerine en yakın harfle yazılıyor (ğ→g)":
-        "Unity: letters missing from the game's font are written as the closest letter instead of boxes (ğ→g)",
-    "Arayüz dili: 17 dil, hata mesajları dahil; seçtiğin dil çeviri hedefi de olur":
-        "Interface language: 17 languages, error messages included; your choice also becomes the target language",
-    "Topluluk yamaları: paylaşılan çevirileri uygulama içinden bul, indir ve uygula":
-        "Community patches: find, download and apply shared translations inside the app",
-    'Ortak çeviri belleği: "Save", "Options" gibi metinler her oyunda yeniden çevrilmez':
-        'Shared translation memory: texts like "Save" and "Options" aren\'t translated again for every game',
-    "Çeviri bitince Windows bildirimi (Capri arka plandayken)":
-        "Windows notification when a translation finishes (while Capri is in the background)",
-    "Capri ikinci kez açılınca yeni pencere açılmaz, açık olan öne gelir":
-        "Opening Capri a second time brings the open window to the front instead of opening a new one",
-    "Taramada Unity ve Unreal oyunlarının satır sayısı da görünüyor": "The scan now shows line counts for Unity and Unreal games too",
-    "Çeviri ayarları sadeleştirildi; dar pencerede üst üste binmiyor":
-        "Translation settings were simplified and no longer overlap in a narrow window",
-    "Görev çubuğunda çeviri ilerlemesi; bitince Windows bildirimi (arka plandayken)":
-        "Translation progress on the taskbar; a Windows notification when it finishes (in the background)",
 
     # Analiz
     "Uyumlu": "Compatible", "Eksik": "Missing", "Eksik: {0}": "Missing: {0}", "Font gerekli": "Font needed",
@@ -526,27 +417,14 @@ EN = {
     "Font: {0} uyumlu, {1} Türkçe karakter eksik": "Font: {0} compatible, {1} missing Turkish characters",
     "Font: {0} uyumlu, {1} Türkçe karakter eksik (otomatik font yaması uygulanacak)":
         "Font: {0} compatible, {1} missing Turkish characters (an automatic font patch will be applied)",
-    "Metinler dosyada açık değil: çeviri BepInEx + XUnity.AutoTranslator ile uygulanır (kurulu).":
-        "Text isn't readable in the files: the translation is applied with BepInEx + XUnity.AutoTranslator (installed).",
-    "Metinler dosyada açık değil: çeviri BepInEx + XUnity.AutoTranslator ile uygulanır — tek tıkla kurulabilir.":
-        "Text isn't readable in the files: the translation is applied with BepInEx + XUnity.AutoTranslator — it can be installed in one click.",
-    "Metinler oyun dosyalarında açık değil. Çeviri, oyun içinde BepInEx aracılığıyla gösterilir; BepInEx bu oyunda kurulu.":
-        "The text isn't readable in the game files. The translation is shown in the game through BepInEx; BepInEx is installed in this game.",
-    "Metinler oyun dosyalarında açık değil. Çeviri, oyun içinde BepInEx aracılığıyla gösterilir; kurulum için çeviri sırasında iznin istenir.":
-        "The text isn't readable in the game files. The translation is shown in the game through BepInEx; you'll be asked to allow "
-        "the installation during translation.",
-    "Oyunun fontunda {0} harfleri yok. Kutu olarak görünmesinler diye Capri bunları en yakın harfle yazar (ğ→g, ş→s, ı→i); diğer harfler olduğu gibi kalır.":
-        "The game's font lacks the letters {0}. So they don't show as boxes, Capri writes them as the closest letter (ğ→g, ş→s, ı→i); "
-        "other letters stay as they are.",
+    "Metinler dosyalarda açık değil; çeviri oyun içinde BepInEx ile gösterilir (BepInEx kurulu).": "The text isn't readable in the files; the translation is shown in-game via BepInEx (BepInEx is installed).",
+    "Metinler dosyalarda açık değil; çeviri oyun içinde BepInEx ile gösterilir (kurulumda iznin istenir).": "The text isn't readable in the files; the translation is shown in-game via BepInEx (you'll be asked before installing).",
+    "Oyunun fontunda {0} yok; bu harfler en yakın harfle yazılır (ğ→g, ş→s, ı→i).": "The game's font lacks {0}; those letters are written as the closest letter (ğ→g, ş→s, ı→i).",
     "Oyunun fontunda bazı Türkçe harfler yok; bu harfler oyunda boş ya da farklı görünebilir.":
         "The game's font lacks some Turkish letters; they may appear blank or different in the game.",
-    "Metinler .pak paketlerinde. Çeviri başlarken Capri, paketleri açmak için açık kaynak repak aracını indirip kurmak üzere izin isteyecek (~2 MB).":
-        "The text is in .pak packages. When the translation starts, Capri will ask permission to download the open-source repak tool "
-        "to open them (~2 MB).",
+    "Metinler .pak paketlerinde; çeviri başlarken repak aracı (~2 MB) için izin istenir.": "The text is in .pak files; you'll be asked to allow the repak tool (~2 MB) when translation starts.",
     "Metinler .pak içinde bulunamadı. IoStore kapsayıcılarında da yok.": "No text was found in the .pak files, nor in the IoStore containers.",
-    "Metinler .pak içinde bulunamadı. Bu oyun IoStore kullanıyorsa çeviri başlarken retoc aracı için izin istenir (~3 MB).":
-        "No text was found in the .pak files. If this game uses IoStore, you'll be asked to allow the retoc tool when the translation "
-        "starts (~3 MB).",
+    "Metinler .pak içinde yok; oyun IoStore kullanıyorsa retoc aracı (~3 MB) için izin istenir.": "The text isn't in the .pak files; if the game uses IoStore, you'll be asked to allow the retoc tool (~3 MB).",
     "Paketlerde kaynak dilde metin bulunamadı.": "No text in the source language was found in the packages.",
     "Metinler .pak içinden okundu; çeviri Paks/~mods altına yama paketi olarak yazılır.":
         "The text was read from the .pak files; the translation is written as a patch package under Paks/~mods.",
@@ -564,48 +442,19 @@ EN = {
     # Çeviri, yedek, onaylar
     "{0} satır oyuna yazıldı · {1}": "{0} lines written to the game · {1}", "{0} satır kaydedildi.": "{0} lines saved.",
     "{0} satırda etiket/değişken eksik veya fazla: {1}": "{0} lines have missing or extra tags/variables: {1}",
-    "Oyun orijinal dosyalarına döndürülüp baştan çevrilecek. Önbellekteki satırlar yeniden kullanılır, onlar için API harcanmaz. Devam edilsin mi?":
-        "The game will be restored to its original files and translated from scratch. Cached lines are reused and don't use the API. Continue?",
-    "Oyun baştan çevrilecek. Önbellekteki satırlar yeniden kullanılır, onlar için API harcanmaz. Devam edilsin mi?":
-        "The game will be translated from scratch. Cached lines are reused and don't use the API. Continue?",
-    "Bu oyunun metinlerinin bir kısmı ya da tamamı dosyalarda açık değil (IL2CPP / paketli).\n\n"
-    "Çevirileri oyun içinde göstermek için XUnity.AutoTranslator çeviri dosyaları yazılsın mı?":
-        "Some or all of this game's text isn't readable in the files (IL2CPP / packed).\n\n"
-        "Write XUnity.AutoTranslator translation files to show the translations in the game?",
-    "Bu oyunun metinlerinin bir kısmı ya da tamamı dosyalarda açık değil (IL2CPP / paketli).\n\n"
-    "Çevirileri oyun içinde göstermek için XUnity.AutoTranslator çeviri dosyaları yazılsın mı?\n\n"
-    "Hayır dersen bu oyun çevrilemez: başka çevrilecek metin yok.":
-        "Some or all of this game's text isn't readable in the files (IL2CPP / packed).\n\n"
-        "Write XUnity.AutoTranslator translation files to show the translations in the game?\n\n"
-        "If you say no, this game can't be translated: there's no other text to translate.",
-    "Bu oyunun metinlerinin bir kısmı ya da tamamı dosyalarda açık değil (IL2CPP / paketli).\n\n"
-    "Çevirilerin oyun içinde görünmesi için BepInEx ve XUnity.AutoTranslator GitHub'dan indirilip oyun klasörüne kurulsun mu?\n\n"
-    "Kurulum tek tıkla geri alınabilir.":
-        "Some or all of this game's text isn't readable in the files (IL2CPP / packed).\n\n"
-        "Download BepInEx and XUnity.AutoTranslator from GitHub and install them in the game folder so the translations show in the game?\n\n"
-        "The installation can be undone in one click.",
-    "Bu oyunun metinlerinin bir kısmı ya da tamamı dosyalarda açık değil (IL2CPP / paketli).\n\n"
-    "Çevirilerin oyun içinde görünmesi için BepInEx ve XUnity.AutoTranslator GitHub'dan indirilip oyun klasörüne kurulsun mu?\n\n"
-    "Kurulum tek tıkla geri alınabilir.\n\n"
-    "Hayır dersen bu oyun çevrilemez: başka çevrilecek metin yok.":
-        "Some or all of this game's text isn't readable in the files (IL2CPP / packed).\n\n"
-        "Download BepInEx and XUnity.AutoTranslator from GitHub and install them in the game folder so the translations show in the game?\n\n"
-        "The installation can be undone in one click.\n\n"
-        "If you say no, this game can't be translated: there's no other text to translate.",
+    "Oyun orijinaline döndürülüp baştan çevrilecek; önbellekteki satırlar ücretsiz. Devam edilsin mi?": "The game will be restored and translated from scratch; cached lines are free. Continue?",
+    "Oyun baştan çevrilecek; önbellekteki satırlar ücretsiz. Devam edilsin mi?": "The game will be translated from scratch; cached lines are free. Continue?",
+    "Bu oyunun metinlerinin bir kısmı dosyalarda açık değil (IL2CPP / paketli).\n\nÇeviriyi oyunda göstermek için XUnity.AutoTranslator dosyaları yazılsın mı?": "Some of this game's text isn't readable in its files (IL2CPP / packed).\n\nWrite XUnity.AutoTranslator files to show the translation in-game?",
+    "Bu oyunun metinleri dosyalarda açık değil (IL2CPP / paketli).\n\nÇeviriyi oyunda göstermek için XUnity.AutoTranslator dosyaları yazılsın mı?\n\nHayır dersen bu oyun çevrilemez.": "This game's text isn't readable in its files (IL2CPP / packed).\n\nWrite XUnity.AutoTranslator files to show the translation in-game?\n\nIf you say no, this game can't be translated.",
+    "Bu oyunun metinlerinin bir kısmı dosyalarda açık değil (IL2CPP / paketli).\n\nÇeviriyi oyunda göstermek için BepInEx ve XUnity.AutoTranslator GitHub'dan indirilip kurulsun mu? Tek tıkla geri alınabilir.": "Some of this game's text isn't readable in its files (IL2CPP / packed).\n\nDownload BepInEx and XUnity.AutoTranslator from GitHub and install them to show the translation in-game? You can undo it with one click.",
+    "Bu oyunun metinleri dosyalarda açık değil (IL2CPP / paketli).\n\nÇeviriyi oyunda göstermek için BepInEx ve XUnity.AutoTranslator GitHub'dan indirilip kurulsun mu? Tek tıkla geri alınabilir.\n\nHayır dersen bu oyun çevrilemez.": "This game's text isn't readable in its files (IL2CPP / packed).\n\nDownload BepInEx and XUnity.AutoTranslator from GitHub and install them to show the translation in-game? You can undo it with one click.\n\nIf you say no, this game can't be translated.",
     "BepInEx kuruldu. Oyunu açınca metinler yakalanır; çevrilecek satırlar oyunu oynadıkça oluşur.":
         "BepInEx is installed. Text is captured when you open the game; lines to translate appear as you play.",
-    "Yapılan çeviriler kayıtlı; devam ettiğinde kaldığı yerden sürer, tekrar ücret ödemezsin.":
-        "Finished translations are saved; continuing picks up where it left off and you don't pay again.",
-    "%{0} tamamlanmıştı. Yapılan çeviriler kayıtlı; devam ettiğinde kaldığı yerden sürer, tekrar ücret ödemezsin.":
-        "{0}% was done. Finished translations are saved; continuing picks up where it left off and you don't pay again.",
+    "%{0} tamamlanmıştı. Devam edince kaldığı yerden sürer, tekrar ödemezsin.": "{0}% was done. Continuing picks up where it left off; you won't pay again.",
     "{0} dosya basariyla eski orijinal haline getirildi.": "{0} files were restored to their originals.",
     "Yedek bulunamadı: {0}": "Backup not found: {0}",
 
     # Topluluk, güncelleme
-    "Topluluk deposu ayarlı değil.": "The community repository isn't set.",
-    "GitHub'a ulaşılamadı. İnternet bağlantını kontrol edip tekrar dene.": "Couldn't reach GitHub. Check your internet connection and try again.",
-    "Bu bağlantıdan indirme yapılmaz (yalnızca GitHub konu ekleri).": "Downloads aren't allowed from this link (GitHub issue attachments only).",
-    "Yama dosyası çok büyük (50 MB üstü).": "The patch file is too large (over 50 MB).",
     "Bu derlemede güncelleme kaynağı tanımlı değil.": "This build has no update source.",
     "Sunucuya ulaşılamadı ({0}).": "Couldn't reach the server ({0}).",
     "Geçerli bir GitHub deposu girin (kullanici/depo).": "Enter a valid GitHub repository (user/repo).",
@@ -658,11 +507,8 @@ EN = {
     "DeepL Hatası {0}: {1}": "DeepL error {0}: {1}",
     "OpenAI Hatası: {0}": "OpenAI error: {0}", "Claude Hatası: {0}": "Claude error: {0}", "DeepL Hatası: {0}": "DeepL error: {0}",
     "Ollama HTTP {0} yanıtı verdi.": "Ollama responded with HTTP {0}.",
-    "Ollama servisi çalışmıyor! Lütfen Ollama uygulamasını başlatın veya komut satırından 'ollama serve' yazın.":
-        "The Ollama service isn't running. Start the Ollama app or run 'ollama serve' from the command line.",
+    "Ollama çalışmıyor. Ollama uygulamasını aç ya da 'ollama serve' çalıştır.": "Ollama isn't running. Open the Ollama app or run 'ollama serve'.",
     "Ollama Servisi Aktif ({0} ms) — {1} model yüklü": "Ollama service running ({0} ms) — {1} models installed",
-    "Ollama Aktif ama hiç model yüklenmemiş. 'ollama pull qwen2.5:7b' çalıştırın.":
-        "Ollama is running but no model is installed. Run 'ollama pull qwen2.5:7b'.",
     "Ollama Bağlantı Hatası: {0}": "Ollama connection error: {0}",
     "İndiriliyor: {0}": "Downloading: {0}",
     "{0} indirilemedi! İnternet bağlantınızı kontrol edin: {1}": "Couldn't download {0}. Check your internet connection: {1}",
@@ -683,9 +529,6 @@ EN = {
     "Desteklenmeyen RPA biçimi: {0}": "Unsupported RPA format: {0}",
     "Oyun ana klasöründe Ren'Py çalıştırılabilir dosyası bulunamadı.": "No Ren'Py executable was found in the game's main folder.",
     "Diskte yer yok: {0} için geçici olarak {1} MB boş alan gerekiyor.": "Not enough disk space: {0} temporarily needs {1} MB free.",
-    "Geri alınacak Türkçe yedek bulunamadı.": "No translation backup to undo was found.",
-    "Yedek dosyası oyun klasörünün _turkish_backups dizininde olmalı.":
-        "The backup file must be in the game folder's _turkish_backups directory.",
     "Ren'Py çalışma cache yedeği kayboldu.": "The Ren'Py cache backup is missing.",
     "Çevrilebilir Ren'Py betiği bulunamadı.": "No translatable Ren'Py script was found.",
     "Ren'Py Türkçe çeviri şablonu üretmedi.": "Ren'Py didn't generate a translation template.",
@@ -738,14 +581,6 @@ EN = {
     "Ortalama hıza göre; çeviri başlayınca netleşir": "Based on average speed; it gets more precise once translation starts",
     "{0} anahtar": "{0} keys", "%{0}": "{0}%",
     # 1.0.6
-    'RPG Maker MV/MZ: ortak olaylar, savaş konuşmaları ve kayan metinler de çevriliyor': 'RPG Maker MV/MZ: common events, battle dialogue and scrolling text are translated too',
-    'RPG Maker: Japonca/Çince konuşmacı adları ayrı ve her satırda aynı çevriliyor': 'RPG Maker: Japanese/Chinese speaker names are translated separately and consistently',
-    'RPG Maker: menü terimleri oyuna yazılıyor; [Kılıç] gibi açıklamalar da çevriliyor': 'RPG Maker: menu terms are written to the game; descriptions like [Sword] are translated too',
-    'Oyunda Çince ya da Japonca kalmış satırlar da hedef dile çevriliyor': 'Lines left in Chinese or Japanese in the game are translated into the target language too',
-    'Ollama: TranslateGemma ve MiLMMT çeviri modelleri; Capri içinden tek tıkla kurulum': 'Ollama: TranslateGemma and MiLMMT translation models, installed from Capri in one click',
-    'Ekran çevirisi: gün ışığında konturlu ve sarı altyazılar çok daha iyi okunuyor': 'Screen translation: outlined and yellow subtitles in daylight scenes are read much better',
-    "Japonca/Çince kaynaklı Ren'Py ve RPG Maker VX oyunlarında satırlar artık atlanmıyor": "Lines in Japanese/Chinese-source Ren'Py and RPG Maker VX games are no longer skipped",
-    'Arayüz: Almanca, İspanyolca, Fransızca, Rusça ve diğer sözlükler hazır geliyor': 'Interface: German, Spanish, French, Russian and other dictionaries come ready',
     '{0} hazır ve Ollama için seçildi.': '{0} is ready and selected for Ollama.',
     "Ollama çalışmıyor. Ollama'yı kurup açtıktan sonra tekrar dene (ollama.com).": "Ollama isn't running. Install and open Ollama, then try again (ollama.com).",
     'Ollama indirmeyi reddetti (HTTP {0}).': 'Ollama refused the download (HTTP {0}).',
@@ -753,9 +588,8 @@ EN = {
     '{0} indiriliyor': 'Downloading {0}',
     'Model indirildi': 'Model downloaded',
     '{0} yalnızca çeviri yapar; kalite editörü için sohbet modeli gerekir.': '{0} only translates; the quality editor needs a chat model.',
-    "Ollama Aktif ama hiç model yüklenmemiş. Sağlayıcılar → Ollama'dan önerilen bir çeviri modelini indir.": 'Ollama is running but no model is installed. Download a recommended translation model from Providers → Ollama.',
-    'Yerel · çeviri modelleri': 'Local · translation models',
-    'Bilgisayarında, internetsiz ve kotasız çalışan yerel modeller. Çeviri için eğitilmiş modeller genel sohbet modellerinden çok daha iyi sonuç verir: TranslateGemma ardışık satırları bağlamıyla, MiLMMT tek satırları (ekran çevirisi) hızlıca çevirir. Ollama uygulaması kurulu ve açık olmalı.': 'Local models that run on your computer with no internet or quota. Models trained for translation do much better than general chat models: TranslateGemma translates consecutive lines with their context, MiLMMT quickly translates single lines (screen translation). The Ollama app must be installed and running.',
+    "Ollama açık ama model yok. Sağlayıcılar → Ollama'dan bir çeviri modeli indir.": "Ollama is running but has no models. Download a translation model in Providers → Ollama.",
+    "Ollama programıyla çalışan yerel modeller. Ollama kurulu ve açık olmalı.": "Local models running through the Ollama app. Ollama must be installed and running.",
     'Ekran kartına önerilen': 'Recommended for your GPU',
     'Kullan': 'Use',
     'Seçili': 'Selected',
@@ -768,25 +602,19 @@ EN = {
     'Önerilen': 'Recommended',
     'ardışık satırları bağlamıyla çevirir': 'translates consecutive lines with context',
     'Daha kaliteli': 'Higher quality',
-    '12 GB+ ekran kartı': '12 GB+ GPU',
     'Tek satır': 'Single line',
     'ekran çevirisi için hızlı': 'fast for screen translation',
-    'Helsinki-NLP opus-mt-tc-big-en-tr. ~450 MB, hızlı ve hafif. Lisans: CC-BY 4.0.': 'Helsinki-NLP opus-mt-tc-big-en-tr. ~450 MB, fast and light. License: CC-BY 4.0.',
-    'facebook/nllb-200-distilled-600M. 200 dil; Türkçe dışı hedeflere de çevirir. Lisans: CC-BY-NC 4.0 (yalnızca ticari olmayan kullanım).': 'facebook/nllb-200-distilled-600M. 200 languages; also translates into targets other than Turkish. License: CC-BY-NC 4.0 (non-commercial use only).',
     '{0} satır alınmadı': '{0} lines were not imported',
-    'Bu satırlar kaynakta olmayan etiket, kod, bağlantı ya da satır sonu ekliyordu; güvenlik için yamadan alınmadı.': "These lines added tags, code, links or line breaks that aren't in the source, so they weren't imported for safety.",
-    'Güvenlik: topluluk yaması indirme kaldırıldı; içe aktarılan yamalar denetleniyor': 'Security: community patch downloads removed; imported patches are checked',
+    "Bu satırlar kaynakta olmayan etiket, kod ya da bağlantı ekliyordu; alınmadı.": "These lines added tags, code or links not in the source; they were skipped.",
     '16 GB+ ekran kartı': '16 GB+ GPU',
     # Dahili yerel modeller
     'Yerel model (dahili)': 'Local model (built-in)',
     '{0} indirilmemiş. Yerel Modeller sayfasından tek tıkla indirebilirsin (Ollama gerekmez).': "{0} isn't downloaded. You can download it from the Local Models page in one click (no Ollama needed).",
     'Yerel model hazır': 'Local model ready',
-    '{0} indirildi ve doğrulandı. Sağlayıcılar\'dan "Yerel model (dahili)" motorunu seçerek kullanabilirsin.': '{0} was downloaded and verified. Choose the "Local model (built-in)" engine under Providers to use it.',
+    "{0} indirildi. Kullanmak için Sağlayıcılar → Yerel model.": "{0} downloaded. To use it, go to Providers → Local model.",
     'Yerel model ortamı (llama.cpp) indiriliyor': 'Downloading the local model runtime (llama.cpp)',
     'Yerel model hatası: {0}': 'Local model error: {0}',
     '{0} çalışıyor ({1} ms): {2}': '{0} is working ({1} ms): {2}',
-    'Çevrimdışı · Ollama gerekmez': 'Offline · no Ollama needed',
-    "Çeviri için eğitilmiş modeller (TranslateGemma, MiLMMT) Capri'nin içinde, internetsiz ve kotasız çalışır. Ayrı bir program kurulmaz: Yerel Modeller sayfasından model dosyasını indirmen yeterli.": 'Models trained for translation (TranslateGemma, MiLMMT) run inside Capri with no internet or quota. Nothing else is installed: just download the model file from the Local Models page.',
     'İndirilmedi': 'Not downloaded',
     'Hazır · {0}': 'Ready · {0}',
     'Yüksek sistem gerektirir · {0} GB+ ekran kartı belleği, {1} GB RAM': 'Requires a high-end system · {0} GB+ GPU memory, {1} GB RAM',
@@ -798,10 +626,9 @@ EN = {
     'Hafif': 'Light',
     'İndirildi': 'Downloaded',
     'Yerel çeviri modelleri': 'Local translation models',
-    'Çeviri için eğitilmiş modeller Capri\'nin içinde çalışır: Ollama ya da başka bir program kurmana gerek yok, internet ve kota gerekmez. Model dosyası (GGUF) ve 37 MB\'lık llama.cpp çalışma ortamı yalnızca "İndir"e basınca bu klasöre iner ve SHA-256 ile doğrulanır. Ekran çevirisinde MiLMMT kuruluysa o kullanılır (tek satır ~0,1 sn).': 'Models trained for translation run inside Capri: no Ollama or other program to install, no internet or quota needed. The model file (GGUF) and the 37 MB llama.cpp runtime are downloaded to this folder only when you press "Download", and verified with SHA-256. For screen translation MiLMMT is used if installed (~0.1 s per line).',
     'Çalışma ortamı kurulu': 'Runtime installed',
     'Çalışma ortamı ilk indirmede kurulur': 'The runtime is installed with the first download',
-    'Modeller Gemma kullanım şartlarına tabidir. Ekran kartı yoksa işlemcide çalışır (yaklaşık 5-10 kat yavaş).': 'Models are subject to the Gemma Terms of Use. Without a GPU they run on the CPU (about 5-10 times slower).',
+    "Gemma kullanım şartlarına tabidir. Ekran kartı yoksa işlemcide 5-10 kat yavaş çalışır.": "Subject to the Gemma terms of use. Without a graphics card it runs 5-10× slower on the CPU.",
     '{0} silinsin mi? Tekrar kullanmak için yeniden indirmen gerekir.': "Delete {0}? You'll need to download it again to use it.",
     'Oyun çevirisi · çoğu bilgisayar için': 'Game translation · for most computers',
     'Oyun çevirisi · en iyi kalite': 'Game translation · best quality',
@@ -809,19 +636,40 @@ EN = {
     'Ekran kartıyla ~10 satır/sn, ekran kartsız ~1 satır/sn': '~10 lines/s with a GPU, ~1 line/s without',
     'Ekran kartıyla ~4 satır/sn, ekran kartsız ~0,4 satır/sn (önerilmez)': '~4 lines/s with a GPU, ~0.4 lines/s without (not recommended)',
     'Tek satır ~0,1 sn, ekran kartsız ~0,5 sn': '~0.1 s per line, ~0.5 s without a GPU',
-    'Hızlar RTX 5070 (12 GB) ile ölçüldü; ekran kartına göre değişir. İlk çalıştırma, ekran kartı kodu derlendiği için birkaç saniye uzun sürer.': 'Speeds were measured on an RTX 5070 (12 GB) and vary by GPU. The first run takes a few seconds longer while GPU code is compiled.',
-    'Yerel çeviri modelleri Capri içinde: TranslateGemma ve MiLMMT, Ollama gerekmez': 'Local translation models built into Capri: TranslateGemma and MiLMMT, no Ollama needed',
-    "Metinler Capri'nin doğrudan okuyabildiği bir biçimde değil: çeviri BepInEx + XUnity.AutoTranslator ile uygulanır (kurulu).": "The text isn't in a format Capri can read directly: the translation is applied with BepInEx + XUnity.AutoTranslator (installed).",
-    "Metinler Capri'nin doğrudan okuyabildiği bir biçimde değil: çeviri BepInEx + XUnity.AutoTranslator ile uygulanır — tek tıkla kurulabilir.": "The text isn't in a format Capri can read directly: the translation is applied with BepInEx + XUnity.AutoTranslator — it can be installed in one click.",
-    "Metinler Capri'nin doğrudan okuyabildiği bir biçimde değil (tüm veri tek pakette: data.unity3d): çeviri BepInEx + XUnity.AutoTranslator ile uygulanır (kurulu).": "The text isn't in a format Capri can read directly (all data is in one package: data.unity3d): the translation is applied with BepInEx + XUnity.AutoTranslator (installed).",
-    "Metinler Capri'nin doğrudan okuyabildiği bir biçimde değil (tüm veri tek pakette: data.unity3d): çeviri BepInEx + XUnity.AutoTranslator ile uygulanır — tek tıkla kurulabilir.": "The text isn't in a format Capri can read directly (all data is in one package: data.unity3d): the translation is applied with BepInEx + XUnity.AutoTranslator — it can be installed in one click.",
-    'Bu oyunun metinleri kendi yapısında (ör. PlayMaker, Adventure Creator ya da tek paket data.unity3d) duruyor; Capri bunları dosyadan doğrudan çeviremiyor. Çeviri, oyunda ekrana gelen metni yakalayan BepInEx + XUnity.AutoTranslator ile yapılır: oyunu oynadıkça metinler toplanır; BepInEx bu oyunda kurulu.': "This game keeps its text in its own structure (e.g. PlayMaker, Adventure Creator or a single data.unity3d package); Capri can't translate it from the files directly. The translation is done with BepInEx + XUnity.AutoTranslator, which captures the text shown on screen: text is collected as you play; BepInEx is installed in this game.",
-    'Bu oyunun metinleri kendi yapısında (ör. PlayMaker, Adventure Creator ya da tek paket data.unity3d) duruyor; Capri bunları dosyadan doğrudan çeviremiyor. Çeviri, oyunda ekrana gelen metni yakalayan BepInEx + XUnity.AutoTranslator ile yapılır: oyunu oynadıkça metinler toplanır; kurulum için çeviri sırasında iznin istenir.': "This game keeps its text in its own structure (e.g. PlayMaker, Adventure Creator or a single data.unity3d package); Capri can't translate it from the files directly. The translation is done with BepInEx + XUnity.AutoTranslator, which captures the text shown on screen: text is collected as you play; you'll be asked to allow the installation during translation.",
-    "Metinler oyunun kendi bileşenlerinden (PlayMaker, UI Text/TextMeshPro, dil tabloları) okundu. Çeviri İngilizce metnin yerine yazılır; oyunda dil seçeneğinden English'i seçince Türkçe görünür. Dil menüsündeki English yazısı da Türkçe olur.": "The text was read from the game's own components (PlayMaker, UI Text/TextMeshPro, language tables). The translation replaces the English text; choose English in the game's language option to see it. The English label in the language menu becomes the new language too.",
-    'Bu oyunun metinleri oyunun kendi bileşenlerinde (PlayMaker, UI Text/TextMeshPro ya da tek paket data.unity3d). Capri bunları oyunun tip bilgisiyle okuyup doğrudan çevirebilir; bunun için bileşen okuyucusunun ({0} MB) bir kez indirilmesi gerekir. Kaynak: PyPI, TypeTreeGeneratorAPI {1}; dosya SHA-256 ile doğrulanır. İndirilsin mi? Hayır dersen çeviri BepInEx ile oyun içinde yapılabilir.': "This game keeps its text in its own components (PlayMaker, UI Text/TextMeshPro or a single data.unity3d package). Capri can read them with the game's type information and translate them directly; this needs the component reader ({0} MB) to be downloaded once. Source: PyPI, TypeTreeGeneratorAPI {1}; the file is verified with SHA-256. Download it? If you say no, the game can be translated in-game with BepInEx.",
+    "Hızlar RTX 5070 ile ölçüldü; ilk çalıştırma birkaç saniye uzun sürer.": "Speeds measured on an RTX 5070; the first run takes a few seconds longer.",
+    "Metinler dosyada açık değil: çeviri BepInEx + XUnity.AutoTranslator ile yapılır (kurulu).": "The text isn't readable in the files: translation uses BepInEx + XUnity.AutoTranslator (installed).",
+    "Metinler dosyada açık değil: çeviri BepInEx + XUnity.AutoTranslator ile yapılır — tek tıkla kurulur.": "The text isn't readable in the files: translation uses BepInEx + XUnity.AutoTranslator — one-click install.",
+    "Tüm veri tek pakette (data.unity3d): çeviri BepInEx + XUnity.AutoTranslator ile yapılır (kurulu).": "All data is in one package (data.unity3d): translation uses BepInEx + XUnity.AutoTranslator (installed).",
+    "Tüm veri tek pakette (data.unity3d): çeviri BepInEx + XUnity.AutoTranslator ile yapılır — tek tıkla kurulur.": "All data is in one package (data.unity3d): translation uses BepInEx + XUnity.AutoTranslator — one-click install.",
+    "Bu oyunun metinleri dosyadan çevrilemiyor. Çeviri, oyun içinde BepInEx + XUnity.AutoTranslator ile yapılır (BepInEx kurulu).": "This game's text can't be translated from its files. Translation happens in-game with BepInEx + XUnity.AutoTranslator (BepInEx is installed).",
+    "Bu oyunun metinleri dosyadan çevrilemiyor. Çeviri, oyun içinde BepInEx + XUnity.AutoTranslator ile yapılır; kurulum için iznin istenir.": "This game's text can't be translated from its files. Translation happens in-game with BepInEx + XUnity.AutoTranslator; you'll be asked before installing.",
+    "Metinler oyunun bileşenlerinden okundu. Oyunda dil olarak English'i seçince Türkçe görünür.": "The text was read from the game's components. Choose English as the game language to see the translation.",
+    "Bu oyunun metinleri Unity bileşenlerinde (PlayMaker, Naninovel, UI Text). Okumak için bileşen okuyucusu ({0} MB, PyPI: TypeTreeGeneratorAPI {1}, SHA-256 doğrulamalı) bir kez indirilsin mi? Hayır dersen BepInEx ile çevrilebilir.": "This game's text is inside Unity components (PlayMaker, Naninovel, UI Text). Download the component reader once to read it ({0} MB, PyPI: TypeTreeGeneratorAPI {1}, SHA-256 verified)? If you say no, it can be translated with BepInEx.",
     'Unity bileşen okuyucusu': 'Unity component reader',
     'Unity bileşen okuyucusu indiriliyor…': 'Downloading the Unity component reader…',
     'Unity bileşen okuyucusu indirilemedi; çeviri BepInEx ile yapılabilir.': "The Unity component reader couldn't be downloaded; the game can be translated with BepInEx.",
-    'Oyunun bileşenlerinde açık metin: {0} PlayMaker, {1} arayüz, {2} tablo satırı. Doğrudan çevrilir (BepInEx gerekmez); oyunda dil olarak English seçilince Türkçe görünür.': "Readable text in the game's components: {0} PlayMaker, {1} interface, {2} table rows. Translated directly (no BepInEx needed); choose English as the game language to see it.",
+    "Bileşenlerde açık metin: {0} PlayMaker, {1} arayüz, {2} tablo satırı. BepInEx gerekmez; oyunda English'i seç.": "Readable component text: {0} PlayMaker, {1} interface, {2} table rows. No BepInEx needed; choose English in the game.",
     "Unity: PlayMaker, UI Text/TextMeshPro ve data.unity3d metinleri BepInEx'siz çevriliyor": 'Unity: PlayMaker, UI Text/TextMeshPro and data.unity3d text is translated without BepInEx',
+    "Naninovel senaryosu açık: {0} satır, {1} arayüz metni. BepInEx gerekmez; oyunda English'i seç.": "Readable Naninovel script: {0} lines, {1} interface texts. No BepInEx needed; choose English in the game.",
+    "Naninovel oyunu: oyunda dil olarak English'i seçince Türkçe görünür.": "Naninovel game: choose English as the game language to see the translation.",
+    # ── 1.0.7: sade sağlayıcılar ve kısa açıklamalar ──
+    "Yerel model": "Local model",
+    "Capri'nin içinde · internetsiz": "Built into Capri · offline",
+    "Capri'nin içinde çalışan çeviri modelleri. Ek program, internet ya da kota gerekmez.": "Translation models that run inside Capri. No extra program, internet or quota needed.",
+    "Harici program": "External program",
+    "Bilgisayarında": "On your computer",
+    "İngilizce → Türkçe, çok hızlı · ekran kartı": "English → Turkish, very fast · graphics card",
+    "200 dil · ekran kartı": "200 languages · graphics card",
+    "Devam edince kaldığı yerden sürer, tekrar ödemezsin.": "Continuing picks up where it left off; you won't pay again.",
+    "İlk çevirideki 1-3 saniyelik beklemeyi önler: ekran kartını hazırlar ve seçili OPUS/NLLB modelini belleğe yükler. Bulut motorlarını etkilemez.": "Avoids the 1-3 second wait on the first translation: prepares the graphics card and loads the selected OPUS/NLLB model into memory. Cloud engines are not affected.",
+    "TranslateGemma ve MiLMMT Capri'nin içinde çalışır; Ollama, internet ya da kota gerekmez. Dosyalar SHA-256 ile doğrulanır.": "TranslateGemma and MiLMMT run inside Capri; no Ollama, internet or quota needed. Files are verified with SHA-256.",
+    "~450 MB, çok hızlı. Lisans: CC-BY 4.0.": "~450 MB, very fast. License: CC-BY 4.0.",
+    "200 dil. Lisans: CC-BY-NC 4.0 (ticari olmayan kullanım).": "200 languages. License: CC-BY-NC 4.0 (non-commercial use).",
+    "Ekran kartı modelleri": "Graphics card models",
+    # ── 1.0.7: sade sağlayıcılar ve kısa açıklamalar ──
+    "Unity: Naninovel görsel romanları dosyadan çevriliyor (BepInEx gerekmez)": "Unity: Naninovel visual novels are translated from their files (no BepInEx needed)",
+    "Ren'Py: diyaloğu argümanla veren oyunlarda bütün satırlar çevriliyor": "Ren'Py: games that pass dialogue as an argument now get every line translated",
+    "Sağlayıcılar sadeleşti: yerel modeller (TranslateGemma, OPUS-MT, NLLB) tek kartta": "Simpler providers: local models (TranslateGemma, OPUS-MT, NLLB) share one card",
+    "Açıklamalar kısaldı; ana sayfada ekran çevirisi (OCR) de görünüyor": "Shorter descriptions; screen translation (OCR) is listed on the home page too",
 }
+

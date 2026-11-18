@@ -196,3 +196,34 @@ class TestFontScanning:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+def test_ui_string_scan_is_not_cut_at_a_few_thousand(tmp_path):
+    """Diyaloğu argümanla veren oyunlar (call show_line(..., text="…")) binlerce satır üretir; eskiden
+    6000'de kesiliyordu ve alfabetik sırada sonra gelen karakterlerin sahneleri İngilizce kalıyordu."""
+    import engine_renpy
+    from types import SimpleNamespace
+
+    game_dir = tmp_path / "game"
+    (game_dir / "scripts").mkdir(parents=True)
+    lines = "label start:\n" + "".join(
+        f'    call show_line(npc, look = "smile", text = "Line number {i} is here.")\n' for i in range(6500))
+    (game_dir / "scripts" / "zz_last.rpy").write_text(lines, encoding="utf-8")
+    tl_dir = game_dir / "tl" / "Turkish"
+    tl_dir.mkdir(parents=True)
+    info = SimpleNamespace(game_dir=game_dir, archives=[])
+    logs = []
+    result = engine_renpy.augment_ui_string_templates(info, tl_dir, logs.append)
+    assert result["added"] == 6500 and not result["truncated"]
+    text = (tl_dir / "zz_renptr_ui_strings.rpy").read_text(encoding="utf-8")
+    assert 'old "Line number 6499 is here."' in text
+    assert engine_renpy.augment_ui_string_templates(info, tl_dir, logs.append, limit=10)["truncated"]
+    assert any("UYARI" in line for line in logs), "sınır aşılırsa sessizce kesilmez"
+
+
+def test_short_exclamations_are_text_but_file_names_are_not():
+    import engine_renpy
+    for text in ("A-Alright.", "Aaah...", "A-Ah...", "Okay."):
+        assert engine_renpy._looks_translatable_ui_text(text), text
+    for text in ("Save.es3", "gui.button", "images/bg.png", "a.b"):
+        assert not engine_renpy._looks_translatable_ui_text(text), text

@@ -375,7 +375,7 @@ def extract_texts_unity(info: UnityGameInfo, log: LogFn = print) -> List[UnityTe
             typed = unity_typed.scan(info, log)
             items.extend(typed.items)
             info.typed_counts = typed.counts
-            if typed.tmp_glyphs and not info.tmp_glyphs:
+            if typed.tmp_glyphs:   # tip bilgisiyle bulunan: dinamik atlas + yedek font zinciri dahil (daha doğru)
                 info.tmp_glyphs = typed.tmp_glyphs
         else:
             info.typed_reader_missing = True

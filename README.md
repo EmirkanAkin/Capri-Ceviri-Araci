@@ -4,193 +4,110 @@
 
 # Capri
 
-**Oyunları yapay zekâyla Türkçeye (ve 17 dile) çeviren masaüstü stüdyo.**
-Ren'Py · Unity · Unreal Engine · RPG Maker · JSON — artı oyun ekranını canlı çeviren OCR.
+**Oyunları yapay zekâyla Türkçeye (ve 17 dile) çeviren masaüstü uygulaması.**
+Ren'Py · Unity · Unreal Engine · RPG Maker · JSON · ekran çevirisi (OCR)
 
 ![Windows 10/11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows&logoColor=white)
 ![Python 3.11](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)
 [![Son sürüm](https://img.shields.io/github/v/release/EmirkanAkin/Capri-Ceviri-Araci?label=son%20s%C3%BCr%C3%BCm&color=dfe86b)](https://github.com/EmirkanAkin/Capri-Ceviri-Araci/releases/latest)
-![Testler](https://img.shields.io/badge/testler-220%20ge%C3%A7ti-86e0a0)
+![Testler](https://img.shields.io/badge/testler-315%20ge%C3%A7ti-86e0a0)
 
-<img src="docs/media/capri-home.gif" width="860" alt="Capri ana sayfası: canlı çeviri vitrini">
+<img src="docs/media/capri-home.gif" width="860" alt="Capri ana sayfası">
 
 </div>
 
-## İçindekiler
-- [Öne çıkanlar](#öne-çıkanlar)
-- [İndir ve çalıştır](#indir-ve-çalıştır)
-- [Desteklenen oyun motorları](#desteklenen-oyun-motorları)
-- [Çeviri motorları](#çeviri-motorları)
-- [Ekran çevirisi (OCR)](#ekran-çevirisi-ocr)
-- [Ekran görüntüleri](#ekran-görüntüleri)
-- [Güvenlik ve gizlilik](#güvenlik-ve-gizlilik)
-- [Kaynak koddan çalıştırma](#kaynak-koddan-çalıştırma)
-- [Proje yapısı](#proje-yapısı)
-- [Lisans ve proje ekibi](#lisans-ve-proje-ekibi)
+## Neler yapar?
+- **Tek tıkla oyun çevirisi:** Oyun klasörünü seç; motor algılanır, dosyalar yedeklenir, çeviri oyuna yazılır.
+  Durdurursan kaldığın yerden, yeniden ödemeden devam eder.
+- **Oyun kodları bozulmaz:** `{i}`, `[mc]`, `\C[3]`, `{0}`, `<color>` gibi etiketler korunur.
+- **Ekran çevirisi:** Kısayola bas, alanı seç, çeviri yanında çıksın. Altyazılar için alan sabitlenip canlı çevrilir.
+- **Bulut ya da yerel:** Gemini, OpenAI, Claude, DeepL ya da internetsiz yerel modeller (TranslateGemma, OPUS-MT, NLLB).
+- **Düzelt ve paylaş:** Çeviri Editörü'nde satırları düzelt, `.capripatch` olarak paylaş.
+- **Geri alınabilir:** Her değişiklik yedeklenir; Yedekler sayfasından tek tıkla orijinale dönülür.
 
-## Öne çıkanlar
-- **Tek tıkla oyun çevirisi:** Oyun klasörünü sürükleyip bırak; motor otomatik algılanır, metinler çıkarılır,
-  dosyalar yedeklenir ve çeviri oyuna yazılır. Durdurup kaldığın yerden devam edebilirsin.
-- **Etiketler bozulmaz:** `{i}`, `[mc]`, `\C[3]`, `{0}`, `<color>` gibi oyun kodları korunur; bozulan satırlar
-  inceleme listesine düşer.
-- **Ekran çevirisi:** Kısayola bas, alanı seç, çeviri anında çıksın. Ya da alanı sabitle, metin değiştikçe
-  canlı çevrilsin.
-- **Oyuna özel bağlam:** Karakter adları otomatik taranır; terimler, hitap (sen/siz) ve oyun notları yapay
-  zekâya talimat olarak gider.
-- **Çeviri Editörü ve yama paylaşımı:** Satırları düzelt, API harcamadan oyuna uygula, `.capripatch` olarak paylaş.
-  İçe aktarılan yamalar satır satır denetlenir: kaynakta olmayan etiket, kod ya da bağlantı ekleyen satırlar alınmaz.
-- **Şifreli arşivler:** RPG Maker `Game.rgss3a / .rgss2a / .rgssad` arşivleri dahili olarak açılır; Unreal `.pak`
-  paketleri için gereken araç, sana sorulduktan sonra kurulur.
-- **Otomatik oyun bulma:** Steam, Epic, GOG ve oyun klasörlerindeki çevrilebilir oyunlar kütüphanede öneri olarak çıkar.
-- **Çevrimdışı mod:** OPUS-MT ve NLLB-200 ekran kartında, internetsiz ve kotasız çalışır.
-- **17 arayüz dili:** Üst çubuktan dili seç; çeviri hedefi de o dile geçer.
+## İndir
+1. **[Capri-win64.zip](https://github.com/EmirkanAkin/Capri-Ceviri-Araci/releases/latest/download/Capri-win64.zip)** dosyasını indir.
+2. İstediğin klasöre aç, **`Capri.exe`**'yi çalıştır. Kurulum gerekmez.
+3. Bulut motoru için **Sağlayıcılar**'a API anahtarını gir (Gemini'nin ücretsiz anahtarı yeterli) ya da
+   **Yerel Modeller**'den internetsiz bir model indir.
 
-## İndir ve çalıştır
-1. **[Capri-win64.zip](https://github.com/EmirkanAkin/Capri-Ceviri-Araci/releases/latest/download/Capri-win64.zip)** dosyasını indir
-   (ya da [Sürümler](https://github.com/EmirkanAkin/Capri-Ceviri-Araci/releases) sayfasından).
-2. Zip'i istediğin klasöre aç ve **`Capri.exe`**'yi çalıştır. Kurulum gerekmez; klasörü dilediğin yere
-   taşıyabilirsin. Ayarlar, önbellekler ve modeller bu klasörde tutulur.
-3. Bulut motorları (Gemini, OpenAI, Claude, DeepL) için **Sağlayıcılar** sayfasına API anahtarını gir.
-   Gemini'nin ücretsiz anahtarı başlamak için yeterli.
-4. **Güncellemeler:** Yeni sürüm çıkınca Capri açılışta haber verir. İstediğin an üst çubuktaki indirme simgesine
-   basıp kontrol edebilirsin; "İndir ve kur" dediğinde indirir, kurar ve yeniden açılır. Ayarların, sözlüklerin,
-   önbelleklerin ve modellerin korunur.
+Güncellemeler uygulama içinden gelir; ayarların korunur. Windows 10/11 64 bit ve WebView2 gerekir (Windows 11'de hazır).
 
-> **"Windows kişisel bilgisayarınızı korudu" uyarısı çıkarsa:** Capri henüz kod imzalı olmadığı için SmartScreen
-> yeni uygulamalarda bu uyarıyı gösterebilir. **Ek bilgi → Yine de çalıştır** ile açabilirsin. Kaynak kodun tamamı bu
-> depoda, sürüm paketi de GitHub Actions ile buradaki koddan derleniyor.
+> **SmartScreen uyarısı:** Capri henüz kod imzalı değil. **Ek bilgi → Yine de çalıştır** ile açabilirsin. Sürüm paketi
+> GitHub Actions ile bu depodaki koddan derlenir.
 
-> **Gerekenler:** Windows 10/11 64 bit ve Microsoft Edge WebView2 (Windows 11'de hazır gelir).
-> Yerel modelleri ilk kez kullandığında Capri, ekran kartına uygun PyTorch'u (NVIDIA'da ≈2,9 GB) indirmek için
-> izin ister; modeller **Yerel Modeller** sayfasından tek tıkla iner.
-
-## Desteklenen oyun motorları
-| Motor | Ne çevrilir | Notlar |
-| --- | --- | --- |
-| **Ren'Py** | `.rpy`, `.rpyc`, `.rpa` | 17 hedef dil, diyalog sırasıyla bağlamlı çeviri, Türkçede kalite turu, otomatik font yaması |
-| **Unity** | `resources.assets` / `sharedassets` TextAsset, StreamingAssets, **Utage** senaryoları, **I2 Localization**, **PlayMaker** FSM, UI Text / TextMeshPro ve çok dilli XML (tek paket `data.unity3d` dahil; tip bilgisi oyunun DLL'lerinden) | IL2CPP'de de doğrudan; dosyada metni olmayan oyunlarda BepInEx + XUnity.AutoTranslator otomatik kurulumu |
-| **Unreal Engine 4/5** | `.locres` (açık, `.pak` ya da `.utoc` içinde) | Paketler `repak` / `retoc` ile okunur, çeviri `Paks/~mods` altına yama paketi olur; şifreli oyunlarda AES anahtarı girilebilir |
-| **RPG Maker MV / MZ** | `data/*.json` | Diyalog, seçenekler, veritabanı, sistem terimleri |
-| **RPG Maker XP / VX / VX Ace** | `Data/*.rxdata / .rvdata / .rvdata2` | Değişmeyen her bayt korunur; şifreli arşivler otomatik açılır ve yedeklenir |
-| **Diğer** | Herhangi bir `.json` dil dosyası | JSON Çevirici: anahtarlar ve kod parçaları korunur |
+## Desteklenen oyunlar
+| Motor | Ne çevrilir |
+| --- | --- |
+| **Ren'Py** | `.rpy`, `.rpyc`, `.rpa`; otomatik font yaması |
+| **Unity** | TextAsset, StreamingAssets, Utage, I2 Localization, PlayMaker, UI Text / TextMeshPro, çok dilli XML, **Naninovel** (tek paket `data.unity3d` dahil). Dosyada metni olmayan oyunlarda BepInEx + XUnity.AutoTranslator |
+| **Unreal Engine 4/5** | `.locres` (açık, `.pak` ya da IoStore içinde); çeviri `~mods` yama paketi olur |
+| **RPG Maker MV / MZ** | `data/*.json`: diyalog, seçenekler, veritabanı, terimler |
+| **RPG Maker XP / VX / VX Ace** | `.rxdata / .rvdata / .rvdata2`, şifreli arşivler dahil |
+| **Diğer** | Herhangi bir `.json` dil dosyası |
 
 ## Çeviri motorları
-| Motor | Tür | Öne çıkan |
+<img src="docs/media/providers.png" width="860" alt="Sağlayıcılar sayfası">
+
+| Motor | Nerede | Not |
 | --- | --- | --- |
-| Google Gemini | Bulut | Tüm uygun modeller hız sırasıyla denenir; birden fazla anahtarla paralel çeviri |
-| OpenAI · Claude · DeepL | Bulut | Etiket doğrulamalı toplu çeviri |
-| Yerel model (dahili) | Yerel, Ollama'sız | TranslateGemma ve MiLMMT Capri'nin içinde (llama.cpp) çalışır; tek tıkla indirilir |
-| Ollama | Yerel çeviri modelleri | Ollama kuruluysa aynı modeller onun üzerinden de kullanılabilir |
-| OPUS-MT | Yerel (GPU) | İngilizce → Türkçe, çok hızlı (CC-BY 4.0) |
-| NLLB-200 | Yerel (GPU) | 200 dil; fp16'ya küçültülebilir (2,3 → 1,2 GB). Lisansı CC-BY-NC 4.0: yalnızca ticari olmayan kullanım |
+| Google Gemini | Bulut | Hızlı; birden fazla anahtar paralel çalışır |
+| OpenAI · Claude · DeepL | Bulut | API anahtarıyla |
+| Yerel model | Bilgisayarında | TranslateGemma 4B/12B, MiLMMT (ekran çevirisi), OPUS-MT (EN→TR), NLLB-200. Ek program gerekmez |
+| Ollama | Bilgisayarında | Ollama kuruluysa aynı modeller onun üzerinden |
 
-**Hangi yerel model?** Genel sohbet modelleri (Qwen, Llama…) çeviride zayıf kalır; çeviri için eğitilmiş modelleri seç.
-Yerel Modeller sayfasından indirilir, Ollama ya da başka bir program gerekmez (37 MB'lık llama.cpp ortamı ilk indirmede
-kurulur; her dosya SHA-256 ile doğrulanır). Ölçüm (RTX 5070, 12 GB):
-
-| Model | Boyut | Sistem | Ekran kartıyla | Ekran kartsız |
-| --- | --- | --- | --- | --- |
-| TranslateGemma 4B | 2,5 GB | Hafif: 4 GB ekran kartı ya da 8 GB RAM | ~10 satır/sn | ~1 satır/sn |
-| TranslateGemma 12B | 7,3 GB | **Yüksek sistem:** 10 GB+ ekran kartı, 16 GB RAM | ~4 satır/sn, en iyi kalite | ~0,4 satır/sn |
-| MiLMMT-46 4B | 2,5 GB | Hafif (ekran çevirisi) | tek satır ~0,1 sn | tek satır ~0,5 sn |
-
-Oyun etiketleri ve kodları ölçümde 80 satırın 79-80'inde korundu. Modeller Gemma kullanım şartlarına tabidir; kalite
-editörü olarak kullanılamazlar (düzeltmeleri Gemini yazar).
+Yerel modeller tek tıkla iner ve SHA-256 ile doğrulanır. TranslateGemma 4B, 4 GB ekran kartında saniyede ~10 satır
+çevirir; 12B en iyi kaliteyi verir (10 GB+ ekran kartı). Modeller Gemma kullanım şartlarına, NLLB ticari olmayan
+kullanım lisansına (CC-BY-NC 4.0) tabidir.
 
 ## Ekran çevirisi (OCR)
-<img src="docs/media/capri-ocr.gif" width="420" align="right" alt="Ekran çevirisi animasyonu">
+<img src="docs/media/capri-ocr.gif" width="400" align="right" alt="Ekran çevirisi">
 
-- **`Ctrl+Shift+T`** → ekran donar, alanı sürükle, çeviri temaya uygun bir pencerede açılır (kopyala / sabitle).
-- **`Ctrl+Shift+Y`** → alanı sabitle; metin değiştikçe yeniden okunur ve çevrilir. Aynı kısayol kapatır.
-- Windows'un yerleşik OCR motoru kullanılır (alan başına ~5-15 ms). Fare hangi monitördeyse orası yakalanır.
-- Gün ışığındaki konturlu ya da sarı altyazılar okunamazsa yazı arka plandan ayıklanıp yeniden okunur
-  (yapay altyazı karelerinde gökyüzü üzerindeki konturlu yazı %73 → %97, sarı yazı %48 → %96).
-- Çeviri pencereleri ekran yakalamaya görünmez; Capri kendi yazdığını tekrar okumaz.
-- En hızlı canlı çeviri için motoru OPUS (GPU) seç: değişimden ekrana ~0,4 sn.
+- **`Ctrl+Shift+T`**: ekran donar, alanı seç, çeviri açılır.
+- **`Ctrl+Shift+Y`**: alanı sabitle; metin değiştikçe yeniden çevrilir.
+- Windows'un yerleşik OCR'ı kullanılır; indirme gerekmez.
+- Çeviri pencereleri ekran yakalamaya görünmez, Capri kendi yazısını okumaz.
 
 <br clear="right">
 
 ## Ekran görüntüleri
-<img src="docs/media/capri-tour.gif" width="860" alt="Metin çevirici, ekran çevirisi ve yerel modeller sayfaları">
+<img src="docs/media/capri-tour.gif" width="860" alt="Capri sayfaları">
 
-| Metin çevirici | Yerel modeller ve GPU |
-| --- | --- |
-| <img src="docs/media/translator.png" alt="Metin çevirici"> | <img src="docs/media/models.png" alt="Yerel modeller"> |
-| **Ekran çevirisi ayarları** | **Stüdyo** |
-| <img src="docs/media/ocr.png" alt="Ekran çevirisi ayarları"> | <img src="docs/media/studio.png" alt="Stüdyo"> |
+| Yerel modeller | Ekran çevirisi | Metin çevirici |
+| --- | --- | --- |
+| <img src="docs/media/models.png" alt="Yerel modeller"> | <img src="docs/media/ocr.png" alt="Ekran çevirisi"> | <img src="docs/media/translator.png" alt="Metin çevirici"> |
 
 ## Güvenlik ve gizlilik
-- **API anahtarları** Windows Kimlik Bilgisi Yöneticisi'nde şifreli (DPAPI) saklanır; diske düz metin yazılmaz.
-- **Oyun dosyaları** değiştirilmeden önce yedeklenir; **Yedekler** sayfasından tek tıkla geri alınır.
-  Açılan şifreli arşivler ve eklenen yama paketleri de geri alınabilir.
-- **Ek araçlar ve kütüphaneler** (repak, BepInEx, PyTorch) yalnızca gerektiğinde ve **sana ne kurulacağı
-  söylenip onay alındıktan sonra** resmi kaynaklarından indirilir.
-- Metinler yalnızca seçtiğin çeviri sağlayıcısına gönderilir; yerel modellerde bilgisayarından çıkmaz.
-- Capri kullanım verisi toplamaz. Hangi durumda nereye bağlandığı [gizlilik sayfasında](PRIVACY.md) yazıyor.
-- **Kaldırmak için** uygulama klasörünü silmen yeterli. Çevirdiğin oyunları önce **Yedekler** sayfasından orijinaline
-  döndürebilirsin; kayıtlı API anahtarları Windows Kimlik Bilgisi Yöneticisi'nden silinebilir.
+- API anahtarları Windows Kimlik Bilgisi Yöneticisi'nde şifreli saklanır.
+- Oyun dosyaları değiştirilmeden önce yedeklenir.
+- Ek araçlar (repak, BepInEx, PyTorch, Unity bileşen okuyucusu) yalnızca gerektiğinde ve **onayın alınarak** resmi
+  kaynaklarından indirilir.
+- Metinler yalnızca seçtiğin sağlayıcıya gider; yerel modellerde bilgisayarından çıkmaz. Capri kullanım verisi
+  toplamaz ([gizlilik](PRIVACY.md)).
+- Kaldırmak için klasörü silmen yeterli (önce oyunları Yedekler'den orijinaline döndürebilirsin).
 
-## Kaynak koddan çalıştırma
+## Geliştirme
 ```bash
 git clone https://github.com/EmirkanAkin/Capri-Ceviri-Araci.git
 cd Capri-Ceviri-Araci
 pip install -r requirements.txt     # Python 3.11
-pythonw Capri.pyw                   # ya da: python app_modern.py
+pythonw Capri.pyw                   # kaynak koddan çalıştır
+python -m pytest -m "not slow"      # testler
+python build_exe.py --zip           # dist/Capri-win64.zip
 ```
 
-Taşınabilir sürümü derlemek için:
-```bash
-python build_exe.py --zip           # dist/Capri + dist/Capri-win64.zip
-```
+Sürüm yayımlamak için `src/app_modern.py` içindeki `APP_VERSION`'ı artır, [CHANGELOG.md](CHANGELOG.md)'ye bölüm ekle ve
+`v<sürüm>` etiketini gönder; GitHub Actions test eder, derler ve yayımlar.
 
-**Yeni sürüm yayımlamak:** `src/app_modern.py` içindeki `APP_VERSION` değerini artır, `CHANGELOG.md`'ye bölüm ekle ve
-`git tag v<sürüm> && git push --tags` çalıştır. GitHub Actions test eder, derler ve sürümü zip'iyle yayımlar.
-Güncelleme kaynağı derleme sırasında git'in `origin` adresinden okunup exe'ye yazılır; kullanıcıların hiçbir
-ayar yapması gerekmez.
-
-Testler:
-```bash
-python -m pytest            # GPU/model yoksa ilgili testler atlanır
-python -m pytest -m "not slow"
-```
-
-## Proje yapısı
 ```text
-Capri.pyw            Konsolsuz başlatıcı (kaynak koddan)
-build_exe.py         Taşınabilir sürüm derleme
-src/                 Uygulama kaynak kodu
-  app_modern.py        Arayüz köprüsü ve çeviri iş akışları (giriş noktası)
-  engine_renpy.py      Ren'Py (rpy/rpyc/rpa, şablonlar, Gemini, font yaması)
-  engine_unity.py      Unity (TextAsset, StreamingAssets, TMP fontları) · unity_utage.py, unity_i2.py,
-                       unity_typed.py (PlayMaker/UI/XML, tip bilgisiyle), unity_bepinex.py, bepinex_installer.py
-  engine_unreal.py     Unreal (.locres) · unreal_pak.py (.pak / repak), unreal_modding.py (~mods)
-  engine_rpgmaker.py   RPG Maker MV/MZ ve XP/VX/VX Ace · rgss_marshal.py, rgss_archive.py
-  engine_json.py       Motor bağımsız JSON çevirici
-  engine_common.py     Önbellek, çeviri belleği, sözlük, kalite denetimi, yerel motorlar
-  providers.py         Sağlayıcılar, bağlantı testleri, model indirme · languages.py
-  progress.py          Süre tahmini ve canlı kalan süre · user_errors.py (anlaşılır hata metinleri)
-  gpu_runtime.py       Yerel model ortamı (PyTorch) kurulumu
-  game_scanner.py      Bilgisayardaki oyunları bulma
-  ocr.py               Ekran çevirisi: yakalama, Windows OCR, canlı izleyici, kısayollar
-  library.py           Proje kütüphanesi ve Steam kapak görselleri · patch_safety.py (yama denetimi)
-  backup_system.py     Yedekleme / geri yükleme
-  secrets_store.py     Windows Kimlik Bilgisi Yöneticisi
-  updater.py           Uygulama içi güncelleme · single_instance.py (tek pencere)
-  i18n.py              Arayüz dilleri · i18n_en.py (İngilizce sözlük; diğer diller bundan üretilir)
-  taskbar.py           Görev çubuğu simgesindeki ilerleme
-  paths.py             Kaynak kod / exe klasör düzeni
-web/                 Arayüz: index.html, app.css, app.js, i18n.js, OCR pencereleri, fontlar
-data/                Varsayılan sözlükler (genel, RPG Maker, yetişkin, terimler)
-assets/              Logo ve uygulama simgesi
-docs/                README görselleri ve yol haritası
-tests/               pytest testleri
+src/       Uygulama: app_modern.py (giriş, arayüz köprüsü), engine_*.py (motorlar), unity_*.py, unreal_*.py,
+           rgss_*.py (motor yardımcıları), providers.py ve local_llm.py (çeviri motorları), ocr.py, i18n*.py
+web/       Arayüz (HTML/CSS/JS) ve OCR pencereleri
+data/      Varsayılan sözlükler ve arayüz dilleri
+tests/     pytest testleri
+docs/      README görselleri ve yol haritası
 ```
 
-Değişiklikler için [CHANGELOG.md](CHANGELOG.md), planlanan işler için [docs/YOL_HARITASI.md](docs/YOL_HARITASI.md).
-
-## Lisans ve proje ekibi
-Capri [MIT lisansı](LICENSE) ile dağıtılır. Kullanılan bileşenler: [üçüncü taraf bildirimleri](THIRD_PARTY_NOTICES.md).
-
-**Ekip:** Yazar, gözden geçiren ve sürüm onaylayan: [EmirkanAkin](https://github.com/EmirkanAkin).
-
-**Kod imzalama:** Sürümler şu an imzasızdır; SignPath Foundation'ın açık kaynak programına başvuru planlanıyor.
+## Lisans
+[MIT](LICENSE) · Kullanılan bileşenler: [üçüncü taraf bildirimleri](THIRD_PARTY_NOTICES.md) ·
+Planlar: [yol haritası](docs/YOL_HARITASI.md) · Yazar: [EmirkanAkin](https://github.com/EmirkanAkin)
