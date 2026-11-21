@@ -204,7 +204,7 @@ def make_bridge(tmp_path, monkeypatch, **settings):
     bridge = app_modern.CapriBridge()
     bridge._ui = FakeUi()
     bridge._library = app_modern.ProjectLibrary(tmp_path / "data" / "projects.json")
-    bridge._settings.update({"source": "en", "target": "tr", "backup": True, "nsfw": False, **settings})
+    bridge._settings.update({"source": "en", "target": "tr", "backup": True, "nsfw": False, "ui_language": "tr", **settings})
     return bridge
 
 
