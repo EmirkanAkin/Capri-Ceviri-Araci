@@ -124,6 +124,7 @@ const HANDLERS = {
   done: () => {},
   gpu_opt: (g) => { S.gpuOpt = g; S.gpuBusy = false; renderGpu(); renderEngineCard(); },
   ocr: (o) => { S.ocr = o; renderOcr(); renderEngineCard(); },
+  ocr_history: (item) => { S.ocrHistory = [item, ...(S.ocrHistory || [])].slice(0, 50); renderOcrHistory(); },
   dropped: (paths) => handleDropped(paths),
 };
 window.OT = { receive(events) { for (const { e, d } of events) if (HANDLERS[e]) HANDLERS[e](d); } };
@@ -169,6 +170,7 @@ function showPage(id) {
   if (id === "models" || id === "providers") call("model_status").then((m) => { if (m) { S.models = m; renderModels(); renderProviders(); renderEngineCard(); } });
   if (id === "translator") setTimeout(() => $("#txInput").focus(), 50);
   if (id === "ocr") call("ocr_status").then((o) => { if (o) { S.ocr = o; renderOcr(); } });
+  if (id === "ocr") call("ocr_history").then((h) => { S.ocrHistory = h || []; renderOcrHistory(); });
   if (id === "editor") loadEditor(true);
   if (id === "glossary") loadGlossary();
   if (id === "json") $("#jsonModel").textContent = `Motor: ${S.state.model_labels[S.settings.model]}`;
@@ -520,6 +522,7 @@ function syncSettingsUi() {
   $("#backupToggle").checked = !!S.settings.backup;
   $("#nsfwToggle").checked = !!S.settings.nsfw;
   $("#qualityToggle").checked = !!S.settings.quality_pass;
+  $("#compileToggle").checked = S.settings.renpy_compile_check !== false;
   $("#soundToggle").checked = S.settings.sound !== false;
   $("#notifyToggle").checked = S.settings.notify !== false;
   $("#memoryToggle").checked = S.settings.memory !== false;
@@ -582,7 +585,8 @@ function renderAnalysis() {
     tiles += tile("lines", "Çevrilecek metin", "Bulunamadı", "Dosyalarda okunabilir metin yok", "warn");
   }
   if (a.font) tiles += tile("type", "Türkçe harfler", esc(a.font.text), a.font.ok ? "Oyunun fontu destekliyor" : "Oyun içinde kontrol et", a.font.ok ? "" : "warn");
-  const advice = (a.advice || []).map((x) => `<div class="an-advice ${esc(x.tone)}">${icon(x.tone === "warn" ? "alert" : "sparkle")}<span>${esc(x.text)}</span></div>`).join("");
+  const advice = (a.advice || []).map((x) => `<div class="an-advice ${esc(x.tone)}">${icon(x.tone === "warn" ? "alert" : "sparkle")}<span>${esc(x.text)}</span>${
+    x.action ? `<button class="btn sm" data-action="${esc(x.action)}" ${S.busy ? "disabled" : ""}>${esc(x.action_label || "")}</button>` : ""}</div>`).join("");
   const tech = (a.notes || []).length ? `<details class="an-tech"><summary>Teknik ayrıntılar</summary>
     <ul class="notes">${a.notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul></details>` : "";
   setHtml(box, `<div class="an-grid">${tiles}</div>${advice}${tech}`);
@@ -755,7 +759,7 @@ function renderEditor() {
       <span class="status-msg">${fmt(ed.total)} satır</span>
     </div>
     <div class="row-actions">
-      <button class="btn lime" id="edSave" ${dirtyCount ? "" : "disabled"}>${icon("check")}Kaydet${dirtyCount ? ` (${dirtyCount})` : ""}</button>
+      <button class="btn lime" id="edSave" title="Ctrl+S" ${dirtyCount ? "" : "disabled"}>${icon("check")}Kaydet${dirtyCount ? ` (${dirtyCount})` : ""}</button>
       <button class="btn" id="edApply" ${S.busy ? "disabled" : ""}>${icon("play")}Oyuna uygula</button>
     </div>
     <div class="table"><div class="trow head"><div>Kaynak</div><div>Çeviri</div><div></div></div>${rows || `<div class="empty" style="margin:16px;border:0">Eşleşen satır yok.</div>`}</div>
@@ -1122,6 +1126,16 @@ function renderGpu() {
 /* ── Ekran çevirisi ────────────────────────────────────────────────── */
 const prettyKey = (k) => String(k || "").split("+").map((x) => x.trim()).join(" + ");
 
+function renderOcrHistory() {
+  const box = $("#ocrHistory");
+  if (!box) return;
+  const items = S.ocrHistory || [];
+  box.innerHTML = items.length ? items.map((h) => `<div class="list-row"><div class="grow">
+      <div class="title" data-no-i18n>${esc(h.tr)}</div><div class="sub" data-no-i18n>${esc(h.src)}</div></div>
+      <time class="sub">${esc(relTime(h.time * 1000))}</time></div>`).join("")
+    : `<div class="empty" style="margin-top:0;padding:18px">Henüz ekran çevirisi yok.</div>`;
+}
+
 function renderOcr() {
   if (!S.state) return;
   const o = S.ocr || {};
@@ -1202,7 +1216,7 @@ function renderDrawer() {
       : `<div class="notif-empty">${icon("bell")}<div>Henüz bildirim yok.</div><div style="font-size:12.5px;margin-top:4px">Analiz, çeviri ve yedek işlemleri burada özetlenir.</div></div>`;
     if (drawerOpen()) { S.notifs.forEach((n) => { n.unread = false; }); S.unread = 0; renderBell(); }
   } else {
-    tools.innerHTML = `<span>Ayrıntılı işlem kaydı</span><span><button data-action="copy-log">Kopyala</button><button data-action="clear-log">Temizle</button></span>`;
+    tools.innerHTML = `<span>Ayrıntılı işlem kaydı</span><span><button data-action="copy-log">Kopyala</button><button data-action="save-diagnostics">Tanı paketi</button><button data-action="clear-log">Temizle</button></span>`;
     body.innerHTML = `<div class="console selectable" id="logBox"></div>`;
     const frag = document.createDocumentFragment();
     S.log.slice(-1500).forEach((e) => frag.appendChild(lineNode(e)));
@@ -1472,6 +1486,8 @@ document.addEventListener("click", async (ev) => {
     case "bepinex-uninstall": call("uninstall_bepinex"); break;
     case "export-patch": call("export_patch"); break;
     case "import-patch": if (await call("import_patch")) loadEditor(true); break;
+    case "export-csv": call("editor_export_csv", (S.editor && S.editor.model) || ""); break;
+    case "import-csv": if (await call("editor_import_csv", (S.editor && S.editor.model) || "")) loadEditor(true); break;
     case "json-file": case "json-folder": {
       const picked = await call("json_pick", el.dataset.action === "json-folder" ? "folder" : "file");
       if (picked) $("#jsonInput").value = picked;
@@ -1481,6 +1497,9 @@ document.addEventListener("click", async (ev) => {
       if (!$("#jsonInput").value.trim()) { toast({ title: "Önce bir dosya veya klasör seç", tone: "warn" }); break; }
       call("json_translate", $("#jsonInput").value.trim(), $("#jsonOutput").value.trim());
       break;
+    case "save-diagnostics": call("save_diagnostics"); break;
+    case "ocr-history-clear": await call("ocr_history_clear"); S.ocrHistory = []; renderOcrHistory(); break;
+    case "fix-runtime": call("repair_runtime_errors"); break;
     case "copy-log": navigator.clipboard.writeText(S.log.map((e) => `[${e.time}] ${e.text}`).join("\n")).then(() => toast({ title: "Günlük panoya kopyalandı", tone: "ok" })); break;
     case "clear-log": S.log = []; renderDrawer(); break;
     case "clear-notifs": S.notifs = []; renderDrawer(); break;
@@ -1644,6 +1663,7 @@ $("#modelSelect").addEventListener("change", (e) => updateSettings({ model: e.ta
 $("#backupToggle").addEventListener("change", (e) => updateSettings({ backup: e.target.checked }));
 $("#nsfwToggle").addEventListener("change", (e) => updateSettings({ nsfw: e.target.checked }));
 $("#qualityToggle").addEventListener("change", (e) => updateSettings({ quality_pass: e.target.checked }));
+$("#compileToggle").addEventListener("change", (e) => updateSettings({ renpy_compile_check: e.target.checked }));
 $("#soundToggle").addEventListener("change", (e) => updateSettings({ sound: e.target.checked }));
 $("#notifyToggle").addEventListener("change", (e) => updateSettings({ notify: e.target.checked }));
 $("#memoryToggle").addEventListener("change", (e) => updateSettings({ memory: e.target.checked }));
@@ -1665,6 +1685,11 @@ document.addEventListener("keydown", (e) => {
   if (e.ctrlKey && k === "k") { e.preventDefault(); search.focus(); search.select(); }
   else if (e.ctrlKey && k === "o") { e.preventDefault(); pickFolder(); }
   else if (e.ctrlKey && k === "b") { e.preventDefault(); toggleDrawer(undefined, "notifs"); }
+  else if (e.ctrlKey && k === "s" && $("#page-editor").classList.contains("active")) {
+    e.preventDefault();      // editörde Ctrl+S: değişiklikleri kaydet
+    const save = $("#edSave");
+    if (save && S.editor && Object.keys(S.editor.dirty || {}).length) save.click();
+  }
   else if (e.key === "Escape") toggleDrawer(false);
   else if (!typing && $("#page-studio").classList.contains("active") && (e.key === "ArrowLeft" || e.key === "ArrowRight")) moveSlide(e.key === "ArrowLeft" ? -1 : 1);
 });

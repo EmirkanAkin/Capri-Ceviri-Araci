@@ -339,3 +339,60 @@ def test_letter_spaced_titles_are_translated_collapsed(monkeypatch, tmp_path):
     out = engine_unity.translate_texts_unity(["S T A R T   G A M E", "Quit"], tmp_path / "c.json")
     assert sorted(seen) == ["Quit", "START GAME"], "modele sıkıştırılmış hâli gider"
     assert out["S T A R T   G A M E"] == "O Y U N A   B A Ş L A"
+
+
+def test_player_log_missing_glyphs_are_read_and_forced_on_next_write(tmp_path, monkeypatch):
+    """Oyun çalışırken TextMeshPro'nun "bulunamadı" dediği harfler (Player.log) bulunur; sonraki yazımda en yakın harfle
+    yazılır. app.info'daki ad yol geçişi içeriyorsa kayıt aranmaz."""
+    import os
+    import time as _time
+    from types import SimpleNamespace
+    import engine_unity
+    data = tmp_path / "Oyun_Data"
+    data.mkdir()
+    (data / "app.info").write_text("Studio\nOyun Adi", encoding="utf-8")
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
+    logdir = tmp_path / "home" / "AppData" / "LocalLow" / "Studio" / "Oyun Adi"
+    logdir.mkdir(parents=True)
+    line = ("The character with Unicode value \\u{0} was not found in the [LiberationSans SDF] font asset or any "
+            "potential fallbacks. It was replaced by Unicode character \\u25A1 in text object [Text].\n")
+    (logdir / "Player.log").write_text(line.format("011F") + line.format("015F") + line.format("2665"), encoding="utf-8")
+    info = SimpleNamespace(data_dir=data, tmp_glyphs=set(), runtime_missing=set())
+    assert engine_unity.runtime_missing_glyphs(info) == {"LiberationSans SDF": ["ğ", "ş"]}
+    assert engine_unity.runtime_missing_glyphs(info, since=_time.time() + 60) == {}
+    info.runtime_missing = {"ğ", "ş"}
+    glyphs = engine_unity.effective_glyphs(info)
+    assert engine_unity.glyph_fallback("Doğru yaşıyorsun", glyphs) == "Dogru yasıyorsun"
+    info.runtime_missing = set()
+    assert engine_unity.effective_glyphs(info) == set()
+    (data / "app.info").write_text("..\nEvil", encoding="utf-8")
+    assert engine_unity.player_log_paths(info) == []
+
+
+def test_unity_glyph_advice_ignores_letters_not_in_our_translation(tmp_path, monkeypatch):
+    """Gerçek bir oyunun kaydında dil listesindeki Arapça/Hintçe harfler de "bulunamadı" diye geçiyordu: yalnızca bizim
+    çevirimizde geçen harfler uyarıya ve zorunlu harf değişimine girer."""
+    import json
+    import time as _time
+    from types import SimpleNamespace
+    import app_modern
+    from test_app import make_bridge
+    data = tmp_path / "Oyun_Data"
+    data.mkdir()
+    (data / "app.info").write_text("Studio\nOyun", encoding="utf-8")
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
+    logdir = tmp_path / "home" / "AppData" / "LocalLow" / "Studio" / "Oyun"
+    logdir.mkdir(parents=True)
+    entry = "The character with Unicode value \\u{0} was not found in the [Main SDF] font asset or any potential fallbacks.\n"
+    (logdir / "Player.log").write_text(entry.format("062C") + entry.format("011F"), encoding="utf-8")
+    bridge = make_bridge(tmp_path, monkeypatch)
+    bridge._game = {"root": str(tmp_path), "type": "unity", "title": "Oyun",
+                    "info": SimpleNamespace(data_dir=data, tmp_glyphs=set(), runtime_missing=set())}
+    cache = bridge._cache_path()
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    cache.write_text(json.dumps({"Right": "Doğru"}), encoding="utf-8")
+    bridge._library.upsert(tmp_path, status="translated", translated_at=_time.time() - 100)
+    analysis = {"advice": []}
+    bridge._check_unity_glyphs(bridge._game, analysis, bridge._library.get(tmp_path))
+    assert bridge._library.get(tmp_path)["runtime_missing"] == "ğ"
+    assert "ğ" in analysis["advice"][0]["text"] and "ج" not in analysis["advice"][0]["text"]

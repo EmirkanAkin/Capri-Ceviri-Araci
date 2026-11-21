@@ -17,6 +17,7 @@ import http.server
 import io
 import json
 import mimetypes
+import os
 import re
 import shutil
 import threading
@@ -60,13 +61,23 @@ class ProjectLibrary:
             raw = json.loads(self.path.read_text(encoding="utf-8"))
             if isinstance(raw, list):
                 self._items = {self.key(p["path"]): p for p in raw if isinstance(p, dict) and p.get("path")}
-        except (OSError, ValueError):
+        except FileNotFoundError:
             self._items = {}
+        except (OSError, ValueError):
+            # Bozuk liste (ör. elektrik kesintisi) ilk kayıtta ezilmesin: elle kurtarılabilsin diye kenara alınır
+            self._items = {}
+            try:
+                self.path.replace(self.path.with_name(f"{self.path.stem}.bozuk-{int(time.time())}{self.path.suffix}"))
+            except OSError:
+                pass
 
     def _save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(self.list(), ensure_ascii=False, indent=2), encoding="utf-8")
+        with open(tmp, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps(self.list(), ensure_ascii=False, indent=2))
+            handle.flush()
+            os.fsync(handle.fileno())        # elektrik kesilirse yarım/boş dosya kalmasın
         tmp.replace(self.path)
 
     def list(self) -> List[Dict[str, Any]]:

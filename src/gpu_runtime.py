@@ -9,6 +9,7 @@ Kaynak koddan çalışırken kurulu kütüphaneler varsa hiçbir şey indirilmez
 """
 from __future__ import annotations
 
+import hashlib
 import importlib
 import importlib.util
 import os
@@ -100,9 +101,9 @@ def _version_key(text: str) -> Tuple[int, ...]:
 
 def pick_torch_wheel(index_html: str, cuda: Optional[Tuple[int, int]]) -> Dict[str, str]:
     """Sürücüye uyan en yeni kararlı torch sürümünü seçer (CUDA yoksa CPU sürümü)."""
-    pattern = re.compile(rf'href="([^"]*/(torch-(\d+\.\d+\.\d+)(?:\+|%2B)(cpu|cu\d+)-{PY_TAG}-{PY_TAG}-win_amd64\.whl))[^"]*"')
+    pattern = re.compile(rf'href="([^"]*/(torch-(\d+\.\d+\.\d+)(?:\+|%2B)(cpu|cu\d+)-{PY_TAG}-{PY_TAG}-win_amd64\.whl))([^"]*)"')
     best = None
-    for url, name, version, variant in pattern.findall(index_html):
+    for url, name, version, variant, fragment in pattern.findall(index_html):
         if variant == "cpu":
             if cuda:
                 continue
@@ -115,15 +116,16 @@ def pick_torch_wheel(index_html: str, cuda: Optional[Tuple[int, int]]) -> Dict[s
                 continue
         key = (_version_key(version), variant != "cpu" and int(variant[2:]))
         if best is None or key > best[0]:
-            best = (key, url, name.replace("%2B", "+"), version, variant)
+            digest = re.search(r"sha256=([0-9a-fA-F]{64})", fragment)
+            best = (key, url, name.replace("%2B", "+"), version, variant, digest.group(1).lower() if digest else "")
     if not best:
         raise RuntimeError("Bu sisteme uygun PyTorch sürümü bulunamadı.")
-    _key, url, name, version, variant = best
+    _key, url, name, version, variant, sha256 = best
     if url.startswith("/"):
         url = "https://download.pytorch.org" + url
     elif not url.startswith("http"):
         url = TORCH_INDEX + url
-    return {"url": url.split("#")[0], "name": name, "version": version, "variant": variant}
+    return {"url": url.split("#")[0], "name": name, "version": version, "variant": variant, "sha256": sha256}
 
 
 def pick_pypi_wheel(files: List[Dict[str, object]]) -> Optional[Dict[str, object]]:
@@ -139,8 +141,18 @@ def pick_pypi_wheel(files: List[Dict[str, object]]) -> Optional[Dict[str, object
     return ok[0] if ok else None
 
 
-def _download(url: str, target: Path, log: LogFn, progress: Optional[ProgressFn], label: str) -> None:
+def _file_sha256(path: Path) -> str:
+    hasher = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b""):
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+
+def _download(url: str, target: Path, log: LogFn, progress: Optional[ProgressFn], label: str, sha256: str = "") -> None:
+    """İndirir; kaynak SHA-256 verdiyse (PyPI JSON, download.pytorch.org bağlantısı) doğrular, uymazsa kurmaz."""
     part = target.with_suffix(target.suffix + ".part")
+    hasher = hashlib.sha256()
     with requests.get(url, stream=True, timeout=60, headers={"User-Agent": "Capri"}) as resp:
         resp.raise_for_status()
         total = int(resp.headers.get("content-length") or 0)
@@ -148,9 +160,13 @@ def _download(url: str, target: Path, log: LogFn, progress: Optional[ProgressFn]
         with part.open("wb") as out:
             for chunk in resp.iter_content(1 << 20):
                 out.write(chunk)
+                hasher.update(chunk)
                 done += len(chunk)
                 if progress and total:
                     progress(done >> 20, max(1, total >> 20))
+    if (total and done != total) or (sha256 and hasher.hexdigest() != sha256.lower()):
+        part.unlink(missing_ok=True)
+        raise RuntimeError(f"{label} indirmesi doğrulanamadı (eksik ya da bozuk); kurulmadı. Tekrar dene.")
     part.replace(target)
     log(f"{label} indirildi ({target.stat().st_size >> 20} MB).")
 
@@ -193,8 +209,11 @@ def install(log: LogFn = print, progress: Optional[ProgressFn] = None) -> Dict[s
         if not wheel:
             raise RuntimeError(f"{name} {version} için Windows paketi bulunamadı.")
         target = downloads / str(wheel["filename"])
+        sha = str((wheel.get("digests") or {}).get("sha256") or "")
+        if target.exists() and sha and _file_sha256(target) != sha.lower():
+            target.unlink()                     # önceki denemeden kalan bozuk dosya
         if not target.exists():
-            _download(str(wheel["url"]), target, log, None, f"{name} {version}")
+            _download(str(wheel["url"]), target, log, None, f"{name} {version}", sha)
         _install_wheel(target)
         target.unlink(missing_ok=True)
     if not _has("torch"):
@@ -204,8 +223,10 @@ def install(log: LogFn = print, progress: Optional[ProgressFn] = None) -> Dict[s
         torch = pick_torch_wheel(html, cuda)
         log(f"PyTorch {torch['version']} ({torch['variant']}) indiriliyor…")
         target = downloads / torch["name"]
+        if target.exists() and torch.get("sha256") and _file_sha256(target) != torch["sha256"]:
+            target.unlink()
         if not target.exists():
-            _download(torch["url"], target, log, progress, f"PyTorch {torch['version']}")
+            _download(torch["url"], target, log, progress, f"PyTorch {torch['version']}", torch.get("sha256", ""))
         log("PyTorch kuruluyor (dosyalar açılıyor)…")
         _install_wheel(target)
         target.unlink(missing_ok=True)

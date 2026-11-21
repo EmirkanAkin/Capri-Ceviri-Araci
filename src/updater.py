@@ -9,6 +9,7 @@ Kullanıcı verileri (portable_cache, modeller, ayarlar, API anahtarları) asla 
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -16,6 +17,7 @@ import shutil
 import sys
 import time
 import zipfile
+import zlib
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple  # noqa: F401
 
@@ -99,6 +101,7 @@ def check(current: str, repo: str, timeout: float = 10) -> Dict[str, Any]:
         "asset": asset["browser_download_url"] if asset else "",
         "asset_name": asset["name"] if asset else "",
         "asset_size": int(asset.get("size") or 0) if asset else 0,
+        "asset_digest": str(asset.get("digest") or "") if asset else "",   # GitHub: "sha256:<onaltılık>"
         "published": (rel.get("published_at") or "")[:10],
     }
 
@@ -107,24 +110,67 @@ def _protected(rel: Path) -> bool:
     return bool(rel.parts) and rel.parts[0] in PROTECTED
 
 
+class DownloadError(RuntimeError):
+    """İndirilen paket eksik ya da bozuk; hiçbir dosyaya dokunulmadı."""
+
+
+def verify_download(path: Path, size: int = 0, digest: str = "") -> None:
+    """GitHub'dan indirilen dosyayı API'nin verdiği boyut ve SHA-256 özetiyle karşılaştırır; uymazsa siler ve
+    DownloadError fırlatır. Özet verilmemişse (eski sürümler) yalnızca boyut denetlenir."""
+    actual = path.stat().st_size
+    if size and actual != size:
+        path.unlink(missing_ok=True)
+        raise DownloadError(f"İndirme yarım kaldı ({actual:,} / {size:,} bayt). İnternet bağlantını kontrol edip "
+                            "tekrar dene.".replace(",", "."))
+    algo, _, want = (digest or "").partition(":")
+    if algo.lower() == "sha256" and want:
+        hasher = hashlib.sha256()
+        with open(path, "rb") as handle:
+            for chunk in iter(lambda: handle.read(1 << 20), b""):
+                hasher.update(chunk)
+        if hasher.hexdigest().lower() != want.strip().lower():
+            path.unlink(missing_ok=True)
+            raise DownloadError("İndirilen paketin SHA-256 özeti GitHub'daki ile uyuşmuyor; paket kurulmadı. Tekrar dene.")
+
+
 def stage(asset_url: str, version: str, log: LogFn = print,
-          progress: Optional[Callable[[int, int], None]] = None) -> Path:
-    """Sürüm paketini indirir ve ara klasöre açar; paketteki tek üst klasörü otomatik soyar."""
+          progress: Optional[Callable[[int, int], None]] = None, expected_size: int = 0, digest: str = "") -> Path:
+    """Sürüm paketini indirir, boyutunu ve (GitHub verdiyse) SHA-256 özetini doğrular, ara klasöre açar;
+    paketteki tek üst klasörü otomatik soyar."""
     target = STAGING_DIR / version
     if target.exists():
         shutil.rmtree(target)
     target.mkdir(parents=True)
     archive = STAGING_DIR / f"{version}.zip"
     log(f"Güncelleme indiriliyor: {asset_url}")
+    hasher = hashlib.sha256()
     with requests.get(asset_url, stream=True, timeout=120, headers={"User-Agent": "Capri"}) as resp:
         resp.raise_for_status()
         total, done = int(resp.headers.get("content-length") or 0), 0
         with archive.open("wb") as out:
             for chunk in resp.iter_content(1 << 16):
                 out.write(chunk)
+                hasher.update(chunk)
                 done += len(chunk)
                 if progress:
                     progress(done, total)
+    expected = expected_size or total
+    if expected and done != expected:
+        archive.unlink(missing_ok=True)
+        raise DownloadError(f"İndirme yarım kaldı ({done:,} / {expected:,} bayt). İnternet bağlantını kontrol edip "
+                            "tekrar dene.".replace(",", "."))
+    algo, _, want = (digest or "").partition(":")
+    if algo.lower() == "sha256" and want and hasher.hexdigest().lower() != want.strip().lower():
+        archive.unlink(missing_ok=True)
+        raise DownloadError("İndirilen paketin SHA-256 özeti GitHub'daki ile uyuşmuyor; paket kurulmadı. Tekrar dene.")
+    try:
+        with zipfile.ZipFile(archive) as zf:
+            bad = zf.testzip()
+    except (zipfile.BadZipFile, zlib.error, EOFError, OSError):
+        bad = archive.name
+    if bad:
+        archive.unlink(missing_ok=True)
+        raise DownloadError("İndirilen paket bozuk; kurulmadı. Tekrar dene.")
     with zipfile.ZipFile(archive) as zf:
         names = [n for n in zf.namelist() if not n.endswith("/")]
         prefix = ""

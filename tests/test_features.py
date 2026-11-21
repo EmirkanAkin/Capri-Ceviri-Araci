@@ -211,3 +211,124 @@ def test_open_project_does_not_reanalyze(tmp_path, monkeypatch):
     assert bridge.analyze() is True and not calls, "analiz sonucu varken tekrar analiz edilmemeli"
     run_sync(bridge, "analyze", True)
     assert len(calls) == 1
+
+
+def test_csv_roundtrip_takes_only_safe_edits_for_this_game(tmp_path, monkeypatch):
+    """Excel'de düzeltilen tablo geri alınır: yalnızca oyunda olan satırlar, etiket kuralına uyanlar; ayraç kendiliğinden."""
+    import patch_safety
+    cache = {"Hello, [mc]!": "Merhaba, [mc]!", 'She said "hi"; then left.': "Selam dedi; sonra gitti.",
+             "Save": "Kaydet"}
+    text = patch_safety.csv_export(cache, ["Load"])
+    assert text.startswith("﻿Kaynak;Çeviri;İncelenmeli\r\n")
+    edited = (text.replace("Merhaba, [mc]!", "Selam, [mc]!")
+                  .replace("Selam dedi; sonra gitti.", "Merhaba dedi; sonra gitti {a=https://x.y}link{/a}")
+                  .replace(";Kaydet;", ";Kaydet;") + "Unknown line;Bilinmeyen;\r\nLoad;Yükle;\r\n")
+    result = patch_safety.csv_import(edited, cache, set(cache) | {"Load"}, "renpy")
+    assert result["changes"] == {"Hello, [mc]!": "Selam, [mc]!", "Load": "Yükle"}
+    assert result["rejected"] == 1 and result["unknown"] == 1 and result["unchanged"] >= 1
+    comma = 'Source,Translation\r\n"Hello, [mc]!","Hey, [mc]!"\r\n'
+    assert patch_safety.csv_import(comma, cache, set(cache), "renpy")["changes"] == {"Hello, [mc]!": "Hey, [mc]!"}
+
+
+def test_csv_import_through_the_bridge_updates_cache_and_review(tmp_path, monkeypatch):
+    import json
+    import app_modern
+    bridge = make_bridge(tmp_path, monkeypatch) if "make_bridge" in globals() else None
+    if bridge is None:
+        import pytest
+        pytest.skip("köprü yardımcısı yok")
+    game = tmp_path / "g"
+    game.mkdir()
+    bridge._game = {"root": str(game), "type": "rpgmaker", "title": "Örnek"}
+    path = bridge._cache_path("gemini")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"Hello": "Merhaba"}), encoding="utf-8")
+    app_modern.review_path_for(path).parent.mkdir(parents=True, exist_ok=True)
+    app_modern.review_path_for(path).write_text(json.dumps(["Hello", "Bye"]), encoding="utf-8")
+    csv_file = tmp_path / "t.csv"
+    csv_file.write_bytes("Kaynak;Çeviri\r\nHello;Selam\r\nBye;Hoşça kal\r\n".encode("cp1254"))   # Excel'in ANSI kaydı
+    assert bridge._apply_csv_file(csv_file, "gemini")
+    assert json.loads(path.read_text(encoding="utf-8")) == {"Hello": "Selam", "Bye": "Hoşça kal"}
+    assert not app_modern.review_path_for(path).exists()
+
+
+def test_lost_game_terms_are_flagged_for_review(tmp_path, monkeypatch):
+    """Karakter/yer adı kaynakta var, çeviride yoksa satır incelenmeye düşer; ekli hâli ("Elena'ya") sorun değildir."""
+    import json
+    import app_modern
+    cache = {"Elena smiled.": "Elena gülümsedi.", "Talk to Elena now.": "Şimdi Helen ile konuş.",
+             "Give it to Elena.": "Onu Elena'ya ver.", "Go to Rivermoor.": "Nehirbayır'a git.",
+             "Rivermoor is far.": "Nehir köyü uzak.", "the elena flower": "elena çiçeği", "Bye": "Bye"}
+    terms = {"Elena": "Elena", "Rivermoor": "Nehirbayır", "ab": "x", "Ghost": ""}
+    assert sorted(app_modern.term_inconsistencies(cache, terms)) == ["Rivermoor is far.", "Talk to Elena now."]
+    bridge = make_bridge(tmp_path, monkeypatch)
+    path = tmp_path / "c.json"
+    path.write_text(json.dumps(cache), encoding="utf-8")
+    bridge._record_review(path, {"Bye"}, terms)
+    review = json.loads(app_modern.review_path_for(path).read_text(encoding="utf-8"))
+    assert review == ["Bye", "Rivermoor is far.", "Talk to Elena now."]
+
+
+def test_diagnostics_package_has_log_info_and_no_secrets(tmp_path, monkeypatch):
+    import json
+    import zipfile
+    import app_modern
+    bridge = make_bridge(tmp_path, monkeypatch)
+    bridge._settings["openai_key_test"] = "sk-GIZLI"
+    log = app_modern.DATA_DIR / "capri.log"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    log.write_bytes(("x" * 3_000_000 + "\nson satır\n").encode("utf-8"))
+    target = bridge._write_diagnostics(tmp_path / "out" / "tani.zip")
+    with zipfile.ZipFile(target) as archive:
+        names = set(archive.namelist())
+        settings = json.loads(archive.read("ayarlar.json"))
+        tail = archive.read("capri.log").decode("utf-8")
+        info = archive.read("bilgi.txt").decode("utf-8")
+    assert names == {"bilgi.txt", "ayarlar.json", "capri.log"}
+    assert settings["openai_key_test"] == "<gizli>" and settings["quality_pass"] is False
+    assert tail.endswith("son satır\n") and len(tail) <= 2_000_000
+    assert info.startswith(f"Capri {app_modern.APP_VERSION}")
+
+
+def test_diagnostics_hide_the_windows_user_folder(tmp_path, monkeypatch):
+    import json
+    import zipfile
+    from pathlib import Path as _P
+    import app_modern
+    bridge = make_bridge(tmp_path, monkeypatch)
+    home = str(_P.home())
+    bridge._settings["scan_folders"] = [home + "/Games"]
+    log = app_modern.DATA_DIR / "capri.log"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    log.write_bytes(f"Oyun açıldı: {home}/Desktop/Oyun ve {json.dumps(home)}".encode("utf-8"))
+    target = bridge._write_diagnostics(tmp_path / "t.zip")
+    with zipfile.ZipFile(target) as archive:
+        everything = b"".join(archive.read(n) for n in archive.namelist()).decode("utf-8")
+    assert _P.home().name not in everything and "%USERPROFILE%" in everything
+
+
+def test_diagnostics_include_project_checks(tmp_path, monkeypatch):
+    import zipfile
+    bridge = make_bridge(tmp_path, monkeypatch)
+    root = tmp_path / "Oyun"
+    root.mkdir()
+    bridge._library.upsert(root, status="translated", last_action="Çeviri tamamlandı", runtime_missing="ğ")
+    bridge._game = {"root": str(root), "type": "renpy", "title": "Oyun",
+                    "analysis": {"lines": 10, "notes": ["not"], "advice": [],
+                                 "runtime_errors": [{"file": "game/tl/Turkish/a.rpy", "line": 3, "message": "NameError"}]},
+                    "compile_check": {"ran": True, "ok": True, "reverted": 1, "errors": []}}
+    target = bridge._write_diagnostics(tmp_path / "t.zip")
+    with zipfile.ZipFile(target) as archive:
+        info = archive.read("bilgi.txt").decode("utf-8")
+    assert "Oyun içi hata: game/tl/Turkish/a.rpy:3 NameError" in info
+    assert "geri alınan=1" in info and "kutu görünen harfler: ğ" in info
+
+
+def test_ocr_history_keeps_last_distinct_translations(tmp_path, monkeypatch):
+    bridge = make_bridge(tmp_path, monkeypatch)
+    for i in range(60):
+        bridge._remember_ocr(f"line {i}", f"satır {i}")
+        bridge._remember_ocr(f"line {i}", f"satır {i}")          # aynı altyazı art arda yazılmaz
+    history = bridge.ocr_history()
+    assert len(history) == 50 and history[0]["src"] == "line 59" and history[-1]["src"] == "line 10"
+    assert bridge.ocr_history_clear() and bridge.ocr_history() == []

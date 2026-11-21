@@ -7,10 +7,12 @@ doğrulanabilir ve yüzde yüz güvenli yedekleme & geri alma sistemi.
 from __future__ import annotations
 
 import hashlib
+import os
 import json
 import shutil
 import time
 import zipfile
+import zlib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, List, Tuple
@@ -61,13 +63,20 @@ def create_game_backup(
     date_str = time.strftime("%Y-%m-%d %H:%M:%S")
     backup_dir = backup_base / f"backup_{engine}_{timestamp}"
     backup_dir.mkdir(parents=True, exist_ok=True)
+    log(f"Yedekleme baslatildi [{engine.upper()}] -> {backup_dir.name}")
+    try:
+        return _fill_backup(game_root, engine, files_to_backup, backup_dir, timestamp, date_str, log)
+    except BaseException:
+        # Yarım kalan yedek (manifestsiz) listede "geri yüklenebilir" görünmesin
+        shutil.rmtree(backup_dir, ignore_errors=True)
+        raise
 
+
+def _fill_backup(game_root: Path, engine: str, files_to_backup: List[Path], backup_dir: Path, timestamp: str,
+                 date_str: str, log: LogFn) -> Path:
     manifest_files = []
     backed_count = 0
     total_bytes = 0
-
-    log(f"Yedekleme baslatildi [{engine.upper()}] -> {backup_dir.name}")
-
     for file_p in files_to_backup:
         file_p = Path(file_p)
         if not file_p.exists() or not file_p.is_file():
@@ -81,6 +90,10 @@ def create_game_backup(
         dest = backup_dir / rel_path
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(file_p, dest)
+        source_hash = _file_hash(file_p)
+        if dest.stat().st_size != file_p.stat().st_size or _file_hash(dest) != source_hash:
+            # disk doldu / kopya yarım kaldı: bozuk yedekle oyunu değiştirmeye başlamak yerine dur
+            raise OSError(f"Yedek doğrulanamadı: {rel_path} kopyası kaynağıyla aynı değil (disk dolu olabilir).")
 
         size = file_p.stat().st_size
         total_bytes += size
@@ -88,7 +101,7 @@ def create_game_backup(
         manifest_files.append({
             "rel_path": str(rel_path).replace("\\", "/"),
             "size": size,
-            "hash": _file_hash(file_p),
+            "hash": source_hash,
         })
         log(f"  [YEDEK] {rel_path} ({size:,} bayt)")
 
@@ -171,6 +184,34 @@ def list_game_backups(game_root: Path) -> List[BackupEntry]:
     return backups
 
 
+def verify_backup(backup: BackupEntry) -> List[str]:
+    """Klasör yedeğini manifestle karşılaştırır; sorunlu dosyaların listesini döndürür (boş liste = sağlam).
+    Manifesti olmayan eski yedekler ve zip yedekler doğrulanamaz; boş liste döner."""
+    manifest_p = backup.path / "manifest.json"
+    if backup.is_zip:
+        try:
+            with zipfile.ZipFile(backup.path, "r") as zf:
+                bad = zf.testzip()
+            return [bad] if bad else []
+        except (OSError, zipfile.BadZipFile, zlib.error, EOFError) as error:
+            return [f"{backup.path.name}: {error}"]
+    if not manifest_p.exists():
+        return []
+    try:
+        files = json.loads(manifest_p.read_text(encoding="utf-8")).get("files", [])
+    except (OSError, ValueError):
+        return ["manifest.json okunamadı"]
+    problems = []
+    for entry in files:
+        rel = str(entry.get("rel_path", ""))
+        path = backup.path / rel
+        if not path.is_file():
+            problems.append(f"{rel} (eksik)")
+        elif path.stat().st_size != entry.get("size") or (entry.get("hash") and _file_hash(path) != entry["hash"]):
+            problems.append(f"{rel} (bozuk)")
+    return problems
+
+
 def restore_game_backup(
     backup: BackupEntry,
     game_root: Path,
@@ -185,6 +226,12 @@ def restore_game_backup(
 
     log(f"Yedek geri yukleme baslatildi: {backup.path.name}")
     restored_count = 0
+    problems = verify_backup(backup)
+    if problems:
+        for item in problems[:10]:
+            log(f"  [BOZUK YEDEK] {item}")
+        return False, 0, (f"Yedek doğrulanamadı: {len(problems)} dosya eksik ya da bozuk ({problems[0]}). "
+                          "Oyuna dokunulmadı.")
 
     try:
         if backup.is_zip:
@@ -208,7 +255,9 @@ def restore_game_backup(
                     rel = file_p.relative_to(backup.path)
                     target = game_root / rel
                     target.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(file_p, target)
+                    temp = target.with_name(target.name + ".capri_restore")
+                    shutil.copy2(file_p, temp)          # önce yanına, sonra tek adımda yerine: yarım dosya kalmaz
+                    os.replace(temp, target)
                     restored_count += 1
                     log(f"  [GERI YUKLENDI] {rel} ({target.stat().st_size:,} bayt)")
 

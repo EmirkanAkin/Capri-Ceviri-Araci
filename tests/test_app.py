@@ -104,6 +104,58 @@ def test_backup_roundtrip(tmp_path):
     assert ok and count == 1 and f.read_text(encoding="utf-8") == "orijinal"
 
 
+
+def test_corrupt_backup_is_refused_before_touching_the_game(tmp_path):
+    """Yarım/bozuk yedek oyunun üzerine kopyalanmaz: önce manifestle doğrulanır, uymazsa hiçbir dosyaya dokunulmaz."""
+    root = tmp_path / "g"
+    (root / "data").mkdir(parents=True)
+    a, b = root / "data" / "A.json", root / "data" / "B.json"
+    a.write_text("orijinal A", encoding="utf-8")
+    b.write_text("orijinal B" * 20000, encoding="utf-8")
+    backup_system.create_game_backup(root, "rpgmaker", [a, b], log=lambda s: None)
+    a.write_text("çevrilmiş A", encoding="utf-8")
+    b.write_text("çevrilmiş B", encoding="utf-8")
+    entry = backup_system.list_game_backups(root)[0]
+    assert backup_system.verify_backup(entry) == []
+    broken = entry.path / "data" / "B.json"
+    broken.write_bytes(broken.read_bytes()[:1000])                 # disk dolunca yarım kalan kopya
+    logs = []
+    ok, count, msg = backup_system.restore_game_backup(entry, root, log=logs.append)
+    assert not ok and count == 0 and msg.startswith("Yedek doğrulanamadı") and "B.json" in msg
+    assert a.read_text(encoding="utf-8") == "çevrilmiş A", "doğrulama geçmeden hiçbir dosya değişmez"
+    (entry.path / "data" / "A.json").unlink()
+    assert any("A.json (eksik)" in p for p in backup_system.verify_backup(entry))
+
+
+def test_restore_leaves_no_temp_files_and_old_backups_still_restore(tmp_path):
+    root = tmp_path / "g"
+    (root / "data").mkdir(parents=True)
+    f = root / "data" / "Map001.json"
+    f.write_text("orijinal", encoding="utf-8")
+    backup_system.create_game_backup(root, "rpgmaker", [f], log=lambda s: None)
+    entry = backup_system.list_game_backups(root)[0]
+    (entry.path / "manifest.json").unlink()                       # manifestsiz eski yedek: doğrulanamaz ama yüklenir
+    f.write_text("çevrilmiş", encoding="utf-8")
+    entry = backup_system.list_game_backups(root)[0]
+    ok, count, _ = backup_system.restore_game_backup(entry, root, log=lambda s: None)
+    assert ok and f.read_text(encoding="utf-8") == "orijinal"
+    assert not list(root.rglob("*.capri_restore"))
+
+
+def test_broken_zip_backup_is_refused(tmp_path):
+    game = tmp_path / "game"
+    game.mkdir()
+    archive = tmp_path / "b.zip"
+    with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("data/ok.txt", "x" * 5000)
+    raw = bytearray(archive.read_bytes())
+    raw[60:80] = bytes(20)                                         # sıkıştırılmış veri bozuldu
+    archive.write_bytes(bytes(raw))
+    entry = backup_system.BackupEntry(archive, "genel", "t", "t", 1, True, archive.stat().st_size)
+    ok, count, msg = backup_system.restore_game_backup(entry, game, log=lambda s: None)
+    assert not ok and count == 0 and not (game / "data" / "ok.txt").exists()
+
+
 # ── Sentetik RPG Maker MV oyunu ──────────────────────────────────────────────
 def make_rpgmaker_game(root: Path) -> Path:
     data = root / "www" / "data"
@@ -277,6 +329,61 @@ def test_rpgmaker_end_to_end_with_fake_ollama(tmp_path, monkeypatch, fake_ollama
     assert bridge.list_backups(), "çeviri öncesi yedek alınmalı"
 
 
+
+def test_game_update_after_translation_is_detected_and_old_backups_are_not_restored(tmp_path, monkeypatch, fake_ollama):
+    """Oyun (ör. Steam) güncellenince çevrilmiş dosyalar değişir: Capri uyarır, durumu düzeltir ve güncelleme öncesi
+    yedeği "orijinal" diye yeni dosyaların üzerine geri yüklemez."""
+    import os
+    import time as _time
+    game = make_rpgmaker_game(tmp_path / "game")
+    bridge = make_bridge(tmp_path, monkeypatch, model="ollama")
+    cfg = providers.ProviderConfig(ollama_host=fake_ollama)
+    monkeypatch.setattr(app_modern.prov, "load_provider_config", lambda: cfg)
+    bridge._select_game(str(game))
+    run_sync(bridge, "analyze")
+    run_sync(bridge, "translate")
+    entry = bridge._library.get(game)
+    assert entry["status"] == "translated" and entry["files_stamp"]
+    run_sync(bridge, "analyze", True)                      # değişiklik yoksa uyarı yok
+    assert app_modern.OUTDATED_NOTE not in [a["text"] for a in bridge._game["analysis"].get("advice", [])]
+    for backup in (game / "_capri_backups").iterdir():     # yedek güncellemeden önce alınmıştı
+        os.utime(backup, (_time.time() - 3600, _time.time() - 3600))
+    data = game / "www/data/Map001.json"                   # güncelleme: dosya yeniden yazıldı (İngilizce, yeni sürüm)
+    data.write_text(data.read_text(encoding="utf-8").replace("TR(", "(").replace("traveler", "wanderer"), encoding="utf-8")
+    os.utime(data, (_time.time() + 5, _time.time() + 5))
+    run_sync(bridge, "analyze", True)
+    entry = bridge._library.get(game)
+    assert entry["status"] == "analyzed" and entry["files_changed_at"]
+    assert bridge._game["analysis"]["advice"][0]["text"] == app_modern.OUTDATED_NOTE
+    with pytest.raises(app_modern.UserError):
+        bridge._restore_originals(bridge._game)            # eski sürüm yedeği "orijinal" sayılmaz
+    assert "wanderer" in data.read_text(encoding="utf-8"), "yeni sürüm dosyası eski yedekle ezilmedi"
+
+
+
+def test_startup_check_reports_updated_games_once(tmp_path, monkeypatch, fake_ollama):
+    """Açılışta kütüphanedeki çevrilmiş oyunlar denetlenir; güncellenenler tek bildirimle haber verilir."""
+    import os
+    import time as _time
+    game = make_rpgmaker_game(tmp_path / "game")
+    bridge = make_bridge(tmp_path, monkeypatch, model="ollama")
+    cfg = providers.ProviderConfig(ollama_host=fake_ollama)
+    monkeypatch.setattr(app_modern.prov, "load_provider_config", lambda: cfg)
+    bridge._select_game(str(game))
+    run_sync(bridge, "analyze")
+    run_sync(bridge, "translate")
+    assert bridge._check_library_updates() == []
+    data = game / "www/data/Map001.json"
+    data.write_text(data.read_text(encoding="utf-8") + " ", encoding="utf-8")
+    os.utime(data, (_time.time() + 5, _time.time() + 5))
+    notes = []
+    monkeypatch.setattr(bridge, "_notify", lambda title, text="", *a, **k: notes.append((title, text)))
+    assert len(bridge._check_library_updates()) == 1
+    assert bridge._library.get(game)["status"] == "analyzed"
+    assert notes and "güncellenmiş" in notes[0][0]
+    assert bridge._check_library_updates() == [], "bir kez bildirilir"
+
+
 # ── Unity önbellek hatası regresyonu (yerel model yerine sahte motor) ────────
 def test_unity_offline_path_returns_new_translations(tmp_path, monkeypatch):
     import engine_unity
@@ -349,3 +456,41 @@ def test_web_assets_present():
         assert (APP_DIR / "web" / name).is_file()
     html = (APP_DIR / "web" / "index.html").read_text(encoding="utf-8")
     assert "pywebview-drag-region" in html and "app.js" in html
+
+
+def test_corrupt_project_list_is_kept_aside_instead_of_overwritten(tmp_path):
+    """Elektrik kesintisinde bozulan projects.json ilk kayıtta ezilmez; kurtarılabilsin diye kenara alınır."""
+    import library
+    path = tmp_path / "projects.json"
+    path.write_text('[{"path": "C:/Oyun", "status": "transl', encoding="utf-8")     # yarım yazılmış
+    lib = library.ProjectLibrary(path)
+    assert lib.list() == []
+    kept = list(tmp_path.glob("projects.bozuk-*.json"))
+    assert len(kept) == 1 and kept[0].read_text(encoding="utf-8").startswith('[{"path"')
+    lib.upsert("C:/Yeni", status="analyzed")
+    assert json.loads(path.read_text(encoding="utf-8"))[0]["path"] == "C:/Yeni"
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_settings_file_with_wrong_shape_falls_back_to_defaults(tmp_path, monkeypatch):
+    monkeypatch.setattr(app_modern, "SETTINGS_FILE", tmp_path / "settings.json")
+    (tmp_path / "settings.json").write_text("[1, 2, 3]", encoding="utf-8")
+    settings = app_modern.load_settings()
+    assert settings["target"] and settings["backup"] is True
+
+
+def test_failed_backup_leaves_no_half_backup_behind(tmp_path, monkeypatch):
+    root = tmp_path / "g"
+    (root / "data").mkdir(parents=True)
+    f = root / "data" / "Map001.json"
+    f.write_text("orijinal", encoding="utf-8")
+    real_copy = backup_system.shutil.copy2
+
+    def short_copy(src, dst, *a, **k):                 # disk doldu: kopya yarım kaldı
+        real_copy(src, dst, *a, **k)
+        Path(dst).write_bytes(Path(dst).read_bytes()[:3])
+
+    monkeypatch.setattr(backup_system.shutil, "copy2", short_copy)
+    with pytest.raises(OSError, match="Yedek doğrulanamadı"):
+        backup_system.create_game_backup(root, "rpgmaker", [f], log=lambda s: None)
+    assert backup_system.list_game_backups(root) == [], "yarım yedek listede görünmez"

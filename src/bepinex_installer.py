@@ -39,6 +39,9 @@ def _releases(repo: str) -> List[Dict[str, Any]]:
     return resp.json()
 
 
+_EXPECTED: Dict[str, Tuple[int, str]] = {}   # indirme adresi → (boyut, "sha256:…"), GitHub API'sinden
+
+
 def choose_assets(runtime: str, arch: str) -> Dict[str, Tuple[str, str, str]]:
     """{'bepinex': (ad, url, sürüm), 'xunity': (...)} — oyunun çalışma zamanına ve mimarisine uygun paketler."""
     il2cpp = runtime.upper() == "IL2CPP"
@@ -56,6 +59,7 @@ def choose_assets(runtime: str, arch: str) -> Dict[str, Tuple[str, str, str]]:
             asset = next((a for a in rel.get("assets", []) if regex.match(a["name"])), None)
             if asset:
                 chosen[key] = (asset["name"], asset["browser_download_url"], rel["tag_name"])
+                _EXPECTED[asset["browser_download_url"]] = (int(asset.get("size") or 0), str(asset.get("digest") or ""))
                 break
         if key not in chosen:
             raise RuntimeError(f"{repo} için uygun paket bulunamadı ({runtime}, {arch}).")
@@ -65,8 +69,14 @@ def choose_assets(runtime: str, arch: str) -> Dict[str, Tuple[str, str, str]]:
 def _download(name: str, url: str, log: LogFn) -> Path:
     DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
     target = DOWNLOAD_DIR / name
+    size, digest = _EXPECTED.get(url, (0, ""))
     if target.is_file() and zipfile.is_zipfile(target):
-        return target
+        try:
+            import updater
+            updater.verify_download(target, size, digest)      # önbellekteki dosya da doğrulanır
+            return target
+        except RuntimeError:
+            log(f"{name}: önbellekteki dosya doğrulanamadı, yeniden indiriliyor")
     log(f"İndiriliyor: {name}")
     with requests.get(url, stream=True, timeout=60, headers={"User-Agent": "Capri"}) as resp:
         resp.raise_for_status()
@@ -74,6 +84,8 @@ def _download(name: str, url: str, log: LogFn) -> Path:
         with part.open("wb") as out:
             for chunk in resp.iter_content(1 << 16):
                 out.write(chunk)
+    import updater
+    updater.verify_download(part, size, digest)
     part.replace(target)
     if not zipfile.is_zipfile(target):
         target.unlink(missing_ok=True)

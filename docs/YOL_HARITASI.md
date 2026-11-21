@@ -1,8 +1,9 @@
 # Capri — Yol Haritası
 
 ## Gerçek oyunlarda denenmesi gerekenler
-- **Unreal `.pak` / IoStore (`repak`, `retoc`):** sahte araçlarla uçtan uca test edildi; gerçek paketlerde denenmedi.
-  Büyük yapımlarda paketler çoğunlukla AES ile şifreli; oyunun AES anahtarı gerekir.
+- **Unreal `.pak` / IoStore (`repak`, `retoc`):** araçların indirilip kurulması ve şifreli paket algılama gerçek bir UE5
+  oyununda doğrulandı (salt okunur). Şifresiz bir oyunda `.locres` çıkarma ve `~mods` yama paketinin oyunda yüklenmesi
+  henüz denenmedi. Çok yeni IoStore sürümlerini retoc okuyamıyor (anlaşılır not gösteriliyor).
 - **RPG Maker şifreli arşivleri:** biçim açık kaynak bir çözücüyle doğrulandı, gerçek bir arşivle denenmedi.
 - **Utage / I2 Localization:** bir oyunda okuma/yazma ve açılış denendi; diyalogun ekranda görünüşü elle kontrol edilmeli.
 - **Naninovel ve PlayMaker:** birer oyunda yazma ve açılış (batchmode) denendi; oyun içi görünüm elle kontrol edilmeli.
@@ -15,7 +16,9 @@
 
 ## Fikirler
 - **CTranslate2 ile NLLB/OPUS (int8):** PyTorch (≈2,9 GB) yerine ~40 MB'lık çalışma ortamı; ekran kartsız da hızlı.
-- **Ren'Py derleme denetimi:** çeviriden sonra oyunun kendi Ren'Py'siyle `compile` çalıştırıp hataları önceden yakalamak.
 - **TextMeshPro atlasına harf ekleme:** fontta olmayan ğ/ş/ı/İ'yi en yakın harf yerine oyunun kendi gliflerinden üretmek.
+  (Elimizdeki Unity oyunlarının fontlarında Türkçe harfler tam; gerçek bir ihtiyaç çıkınca yapılmalı.)
+- **RPG Maker MV eklenti komutları (356):** boşlukla ayrılmış komut satırları; hangi parçanın metin olduğu eklentiye
+  göre değiştiği için şimdilik çevrilmiyor (MZ'nin 357 komutu çevriliyor).
 - **Ekran çevirisi kıyas seti:** resmi fragmanlardan alınmış gerçek karelerle genişletmek.
 - **Godot motoru desteği.**

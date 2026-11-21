@@ -123,6 +123,7 @@ class UnityGameInfo:
     tmp_glyphs: Set[int] = field(default_factory=set)       # bu fontların içerdiği karakterler (birleşim)
     typed_counts: Dict[str, int] = field(default_factory=dict)   # bileşen metinleri: fsm / ui / xml (unity_typed)
     typed_reader_missing: bool = False   # bileşen okuyucusu gerekli ama kurulu değil
+    runtime_missing: Set[str] = field(default_factory=set)   # oyunda çalışırken fontta bulunamayan harfler (Player.log)
 
 
 def detect_unity_game(selected: Union[str, Path]) -> Optional[UnityGameInfo]:
@@ -451,6 +452,53 @@ def glyph_fallback(text: str, glyphs: Set[int]) -> str:
         usable = all(ord(a) < 128 or ord(a) in glyphs for a in alternative)
         out.append(alternative if usable else char)
     return "".join(out)
+
+
+# Oyun çalışırken TextMeshPro, fontta (ve yedek fontlarda) olmayan harfi kutuyla değiştirince Player.log'a yazar.
+_MISSING_GLYPH = re.compile(r"The character with Unicode value \\u([0-9A-Fa-f]{4,5}) was not found in the \[([^\]]+)\] font asset")
+
+
+def player_log_paths(info: Any) -> List[Path]:
+    """Oyunun Player.log ve Player-prev.log yolları: LocalLow/<şirket>/<ürün> (adlar <oyun>_Data/app.info'dan)."""
+    import os
+    try:
+        lines = (Path(info.data_dir) / "app.info").read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return []
+    if len(lines) < 2:
+        return []
+    company, product = lines[0].strip(), lines[1].strip()
+    if not company or not product or any(bad in company + product for bad in ("/", "\\", "..", ":")):
+        return []
+    base = Path(os.environ.get("USERPROFILE") or Path.home()) / "AppData" / "LocalLow" / company / product
+    return [base / "Player.log", base / "Player-prev.log"]
+
+
+def effective_glyphs(info: Any) -> Set[int]:
+    """Yazımda kullanılacak karakter kümesi: font taraması + oyunun kendi kaydında (Player.log) kutu olarak görüldüğü
+    kesin olan harfler çıkarılır. Boş küme: kısıt yok."""
+    glyphs = set(getattr(info, "tmp_glyphs", None) or ())
+    missing = getattr(info, "runtime_missing", None) or set()
+    if missing:
+        glyphs = (glyphs or set(range(0x2500))) - {ord(c) for c in missing}
+    return glyphs
+
+
+def runtime_missing_glyphs(info: Any, since: float = 0) -> Dict[str, List[str]]:
+    """{font: [harfler]}: since'ten sonra yazılmış oyun kayıtlarında "fontta bulunamadı" denen harfler."""
+    found: Dict[str, Set[str]] = {}
+    for path in player_log_paths(info):
+        try:
+            if not path.is_file() or path.stat().st_mtime <= since or path.stat().st_size > 64 * 1024 * 1024:
+                continue
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for match in _MISSING_GLYPH.finditer(text):
+            char = chr(int(match.group(1), 16))
+            if char.isalpha():
+                found.setdefault(match.group(2), set()).add(char)
+    return {font: sorted(chars) for font, chars in found.items()}
 
 
 def _text_asset_script(data: Any) -> str:
@@ -816,8 +864,9 @@ def write_translations_unity(
 
     log("Unity varlıklarına çeviriler işleniyor...")
     modified_count = 0
-    if info.tmp_glyphs:   # oyunun TextMeshPro fontunda olmayan harfler kutu olarak görünmesin
-        adjusted = {source: glyph_fallback(text, info.tmp_glyphs) for source, text in translations.items()}
+    glyphs = effective_glyphs(info)
+    if glyphs:   # oyunun TextMeshPro fontunda olmayan harfler kutu olarak görünmesin
+        adjusted = {source: glyph_fallback(text, glyphs) for source, text in translations.items()}
         replaced = sorted({c for source, text in translations.items() for c in text
                            if c not in adjusted[source] and c.isalpha()})
         if replaced:

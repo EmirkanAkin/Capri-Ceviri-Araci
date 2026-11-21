@@ -35,6 +35,14 @@ MANIFEST = "_capri_backups/unreal_pak.json"
 LogFn = Callable[[str], None]
 
 
+class UnsupportedContainer(RuntimeError):
+    """Paket/kapsayıcı sürümü aracın tanıdığından yeni (ör. yeni bir Unreal 5 IoStore sürümü)."""
+
+
+_UNSUPPORTED = re.compile(r"EIoStoreTocVersion|unsupported\s+(?:version|container|pak)|unknown\s+(?:pak\s+)?version",
+                          re.IGNORECASE)
+
+
 class NeedsAesKey(RuntimeError):
     """Paket AES ile şifreli ve anahtar verilmemiş / yanlış."""
 
@@ -57,7 +65,8 @@ def latest_asset(timeout: float = 15, repo: str = REPAK_REPO) -> Dict[str, objec
     asset = next((a for a in rel.get("assets", []) if a["name"].endswith(ASSET_SUFFIX)), None)
     if not asset:
         raise RuntimeError(f"{repo} sürümünde Windows paketi bulunamadı.")
-    return {"version": rel.get("tag_name", ""), "url": asset["browser_download_url"], "size": asset.get("size", 0)}
+    return {"version": rel.get("tag_name", ""), "url": asset["browser_download_url"], "size": asset.get("size", 0),
+            "digest": asset.get("digest") or ""}
 
 
 def install_repak(log: LogFn = print) -> Path:
@@ -80,6 +89,8 @@ def _install_tool(tool: str, repo: str, folder: Path, log: LogFn) -> Path:
         with archive.open("wb") as out:
             for chunk in resp.iter_content(1 << 16):
                 out.write(chunk)
+    import updater
+    updater.verify_download(archive, int(asset.get("size") or 0), str(asset.get("digest") or ""))
     with zipfile.ZipFile(archive) as zf:
         member = next((n for n in zf.namelist() if n.lower().endswith(f"{tool}.exe")), None)
         if not member:
@@ -112,6 +123,8 @@ def _execute(exe: Path, args: List[str], aes_key: str, timeout: float) -> str:
                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     if proc.returncode != 0:
         message = (proc.stderr or proc.stdout or "").strip()
+        if _UNSUPPORTED.search(message):
+            raise UnsupportedContainer(message[-400:])
         if re.search(r"aes|encrypt|decrypt", message, re.IGNORECASE):
             raise NeedsAesKey(message)
         raise RuntimeError(f"{exe.stem} hatası: {message[-400:]}")
@@ -139,12 +152,19 @@ def find_localization(paks: List[Path], source_lang: str, aes_key: str = "", log
     """{pak: [kaynak dildeki .locres yolları]} — en yüksek öncelikli (sonradan yüklenen) paket kazanır."""
     found: Dict[Path, List[str]] = {}
     owner: Dict[str, Path] = {}
-    encrypted = []
+    encrypted, unsupported, failed = [], [], []
     for pak in paks:
         try:
             files = list_files(pak, aes_key)
         except NeedsAesKey:
             encrypted.append(pak.name)
+            continue
+        except UnsupportedContainer:
+            unsupported.append(pak.name)
+            continue
+        except RuntimeError as error:        # bozuk/tanınmayan tek paket diğerlerini durdurmasın
+            log(f"{pak.name} okunamadı: {str(error)[-160:]}")
+            failed.append(error)
             continue
         for path in files:
             parts = path.lower().split("/")
@@ -153,9 +173,19 @@ def find_localization(paks: List[Path], source_lang: str, aes_key: str = "", log
                 owner[path] = pak                       # sonraki paket öncekini ezer (yama paketleri)
     for path, pak in owner.items():
         found.setdefault(pak, []).append(path)
-    if encrypted and not found:
-        raise NeedsAesKey(", ".join(encrypted[:3]))
+    _raise_if_nothing(found, encrypted, unsupported, failed)
     return found
+
+
+def _raise_if_nothing(found: dict, encrypted: list, unsupported: list, failed: list) -> None:
+    if found:
+        return
+    if encrypted:
+        raise NeedsAesKey(", ".join(encrypted[:3]))
+    if unsupported:
+        raise UnsupportedContainer(", ".join(unsupported[:3]))
+    if failed:
+        raise failed[0]
 
 
 # retoc list --path: <kapsayıcı> <24 hane parça kimliği> <tür> <yol>
@@ -168,15 +198,23 @@ def _is_source_locres(path: str, source_lang: str) -> bool:
         and parts[-2] in (source_lang.lower(), source_lang.lower().split("-")[0])
 
 
-def find_iostore_localization(paks_dir: Path, source_lang: str, aes_key: str = "") -> Dict[Path, List[Tuple[str, str]]]:
+def find_iostore_localization(paks_dir: Path, source_lang: str, aes_key: str = "",
+                              log: LogFn = print) -> Dict[Path, List[Tuple[str, str]]]:
     """{.utoc: [(parça kimliği, yol)]}: kaynak dildeki .locres dosyaları; sonraki kapsayıcı öncekini ezer."""
     owner: Dict[str, Tuple[Path, str]] = {}
-    encrypted = []
+    encrypted, unsupported, failed = [], [], []
     for utoc in sorted(Path(paks_dir).rglob("*.utoc")):
         try:
             output = run_retoc(["list", str(utoc), "--path"], aes_key)
         except NeedsAesKey:
             encrypted.append(utoc.name)
+            continue
+        except UnsupportedContainer:
+            unsupported.append(utoc.name)
+            continue
+        except RuntimeError as error:
+            log(f"{utoc.name} okunamadı: {str(error)[-160:]}")
+            failed.append(error)
             continue
         for line in output.splitlines():
             match = RETOC_LINE.search(line)
@@ -185,8 +223,7 @@ def find_iostore_localization(paks_dir: Path, source_lang: str, aes_key: str = "
     found: Dict[Path, List[Tuple[str, str]]] = {}
     for path, (utoc, chunk) in owner.items():
         found.setdefault(utoc, []).append((chunk, path))
-    if encrypted and not found:
-        raise NeedsAesKey(", ".join(encrypted[:3]))
+    _raise_if_nothing(found, encrypted, unsupported, failed)
     return found
 
 

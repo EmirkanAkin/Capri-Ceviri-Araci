@@ -86,3 +86,57 @@ def read_patch(path: Path) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     if not isinstance(manifest, dict) or not isinstance(translations, dict) or len(translations) > MAX_ENTRIES:
         raise ValueError("yama biçimi geçersiz")
     return manifest, translations
+
+
+# ── Tablo (CSV) dışa/içe aktarma ─────────────────────────────────────────────
+# Çeviriyi Excel / Google E-Tablolar'da düzeltip geri almak için. Dışa aktarma Excel'in Türkçe/Avrupa ayarında doğrudan
+# sütunlara bölünsün diye noktalı virgüllü ve UTF-8 BOM'ludur; içe aktarmada ayraç (; , sekme) kendiliğinden bulunur.
+CSV_HEADER = ("Kaynak", "Çeviri", "İncelenmeli")
+MAX_CSV = 64 * 1024 * 1024
+
+
+def csv_export(cache: Dict[str, str], review: Any = ()) -> str:
+    import csv
+    import io
+    flagged = set(review or ())
+    out = io.StringIO()
+    writer = csv.writer(out, delimiter=";", quoting=csv.QUOTE_MINIMAL, lineterminator="\r\n")
+    writer.writerow(CSV_HEADER)
+    for src in list(cache) + [r for r in flagged if r not in cache]:
+        writer.writerow((src, cache.get(src, ""), "evet" if src in flagged else ""))
+    return "﻿" + out.getvalue()
+
+
+def csv_import(text: str, cache: Dict[str, str], known: Any, engine: str) -> Dict[str, Any]:
+    """CSV'deki düzeltmeleri ayıklar. Yalnızca oyunda zaten bulunan kaynak satırlar alınır; her satır yama kuralıyla
+    denetlenir. Döner: {"changes": {kaynak: çeviri}, "unchanged", "unknown", "rejected"}"""
+    import csv
+    import io
+    if len(text) > MAX_CSV:
+        raise ValueError("dosya çok büyük")
+    text = text.lstrip("﻿")
+    sample = text[:20000]
+    try:
+        dialect = csv.Sniffer().sniff(sample, delimiters=";,\t")
+        delimiter = dialect.delimiter
+    except csv.Error:
+        delimiter = ";"
+    rows = list(csv.reader(io.StringIO(text), delimiter=delimiter))
+    if rows and [c.strip().casefold() for c in rows[0][:2]] in (
+            [h.casefold() for h in CSV_HEADER[:2]], ["source", "translation"]):
+        rows = rows[1:]
+    known = set(known)
+    candidates: Dict[str, str] = {}
+    unchanged = unknown = 0
+    for row in rows[:MAX_ENTRIES]:
+        if len(row) < 2 or not row[0]:
+            continue
+        src, tr = row[0], row[1]
+        if src not in known:
+            unknown += 1
+        elif not tr.strip() or tr == cache.get(src, ""):
+            unchanged += 1
+        else:
+            candidates[src] = tr
+    safe, rejected = filter_translations(candidates, engine)
+    return {"changes": safe, "unchanged": unchanged, "unknown": unknown, "rejected": rejected}

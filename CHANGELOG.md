@@ -1,5 +1,58 @@
 # Capri — Değişim Günlüğü
 
+## [1.0.8] - 2026-11-22
+### Yeni
+- **Ren'Py derleme denetimi:** Çeviri yazıldıktan sonra oyun, kendi Ren'Py'siyle `compile` komutuyla derleniyor.
+  Sözdizimi hatası veren bir çeviri satırı oyuncudan önce yakalanıp yorumdaki orijinaline döndürülüyor ve yeniden
+  derleniyor (en çok 3 tur). Hata oyunun kendi betiğindeyse yalnızca günlüğe yazılıyor. Ren'Py hata dosyasını
+  editörde açmak isterse boş bir editör tanımı verildiği için hiçbir pencere açılmıyor. Stüdyo → Seçenekler'den
+  kapatılabilir. Orijinaline döndürülen satırlar Çeviri Editörü'nde turuncu (incelenmeli) görünür. Gerçek bir
+  Ren'Py 7 oyununun kopyasında denendi (~19 sn).
+- **Oyun içi hata kurtarma (Ren'Py):** Çeviriden sonra oyun bir çeviri satırı yüzünden çökerse (ör. bozulmuş
+  `[değişken]` → NameError) Ren'Py'nin `traceback.txt` kaydı okunuyor; oyun Capri'de yeniden açıldığında uyarı ve
+  "Hatalı satırları düzelt" düğmesi çıkıyor. Düzeltme o satırları orijinaline döndürüp editörde incelenmeye düşürüyor;
+  oyunun hata kayıtlarına dokunulmuyor ve düzeltilmiş kayıt bir daha uyarı üretmiyor.
+- **Unity: oyundaki kutucuklar:** Çevrilmiş bir Unity oyunu oynandıktan sonra oyunun `Player.log` kaydı okunuyor;
+  TextMeshPro'nun "fontta bulunamadı" dediği ve bizim çevirimizde geçen harfler (ğ, ş…) uyarı olarak gösteriliyor ve
+  bir sonraki yazımda en yakın harfle yazılıyor. Oyunun kendi yazılarındaki harfler (ör. dil listesindeki Arapça)
+  dikkate alınmıyor — gerçek bir oyunun kaydında görülen yanlış alarm böylece önlendi.
+- **RPG Maker MV/MZ eklenti metinleri:** `js/plugins.js` içindeki menü, görev penceresi, yardım yazısı gibi eklenti
+  parametreleri ve MZ eklenti komutlarının (357) metin argümanları çevriliyor. Yalnızca adı metin bildiren ve değeri
+  metne benzeyen parametreler alınıyor; dosya adları, anahtarlar, sayılar ve JavaScript koduna dokunulmuyor. İç içe
+  (struct/list) parametreler de aynı kurallarla açılıp geri paketleniyor, değişmeyen eklenti satırları bayt bayt aynı
+  kalıyor. `plugins.js` yedeğe dahil.
+- **Tablo (CSV) dışa/içe aktarma:** Çeviri Editörü'nden çeviriler Excel / Google E-Tablolar'da düzeltilip geri
+  alınabiliyor. Ayraç (; , sekme) ve Excel'in ANSI kaydı tanınıyor; yalnızca bu oyunda olan satırlar alınıyor ve her
+  satır yama güvenlik kuralından geçiyor.
+- **Oyun güncellemesi algılama:** Çeviriden sonra oyun dosyaları değişirse (ör. Steam güncellemesi) Capri uyarıyor
+  ve çeviriyi yeniden uygulamayı öneriyor. Güncellemeden önce alınmış yedekler artık "orijinal" sayılmıyor; eski
+  sürüm dosyaları yeni oyunun üzerine geri yüklenmiyor. Capri açılışta kütüphanedeki bütün çevrilmiş oyunları
+  denetleyip güncellenenleri tek bildirimle haber veriyor.
+- **Terim denetimi:** Oyuna özel sözlükteki bir ad ya da terim kaynakta geçip çeviride hiç geçmiyorsa satır
+  incelenmeli listesine düşüyor (Türkçe ekler sorun değil: "Elena'ya").
+- **Tanı paketi:** Teknik günlük → "Tanı paketi" hata bildirimi için tek bir zip kaydediyor (günlüğün son 2 MB'ı,
+  ayarlar, sürüm/sistem bilgisi, açık projenin analiz özeti). Gizli alanlar ve Windows kullanıcı klasörü çıkarılıyor;
+  API anahtarları zaten ayarlarda değil.
+- Ren'Py derleme denetimi Çeviri Editörü'nden "Oyuna uygula" sonrasında da çalışıyor.
+- Çeviri Editörü'nde **Ctrl+S** değişiklikleri kaydediyor.
+- **Ekran çevirisi geçmişi:** Son 50 ekran çevirisi Ekran Çevirisi sayfasında listeleniyor (yalnızca bu oturum).
+- **Arayüz regresyon testi:** Arayüz headless Edge'de gerçek köprü yanıtlarıyla açılıp bütün sayfalar geziliyor; JS
+  hatası ve İngilizce arayüzde çevrilmemiş metin kalırsa test başarısız oluyor.
+### Düzeltmeler
+- **Yedekler:** Geri yüklemeden önce yedek manifestle doğrulanıyor; eksik ya da bozuk dosya varsa oyuna hiç
+  dokunulmuyor. Yedek alınırken kopya kaynağıyla karşılaştırılıyor (disk dolunca yarım yedekle devam edilmiyor).
+  Dosyalar önce yanına kopyalanıp tek adımda yerine konuyor; yarıda kalan yedek klasörü silinip listede görünmüyor.
+- **Unreal:** Yeni IoStore sürümlerinde (gerçek bir UE5 oyununda retoc "invalid EIoStoreTocVersion") ham hata yerine
+  anlaşılır bir not gösteriliyor; okunamayan tek bir paket diğerlerinin taranmasını durdurmuyor.
+- **Güncelleme:** İndirilen sürüm paketi kurulmadan önce boyutu, GitHub'ın verdiği SHA-256 özeti ve zip bütünlüğü
+  denetleniyor; yarım ya da bozuk indirme kurulmuyor, anlaşılır bir hata gösteriliyor (gerçek v1.0.7 paketiyle denendi).
+- **Ayarlar ve proje listesi:** Diske yazma `fsync` ile zorlanıyor; bozulan proje listesi ilk kayıtta ezilmek yerine
+  `projects.bozuk-*.json` olarak kenara alınıyor; beklenmedik biçimli ayar dosyası açılışı bozmuyor.
+- **İndirme doğrulaması:** GitHub'dan indirilen araçlar (repak, retoc, BepInEx, XUnity.AutoTranslator) API'nin
+  verdiği boyut ve SHA-256 özetiyle; yerel model ortamı (PyTorch ve bağımlılıkları) PyPI'nin ve download.pytorch.org'un
+  yayımladığı SHA-256 ile doğrulanıyor. Uymayan dosya silinip kurulmuyor; önceki denemeden kalan dosya da yeniden
+  denetleniyor. Noto yazı tipleri GitHub'ın git blob özetiyle doğrulanıyor. Gerçek indirmelerle denendi.
+
 ## [1.0.7] - 2026-11-18
 ### Yeni
 - **Sade sağlayıcılar:** Sağlayıcılar sayfası "Bulut" ve "Bilgisayarında" olarak ikiye ayrıldı. Capri'nin içinde

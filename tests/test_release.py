@@ -261,7 +261,7 @@ def test_repak_asset_selection(monkeypatch):
                 {"name": "repak_cli-x86_64-pc-windows-msvc.zip", "browser_download_url": "W", "size": 2022374}]}
 
     monkeypatch.setattr(unreal_pak.requests, "get", lambda *a, **k: Resp())
-    assert unreal_pak.latest_asset() == {"version": "v0.2.3", "url": "W", "size": 2022374}
+    assert unreal_pak.latest_asset() == {"version": "v0.2.3", "url": "W", "size": 2022374, "digest": ""}
 
 
 # ── Yerel model çalışma ortamı (PyTorch) ─────────────────────────────────────
@@ -277,7 +277,7 @@ def test_torch_wheel_matches_driver():
     assert g.pick_torch_wheel(INDEX, (13, 4))["variant"] == "cu134"
     assert g.pick_torch_wheel(INDEX, (13, 0)) == {
         "url": "https://download.pytorch.org/whl/cu130/torch-2.11.0%2Bcu130-cp311-cp311-win_amd64.whl",
-        "name": "torch-2.11.0+cu130-cp311-cp311-win_amd64.whl", "version": "2.11.0", "variant": "cu130"}
+        "name": "torch-2.11.0+cu130-cp311-cp311-win_amd64.whl", "version": "2.11.0", "variant": "cu130", "sha256": ""}
     assert g.pick_torch_wheel(INDEX, (12, 6))["name"] == "torch-2.9.0+cu126-cp311-cp311-win_amd64.whl"
     assert g.pick_torch_wheel(INDEX, None)["name"] == "torch-2.11.0+cpu-cp311-cp311-win_amd64.whl"
     with pytest.raises(RuntimeError):
@@ -453,3 +453,184 @@ def test_apply_update_failure_unlocks_dialog(tmp_path, monkeypatch):
     bridge._update_info = {"available": True, "asset": "http://x/C.zip", "latest": "9.0.0"}
     run_sync(bridge, "apply_update")
     assert ("update_progress", None) in bridge._ui.events
+
+
+def test_new_iostore_versions_and_broken_paks_do_not_stop_the_scan(tmp_path, monkeypatch):
+    """Gerçek bir UE5 oyununda retoc "invalid EIoStoreTocVersion" verdi: ham hata yerine anlaşılır sonuç,
+    okunabilen kapsayıcılar yine taranır."""
+    import unreal_pak
+    paks = tmp_path / "Paks"
+    paks.mkdir()
+    for name in ("a.utoc", "b.utoc", "c.utoc"):
+        (paks / name).write_bytes(b"x")
+    outputs = {"a.utoc": RuntimeError("retoc hatası: Error: invalid EIoStoreTocVersion value"),
+               "b.utoc": RuntimeError("retoc hatası: Error: unexpected end of file"),
+               "c.utoc": "c.utoc 0123456789abcdef01234567 locres ../../../Game/Content/Localization/Game/en/Game.locres"}
+
+    def fake(args, aes_key="", timeout=600):
+        out = outputs[Path(args[1]).name]
+        if isinstance(out, Exception):
+            if "EIoStoreTocVersion" in str(out):
+                raise unreal_pak.UnsupportedContainer(str(out))
+            raise out
+        return out
+
+    monkeypatch.setattr(unreal_pak, "run_retoc", fake)
+    logs = []
+    found = unreal_pak.find_iostore_localization(paks, "en", log=logs.append)
+    assert {k.name for k in found} == {"c.utoc"} and any("b.utoc okunamadı" in line for line in logs)
+    del outputs["c.utoc"]
+    (paks / "c.utoc").unlink()
+    with pytest.raises(unreal_pak.UnsupportedContainer):
+        unreal_pak.find_iostore_localization(paks, "en", log=logs.append)
+
+
+def test_tool_messages_map_to_specific_errors(tmp_path, monkeypatch):
+    import subprocess
+    import unreal_pak
+
+    def run(cmd, **kw):
+        return subprocess.CompletedProcess(cmd, 1, "", message)
+
+    monkeypatch.setattr(unreal_pak.subprocess, "run", run)
+    message = "Error: invalid EIoStoreTocVersion value"
+    with pytest.raises(unreal_pak.UnsupportedContainer):
+        unreal_pak._execute(tmp_path / "retoc.exe", ["list"], "", 5)
+    message = "Error: failed to decrypt index (wrong AES key?)"
+    with pytest.raises(unreal_pak.NeedsAesKey):
+        unreal_pak._execute(tmp_path / "repak.exe", ["list"], "", 5)
+
+
+def test_update_download_is_verified_before_unpacking(tmp_path, monkeypatch):
+    """Yarım indirme, yanlış SHA-256 ve bozuk zip kurulmaz; doğru paket açılır."""
+    import hashlib
+    import io
+    import threading
+    import zipfile
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    import updater
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("Capri/Capri.exe", b"MZ" + b"x" * 5000)
+        zf.writestr("Capri/_internal/a.txt", "a")
+    good = buf.getvalue()
+    bad = bytearray(good)
+    bad[60:90] = bytes(30)
+    served = {"/good": good, "/bad": bytes(bad)}
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            body = served[self.path]
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *a):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{server.server_address[1]}"
+    monkeypatch.setattr(updater, "STAGING_DIR", tmp_path / "staging")
+    digest = "sha256:" + hashlib.sha256(good).hexdigest()
+    try:
+        with pytest.raises(updater.DownloadError, match="yarım"):
+            updater.stage(base + "/good", "9.9.9", log=lambda m: None, expected_size=len(good) + 10)
+        with pytest.raises(updater.DownloadError, match="SHA-256"):
+            updater.stage(base + "/good", "9.9.9", log=lambda m: None, digest="sha256:" + "0" * 64)
+        with pytest.raises(updater.DownloadError, match="bozuk"):
+            updater.stage(base + "/bad", "9.9.9", log=lambda m: None)
+        staged = updater.stage(base + "/good", "9.9.9", log=lambda m: None, expected_size=len(good), digest=digest)
+        assert (staged / "Capri.exe").exists() and (staged / "_internal" / "a.txt").exists()
+        assert not list((tmp_path / "staging").glob("*.zip")), "indirilen zip temizlenir"
+    finally:
+        server.shutdown()
+
+
+def test_tool_downloads_are_checked_against_github_digest(tmp_path):
+    import hashlib
+    import updater
+    path = tmp_path / "repak.zip"
+    path.write_bytes(b"PK" + b"x" * 100)
+    good = "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
+    updater.verify_download(path, 102, good)                       # doğru: sessizce geçer
+    updater.verify_download(path, 0, "")                           # özet yoksa (eski API) yalnızca var olması yeter
+    with pytest.raises(updater.DownloadError, match="SHA-256"):
+        updater.verify_download(path, 102, "sha256:" + "f" * 64)
+    assert not path.exists(), "uymayan dosya silinir"
+    path.write_bytes(b"PK")
+    with pytest.raises(updater.DownloadError, match="yarım"):
+        updater.verify_download(path, 102, good)
+
+
+def test_runtime_downloads_are_verified_with_published_sha256(tmp_path, monkeypatch):
+    """PyPI JSON'daki ve download.pytorch.org bağlantısındaki SHA-256 doğrulanır; uymayan paket kurulmaz."""
+    import hashlib
+    import gpu_runtime as g
+    good = b"wheel-bytes"
+    sha = hashlib.sha256(good).hexdigest()
+    index = f'<a href="/whl/cpu/torch-2.11.0%2Bcpu-cp311-cp311-win_amd64.whl#sha256={sha}">t</a>'
+    assert g.pick_torch_wheel(index, None)["sha256"] == sha
+
+    class Resp:
+        def __init__(self, body):
+            self.body, self.headers = body, {"content-length": str(len(body))}
+
+        def raise_for_status(self):
+            pass
+
+        def iter_content(self, size):
+            yield self.body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            pass
+
+    monkeypatch.setattr(g.requests, "get", lambda url, **kw: Resp(b"tampered!!!"))
+    target = tmp_path / "torch.whl"
+    with pytest.raises(RuntimeError, match="doğrulanamadı"):
+        g._download("https://x/torch.whl", target, lambda m: None, None, "PyTorch", sha)
+    assert not target.exists() and not list(tmp_path.glob("*.part"))
+    monkeypatch.setattr(g.requests, "get", lambda url, **kw: Resp(good))
+    g._download("https://x/torch.whl", target, lambda m: None, None, "PyTorch", sha)
+    assert target.read_bytes() == good
+
+
+def test_github_raw_files_are_checked_against_the_git_blob(tmp_path, monkeypatch):
+    import hashlib
+    import app_modern
+    font = b"OTTO" + b"\x00" * 200
+    blob = hashlib.sha1(b"blob %d\x00" % len(font) + font).hexdigest()
+    state = {"body": font, "meta": {"size": len(font), "sha": blob}}
+
+    class Resp:
+        def __init__(self, content=b"", js=None, status=200):
+            self.content, self._js, self.status_code = content, js, status
+
+        def json(self):
+            return self._js
+
+        def raise_for_status(self):
+            pass
+
+    def fake_get(url, **kw):
+        if url.startswith("https://api.github.com/"):
+            return Resp(js=state["meta"], status=200 if state["meta"] else 403)
+        return Resp(content=state["body"])
+
+    import requests
+    monkeypatch.setattr(requests, "get", fake_get)
+    url = app_modern.NOTO_FONTS["ja"]
+    target = tmp_path / "fonts" / "NotoSansJP-Regular.otf"
+    assert app_modern.fetch_github_file(url, target, lambda m: None).read_bytes() == font
+    state["body"] = b"OTTO" + b"\x01" * 200                       # değiştirilmiş dosya
+    with pytest.raises(app_modern.UserError, match="uyuşmuyor"):
+        app_modern.fetch_github_file(url, tmp_path / "x.otf", lambda m: None)
+    state["meta"], state["body"] = None, b"<html>rate limit</html>"   # API'ye ulaşılamadı + font değil
+    with pytest.raises(app_modern.UserError, match="yazı tipi değil"):
+        app_modern.fetch_github_file(url, tmp_path / "y.otf", lambda m: None)
+    assert not list(tmp_path.glob("*.part"))

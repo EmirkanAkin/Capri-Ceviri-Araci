@@ -10,7 +10,7 @@ Ren'Py · Unity · Unreal Engine · RPG Maker · JSON · ekran çevirisi (OCR)
 ![Windows 10/11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows&logoColor=white)
 ![Python 3.11](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)
 [![Son sürüm](https://img.shields.io/github/v/release/EmirkanAkin/Capri-Ceviri-Araci?label=son%20s%C3%BCr%C3%BCm&color=dfe86b)](https://github.com/EmirkanAkin/Capri-Ceviri-Araci/releases/latest)
-![Testler](https://img.shields.io/badge/testler-315%20ge%C3%A7ti-86e0a0)
+![Testler](https://img.shields.io/badge/testler-351%20ge%C3%A7ti-86e0a0)
 
 <img src="docs/media/capri-home.gif" width="860" alt="Capri ana sayfası">
 
@@ -22,7 +22,10 @@ Ren'Py · Unity · Unreal Engine · RPG Maker · JSON · ekran çevirisi (OCR)
 - **Oyun kodları bozulmaz:** `{i}`, `[mc]`, `\C[3]`, `{0}`, `<color>` gibi etiketler korunur.
 - **Ekran çevirisi:** Kısayola bas, alanı seç, çeviri yanında çıksın. Altyazılar için alan sabitlenip canlı çevrilir.
 - **Bulut ya da yerel:** Gemini, OpenAI, Claude, DeepL ya da internetsiz yerel modeller (TranslateGemma, OPUS-MT, NLLB).
-- **Düzelt ve paylaş:** Çeviri Editörü'nde satırları düzelt, `.capripatch` olarak paylaş.
+- **Düzelt ve paylaş:** Çeviri Editörü'nde satırları düzelt, `.capripatch` olarak paylaş ya da tabloyu (CSV)
+  Excel'de düzeltip geri al.
+- **Kontrollü yazım:** Ren'Py çevirisi oyunun kendi Ren'Py'siyle derlenip denetlenir; oyun güncellenince Capri
+  çevirinin yeniden uygulanması gerektiğini söyler.
 - **Geri alınabilir:** Her değişiklik yedeklenir; Yedekler sayfasından tek tıkla orijinale dönülür.
 
 ## İndir
@@ -39,10 +42,10 @@ Güncellemeler uygulama içinden gelir; ayarların korunur. Windows 10/11 64 bit
 ## Desteklenen oyunlar
 | Motor | Ne çevrilir |
 | --- | --- |
-| **Ren'Py** | `.rpy`, `.rpyc`, `.rpa`; otomatik font yaması |
+| **Ren'Py** | `.rpy`, `.rpyc`, `.rpa`; otomatik font yaması, derleme denetimi |
 | **Unity** | TextAsset, StreamingAssets, Utage, I2 Localization, PlayMaker, UI Text / TextMeshPro, çok dilli XML, **Naninovel** (tek paket `data.unity3d` dahil). Dosyada metni olmayan oyunlarda BepInEx + XUnity.AutoTranslator |
 | **Unreal Engine 4/5** | `.locres` (açık, `.pak` ya da IoStore içinde); çeviri `~mods` yama paketi olur |
-| **RPG Maker MV / MZ** | `data/*.json`: diyalog, seçenekler, veritabanı, terimler |
+| **RPG Maker MV / MZ** | `data/*.json`: diyalog, seçenekler, veritabanı, terimler; `js/plugins.js` arayüz metinleri |
 | **RPG Maker XP / VX / VX Ace** | `.rxdata / .rvdata / .rvdata2`, şifreli arşivler dahil |
 | **Diğer** | Herhangi bir `.json` dil dosyası |
 

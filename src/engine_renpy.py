@@ -3051,6 +3051,194 @@ def repair_safe_issues(tl_dir: Path, log: LogFn = print) -> int:
     return repaired
 
 
+
+# ── Derleme denetimi ─────────────────────────────────────────────────────────
+# Çeviri yazıldıktan sonra oyunun kendi Ren'Py'si "compile" komutuyla çalıştırılır: sözdizimi hatası olan bir çeviri
+# satırı oyuncudan önce yakalanır. Hata Capri'nin yazdığı bir satırdaysa satır yorumdaki orijinaline döndürülür ve
+# yeniden derlenir. Ren'Py hata dosyasını editörde açmak isterse boş bir editör tanımı verilir (pencere açılmaz).
+_COMPILE_ERROR = re.compile(r'^File "([^"]+)", line (\d+):\s*(.*)$')
+_NOOP_EDITOR = '''import renpy.editor
+
+
+class Editor(renpy.editor.Editor):
+    """Capri derleme denetimi: hata dosyası hiçbir editörde açılmaz."""
+
+    def begin(self, new_window=False, **kwargs):
+        pass
+
+    def open(self, filename, line=None, **kwargs):
+        pass
+
+    def end(self, **kwargs):
+        pass
+'''
+
+
+def parse_compile_errors(text: str) -> list[dict]:
+    """errors.txt → [{"file": "game/tl/Turkish/x.rpy", "line": 7, "message": "…"}]"""
+    found = []
+    for raw in text.splitlines():
+        match = _COMPILE_ERROR.match(raw.strip().lstrip("﻿"))
+        if match:
+            found.append({"file": match.group(1).replace("\\", "/"), "line": int(match.group(2)),
+                          "message": match.group(3).strip()})
+    return found
+
+
+def _run_renpy_compile(info: GameInfo, timeout: float = 300) -> tuple[int, str]:
+    """Oyunun Ren'Py'sini "compile" komutuyla çalıştırır; (çıkış kodu, errors.txt içeriği) döndürür."""
+    errors_file = info.root / "errors.txt"
+    traceback_file = info.root / "traceback.txt"
+    before = {p: (p.stat().st_mtime if p.exists() else None) for p in (errors_file, traceback_file)}
+    with tempfile.TemporaryDirectory(prefix="capri_renpy_") as tmp:
+        editor = Path(tmp) / "capri_noop.edit.py"
+        editor.write_text(_NOOP_EDITOR, encoding="utf-8")
+        env = dict(os.environ, RENPY_EDIT_PY=str(editor))
+        flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+        result = subprocess.run([str(info.executable), ".", "compile"], cwd=info.root, capture_output=True, text=True,
+                                encoding="utf-8", errors="replace", creationflags=flags, timeout=timeout, env=env)
+    text = ""
+    if errors_file.exists() and errors_file.stat().st_mtime != before[errors_file]:
+        text = errors_file.read_text(encoding="utf-8-sig", errors="replace")
+    # Denetimin bıraktığı hata dosyaları silinir; oyunda zaten olanlara dokunulmaz
+    for path, mtime in before.items():
+        if mtime is None and path.exists():
+            path.unlink(missing_ok=True)
+    if result.returncode and not text:
+        text = (result.stdout or "") + "\n" + (result.stderr or "")
+    return result.returncode, text
+
+
+def revert_translation_line(path: Path, line_no: int) -> bool:
+    """Hatalı çeviri satırını kaynağına döndürür: `new` → üstteki `old` metni, diyalog → üstteki yorum satırı."""
+    try:
+        lines = path.read_text(encoding="utf-8-sig").splitlines(keepends=True)
+    except OSError:
+        return False
+    index = line_no - 1
+    if not 0 <= index < len(lines):
+        return False
+    line = lines[index]
+    stripped = line.strip()
+    if not stripped or stripped.startswith(("#", "old ", "translate ")):
+        return False
+    indent = line[: len(line) - len(line.lstrip())]
+    newline = "\r\n" if line.endswith("\r\n") else "\n"
+    previous = index - 1
+    while previous >= 0 and can_skip_between_source_and_target(lines[previous]):
+        previous -= 1
+    if previous < 0:
+        return False
+    source = lines[previous].strip()
+    if stripped.startswith("new ") and source.startswith("old "):
+        replacement = indent + "new " + source[4:].strip()
+    elif source.startswith("#") and source[1:].strip():
+        replacement = indent + source[1:].strip()
+    else:
+        return False
+    if replacement.rstrip() == line.rstrip():
+        return False
+    lines[index] = replacement + newline
+    path.write_text("".join(lines), encoding="utf-8")
+    return source_from_line(lines[previous]) or True     # kaynak metin: editörde "incelenmeli" işaretlenir
+
+
+def compile_check(info: GameInfo, tl_dir: Path, log: LogFn = print, rounds: int = 3,
+                  runner: Callable[[GameInfo], tuple[int, str]] | None = None) -> dict:
+    """Ren'Py derleme denetimi. Döner: {"ran", "ok", "reverted", "errors", "game_errors"}."""
+    report = {"ran": False, "ok": False, "reverted": 0, "errors": [], "game_errors": [], "reverted_sources": []}
+    if runner is None:
+        if os.name != "nt" or not info.executable or not Path(info.executable).is_file():
+            log("Derleme denetimi atlandı: oyunun Ren'Py çalıştırıcısı bulunamadı.")
+            return report
+        runner = _run_renpy_compile
+    tl_dir = Path(tl_dir).resolve()
+    for _round in range(rounds + 1):
+        try:
+            code, text = runner(info)
+        except subprocess.TimeoutExpired:
+            log("Derleme denetimi zaman aşımına uğradı; atlandı.")
+            return report
+        except OSError as error:
+            log(f"Derleme denetimi çalıştırılamadı: {error}")
+            return report
+        report["ran"] = True
+        errors = parse_compile_errors(text)
+        if not code and not errors:
+            report["ok"] = True
+            report["errors"] = []
+            break
+        ours = [e for e in errors if _inside(info.root / e["file"], tl_dir)]
+        report["errors"] = ours
+        report["game_errors"] = [e for e in errors if e not in ours]
+        if not ours:
+            if code and not errors:
+                log(f"Ren'Py derleme denetimi hata koduyla bitti ({code}); ayrıntı alınamadı.")
+            break
+        if _round == rounds:
+            break
+        fixed = 0
+        for error in ours:
+            reverted = revert_translation_line(info.root / error["file"], error["line"])
+            if reverted:
+                fixed += 1
+                if isinstance(reverted, str):
+                    report["reverted_sources"].append(reverted)
+                log(f"Derleme hatası: {error['file']}:{error['line']} → satır orijinal metne döndürüldü")
+        report["reverted"] += fixed
+        if not fixed:
+            break
+    if report["ok"]:
+        log("Ren'Py derleme denetimi: hata yok" + (f" ({report['reverted']} satır orijinaline döndürüldü)"
+                                                    if report["reverted"] else "") + ".")
+    for error in report["errors"]:
+        log(f"UYARI: çeviri dosyasında derleme hatası kaldı: {error['file']}:{error['line']} {error['message']}")
+    for error in report["game_errors"][:5]:
+        log(f"Not: oyunun kendi betiğinde derleme hatası: {error['file']}:{error['line']} {error['message']}")
+    return report
+
+
+def _inside(path: Path, folder: Path) -> bool:
+    try:
+        Path(path).resolve().relative_to(folder)
+        return True
+    except ValueError:
+        return False
+
+
+# Oyun çalışırken çeviri satırından doğan hatalar (ör. bozulmuş [değişken] → NameError). Ren'Py bunları oyun
+# klasöründeki traceback.txt / errors.txt'ye yazar; Capri yalnızca okur, dosyalara dokunmaz.
+_TRACE_FILE = re.compile(r'File "(game/tl/[^"]+\.rpy)", line (\d+)')
+_TRACE_ERROR = re.compile(r"^\s*([A-Za-z_][\w.]*(?:Error|Exception))\b:?\s*(.*)$")
+
+
+def runtime_translation_errors(root: Path, language: str, since: float = 0) -> list[dict]:
+    """since'ten sonra yazılmış Ren'Py hata kayıtlarında çeviri klasörüne (game/tl/<dil>) işaret eden satırlar."""
+    found: list[dict] = []
+    seen: set = set()
+    for name in ("traceback.txt", "errors.txt"):
+        path = Path(root) / name
+        try:
+            if not path.is_file() or path.stat().st_mtime <= since:
+                continue
+            text = path.read_text(encoding="utf-8-sig", errors="replace")
+        except OSError:
+            continue
+        message = ""
+        for raw in reversed(text.splitlines()):
+            match = _TRACE_ERROR.match(raw)
+            if match:
+                message = (match.group(1) + (": " + match.group(2) if match.group(2) else "")).strip()
+                break
+        for match in _TRACE_FILE.finditer(text):
+            rel, line = match.group(1).replace("\\", "/"), int(match.group(2))
+            if not rel.startswith(f"game/tl/{language}/") or (rel, line) in seen:
+                continue
+            seen.add((rel, line))
+            found.append({"file": rel, "line": line, "message": message, "log": name})
+    return found
+
+
 def qa_translation(tl_dir: Path) -> dict[str, int]:
     token_errors = 0
     empty_errors = 0

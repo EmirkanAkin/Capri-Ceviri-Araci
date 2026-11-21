@@ -671,5 +671,59 @@ EN = {
     "Ren'Py: diyaloğu argümanla veren oyunlarda bütün satırlar çevriliyor": "Ren'Py: games that pass dialogue as an argument now get every line translated",
     "Sağlayıcılar sadeleşti: yerel modeller (TranslateGemma, OPUS-MT, NLLB) tek kartta": "Simpler providers: local models (TranslateGemma, OPUS-MT, NLLB) share one card",
     "Açıklamalar kısaldı; ana sayfada ekran çevirisi (OCR) de görünüyor": "Shorter descriptions; screen translation (OCR) is listed on the home page too",
+    # ── yeni metinler ──
+    "Oyunun Ren'Py'siyle derleme denetimi": "Compile check with the game's Ren'Py",
+    "Derleme uyarısı": "Compile warning",
+    "{0} çeviri satırında Ren'Py derleme hatası kaldı; ayrıntı Teknik günlükte.": "{0} translated lines still have Ren'Py compile errors; details are in the technical log.",
+    # ── yeni metinler ──
+    "Bu oyunun paket biçimi çok yeni; açık kaynak araçlar henüz okuyamıyor. Bu oyunda ekran çevirisini (OCR) kullanabilirsin.": "This game's package format is too new; the open-source tools can't read it yet. Use screen translation (OCR) for this game.",
+    # ── yeni metinler ──
+    "Ren'Py derleme denetimi": "Ren'Py compile check",
+    "Çeviriden sonra oyunun kendi Ren'Py'siyle derler; hatalı satırı orijinaline döndürür.": "After translating, compiles with the game's own Ren'Py and reverts any broken line to the original.",
+    # ── yeni metinler ──
+    "Yedek doğrulanamadı: {0} dosya eksik ya da bozuk ({1}). Oyuna dokunulmadı.": "Backup failed verification: {0} files are missing or damaged ({1}). The game was not touched.",
+    "Yedek doğrulanamadı: {0} kopyası kaynağıyla aynı değil (disk dolu olabilir).": "Backup could not be verified: the copy of {0} doesn't match the original (the disk may be full).",
+    # ── yeni metinler ──
+    "Tablo (CSV)": "Spreadsheet (CSV)",
+    "Tabloyu içe aktar": "Import spreadsheet",
+    "Excel / Google E-Tablolar'da düzeltmek için": "To edit in Excel / Google Sheets",
+    "Tablo dışa aktarıldı": "Spreadsheet exported",
+    "Tablo okunamadı": "Couldn't read the spreadsheet",
+    "Tablo içe aktarıldı": "Spreadsheet imported",
+    "{0} satır güncellendi · {1} değişmedi · {2} bu oyunda yok. Oyuna yazmak için 'Oyuna uygula'.": "{0} lines updated · {1} unchanged · {2} not in this game. Use 'Apply to game' to write them.",
+    # ── yeni metinler ──
+    "Oyun güncellenmiş": "Game updated",
+    "Oyun dosyaları çeviriden sonra değişmiş (oyun güncellenmiş olabilir); çeviri kaybolmuş ya da yeni satırlar eklenmiş olabilir. 'Çeviriyi başlat' ile yeniden uygula — önbellekteki satırlar ücretsiz.": "The game files changed after translating (the game may have been updated); the translation may be gone or new lines may have been added. Apply it again with 'Start translation' — cached lines are free.",
+    # ── yeni metinler ──
+    "{0} satırda terim kayıp": "Term missing in {0} lines",
+    "Oyuna özel bir ad ya da terim kaynakta var ama çeviride yok. Editörde turuncu görünürler.": "A game-specific name or term is in the source but not in the translation. They're shown in orange in the editor.",
+    # ── yeni metinler ──
+    "Tanı paketi": "Diagnostics",
+    "Tanı paketi kaydedildi": "Diagnostics saved",
+    "Hata bildirirken bu dosyayı ekle. API anahtarları içermez.": "Attach this file when reporting a bug. It contains no API keys.",
+    # ── yeni metinler ──
+    "İndirme yarım kaldı ({0} / {1} bayt). İnternet bağlantını kontrol edip tekrar dene.": "The download was incomplete ({0} / {1} bytes). Check your internet connection and try again.",
+    "İndirilen paketin SHA-256 özeti GitHub'daki ile uyuşmuyor; paket kurulmadı. Tekrar dene.": "The downloaded package's SHA-256 doesn't match the one on GitHub; it was not installed. Try again.",
+    "İndirilen paket bozuk; kurulmadı. Tekrar dene.": "The downloaded package is damaged; it was not installed. Try again.",
+    # ── yeni metinler ──
+    "İndirilen yazı tipi GitHub'daki dosyayla uyuşmuyor; eklenmedi. Tekrar dene.": "The downloaded font doesn't match the file on GitHub; it was not added. Try again.",
+    "İndirilen dosya bir yazı tipi değil; eklenmedi.": "The downloaded file is not a font; it was not added.",
+    # ── yeni metinler ──
+    "{0} satır orijinal bırakıldı": "{0} lines kept in the original",
+    "Bu çeviri satırları oyunun Ren'Py'sinde derleme hatası verdi; oyun bozulmasın diye orijinal metin kullanıldı. Editörde turuncu görünürler.": "These translated lines caused compile errors in the game's Ren'Py, so the original text was kept to avoid breaking the game. They're shown in orange in the editor.",
+    # ── yeni metinler ──
+    "Hatalı satırları düzelt": "Fix the broken lines",
+    "Oyun bir çeviri satırı yüzünden hata verdi ({0}:{1}). Düzeltince bu satırlar orijinal metne döner ve editörde turuncu görünür.": "The game hit an error because of a translated line ({0}:{1}). Fixing reverts these lines to the original text; they're shown in orange in the editor.",
+    "Hatalı satırlar düzeltildi": "Broken lines fixed",
+    "{0} satır orijinal metne döndü; oyunu yeniden deneyebilirsin.": "{0} lines reverted to the original text; you can try the game again.",
+    "Düzeltme": "Fix",
+    # ── yeni metinler ──
+    "Oyunda şu harfler fontta bulunamadı ve kutu olarak görünüyor: {0} ({1}). 'Baştan çevir' bu harfleri en yakın harfle yazar (ğ→g, ş→s).": "In the game these letters were missing from the font and show as boxes: {0} ({1}). 'Translate again' writes them as the closest letter (ğ→g, ş→s).",
+    # ── yeni metinler ──
+    "{0} oyun güncellenmiş": "{0} games updated",
+    "{0}: çeviriyi yeniden uygulamak için oyunu açıp 'Çeviriyi başlat'a bas (önbellekteki satırlar ücretsiz).": "{0}: open the game and press 'Start translation' to apply the translation again (cached lines are free).",
+    # ── yeni metinler ──
+    "Son ekran çevirileri": "Recent screen translations",
+    "Kaçırdığın altyazıları buradan oku. Yalnızca bu oturumda tutulur.": "Read subtitles you missed here. Kept only for this session.",
+    "Henüz ekran çevirisi yok.": "No screen translations yet.",
 }
-

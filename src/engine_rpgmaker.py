@@ -406,6 +406,14 @@ def _command_texts(json_file: Path, commands: Any, base: str) -> List[ExtractedT
             for c_idx, choice in enumerate(params[0]):
                 if isinstance(choice, str) and choice.strip():
                     found.append(ExtractedText(json_file, f"{base}.list[{i}].parameters[0][{c_idx}]", choice, "choice"))
+        elif code == 357 and len(params) > 3 and isinstance(params[3], dict):
+            # MZ eklenti komutu: argümanlar eklenti parametreleriyle aynı kurallarla (yalnızca metin olanlar)
+            for arg, value in params[3].items():
+                def visit(name, leaf, _arg=arg):
+                    if isinstance(leaf, str) and _plugin_value_is_text(name, leaf):
+                        found.append(ExtractedText(json_file, f"{base}.list[{i}].parameters[3].{_arg}", leaf, "plugin"))
+                    return leaf
+                _walk_plugin_value(str(arg), value, visit)
     return found
 
 
@@ -494,8 +502,140 @@ def extract_texts_mv_mz(data_dir: Path, log: LogFn = print) -> List[ExtractedTex
                             
             except Exception as e:
                 log(f"Hata {json_file.name} okumasında: {str(e)}")
-                
+
+    extracted += extract_plugin_texts(data_dir, log)
     return extracted
+
+
+# ── MV/MZ eklenti parametreleri (js/plugins.js) ──────────────────────────────
+# Menü, görev penceresi, HUD gibi arayüz yazıları çoğu oyunda eklenti parametrelerindedir. Parametrelerin bir kısmı dosya
+# adı, anahtar ya da oyunun çalıştırdığı JavaScript'tir: yalnızca adı metin bildiren ve değeri metne benzeyenler alınır.
+_PLUGIN_TEXT_PARAM = re.compile(
+    r"text|label|help|message|msg|title|vocab|term|caption|command ?name|display ?name|menu ?name|button|header|"
+    r"description of|tooltip|prompt|word", re.IGNORECASE)
+_PLUGIN_NON_TEXT = re.compile(
+    r"image|picture|pict|face|file|folder|sound|\bse\b|bgm|bgs|\bme\b|font|icon|switch|variable|symbol|key|code|"
+    r"script|eval|formula|condition|\bids?\b|colou?r|\bx\b|\by\b|width|height|opacity|offset|position|size|align|"
+    r"speed|anim|json|url|link|class|tag|note|regexp?|pattern|format", re.IGNORECASE)
+_PLUGIN_CODE = re.compile(r"=>|\bfunction\b|\bthis\.|\$game|\$data|\beval\b|\breturn\b|[;{}]|\(\s*\)|\bnew\s+\w")
+_PLUGIN_FILE = re.compile(r"^[\w\-./\\]+\.\w{2,4}$")
+_PLUGIN_IDENT = re.compile(r"^[a-z_$][\w$]*$|^[A-Z_][A-Z0-9_]+$|^\w+_\w+$")
+
+
+def plugins_file(data_dir: Path) -> Path:
+    """MV: www/data → www/js/plugins.js, MZ: data → js/plugins.js"""
+    return Path(data_dir).parent / "js" / "plugins.js"
+
+
+def _plugin_value_is_text(name: str, value: str) -> bool:
+    text = value.strip()
+    if not text or len(text) > 400 or not re.search(r"[^\W\d_]", text):
+        return False
+    if _PLUGIN_NON_TEXT.search(name) or not _PLUGIN_TEXT_PARAM.search(name):
+        return False
+    if _PLUGIN_CODE.search(text) or _PLUGIN_FILE.match(text) or _PLUGIN_IDENT.match(text):
+        return False
+    return not text.lower() in ("true", "false", "null", "undefined", "on", "off")
+
+
+def _walk_plugin_value(name: str, value: Any, visit) -> Any:
+    """Parametre değerini dolaşır. İç içe yapılar (RPG Maker struct/list parametreleri JSON metni olarak saklanır)
+    açılır, yapraklarda visit(ad, metin) çağrılır; dönen değerle aynı biçimde (sıkışık JSON) geri paketlenir."""
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped[:1] in ("[", "{") and stripped[-1:] in ("]", "}"):
+            try:
+                inner = json.loads(stripped)
+            except ValueError:
+                inner = None
+            if isinstance(inner, (list, dict)):
+                new = _walk_plugin_value(name, inner, visit)
+                return value if new == inner else json.dumps(new, ensure_ascii=False, separators=(",", ":"))
+        return visit(name, value)
+    if isinstance(value, list):
+        return [_walk_plugin_value(name, item, visit) for item in value]
+    if isinstance(value, dict):
+        return {k: _walk_plugin_value(str(k), v, visit) for k, v in value.items()}
+    return value
+
+
+def _plugin_lines(text: str):
+    """plugins.js'deki eklenti satırları: [(satır no, eklenti nesnesi)]. RPG Maker her eklentiyi ayrı satıra yazar."""
+    lines = text.split("\n")
+    out = []
+    for index, line in enumerate(lines):
+        body = line.strip()
+        if body.startswith("{") and body.rstrip(",").endswith("}"):
+            try:
+                plugin = json.loads(body.rstrip(","))
+            except ValueError:
+                continue
+            if isinstance(plugin, dict) and isinstance(plugin.get("parameters"), dict):
+                out.append((index, plugin))
+    return lines, out
+
+
+def extract_plugin_texts(data_dir: Path, log: LogFn = print) -> List[ExtractedText]:
+    path = plugins_file(data_dir)
+    if not path.is_file():
+        return []
+    try:
+        text = path.read_text(encoding="utf-8-sig")
+    except OSError as error:
+        log(f"plugins.js okunamadı: {error}")
+        return []
+    found: List[ExtractedText] = []
+    _lines, plugins = _plugin_lines(text)
+    for index, plugin in plugins:
+        if not plugin.get("status", True):
+            continue
+        for param, value in plugin["parameters"].items():
+            def visit(name, leaf, _param=param):
+                if isinstance(leaf, str) and _plugin_value_is_text(name, leaf):
+                    found.append(ExtractedText(path, f"plugins[{plugin.get('name', index)}].{_param}", leaf, "plugin"))
+                return leaf
+            _walk_plugin_value(str(param), value, visit)
+    if found:
+        log(f"plugins.js: {len(found)} arayüz metni (eklenti parametreleri)")
+    return found
+
+
+def write_plugin_translations(data_dir: Path, translations: Dict[str, str], log: LogFn = print) -> int:
+    path = plugins_file(data_dir)
+    if not path.is_file():
+        return 0
+    raw = path.read_bytes()
+    text = raw.decode("utf-8-sig")
+    lines, plugins = _plugin_lines(text)
+    changed = 0
+    for index, plugin in plugins:
+        if not plugin.get("status", True):
+            continue
+        count = 0
+
+        def visit(name, leaf):
+            nonlocal count
+            if isinstance(leaf, str) and _plugin_value_is_text(name, leaf):
+                new = translations.get(leaf)
+                if new and new != leaf:
+                    count += 1
+                    return new
+            return leaf
+        params = {k: _walk_plugin_value(str(k), v, visit) for k, v in plugin["parameters"].items()}
+        if count:
+            plugin["parameters"] = params
+            line = lines[index]
+            indent = line[: len(line) - len(line.lstrip())]
+            comma = "," if line.rstrip().endswith(",") else ""
+            lines[index] = indent + json.dumps(plugin, ensure_ascii=False, separators=(",", ":")) + comma + \
+                ("\r" if line.endswith("\r") else "")
+            changed += count
+    if changed:
+        bom = "﻿" if raw.startswith(b"\xef\xbb\xbf") else ""
+        path.write_text(bom + "\n".join(lines), encoding="utf-8", newline="")
+        log(f"plugins.js: {changed} arayüz metni yazıldı")
+    return changed
+
 
 # ── RPG Maker XP / VX / VX Ace (Ruby Marshal) ─────────────────────────────────
 RGSS_EXT = {"vxace": ".rvdata2", "vx": ".rvdata", "xp": ".rxdata"}
@@ -679,6 +819,23 @@ def write_translations_mv_mz(
                             continue
                         code = cmd.get("code")
                         params = cmd.get("parameters", [])
+                        if code == 357 and len(params) > 3 and isinstance(params[3], dict):
+                            hits = 0
+
+                            def visit(name, leaf):
+                                nonlocal hits
+                                if isinstance(leaf, str) and _plugin_value_is_text(name, leaf):
+                                    new = translations.get(leaf)
+                                    if new and new != leaf:
+                                        hits += 1
+                                        return new
+                                return leaf
+                            args = {k: _walk_plugin_value(str(k), v, visit) for k, v in params[3].items()}
+                            if hits:
+                                params[3] = args
+                                modified = True
+                                changed_count += hits
+                            continue
                         if code in DIALOG_CODES:
                             for pi in DIALOG_CODES[code]:
                                 if pi < len(params):
@@ -719,6 +876,10 @@ def write_translations_mv_mz(
         except Exception as e:
             log(f"Dosya yazılırken hata {json_file.name}: {str(e)}")
 
+    try:
+        changed_count += write_plugin_translations(data_dir, translations, log)
+    except Exception as e:      # eklenti dosyası beklenmedik biçimdeyse diğer çeviriler yine yazılmış olur
+        log(f"plugins.js yazılırken hata: {e}")
     return changed_count
 
 

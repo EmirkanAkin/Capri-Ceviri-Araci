@@ -216,6 +216,12 @@
                     <span class="switch"><input type="checkbox" id="qualityToggle"><i></i></span>
                   </label>
                   <label class="opt">
+                    <span class="opt-icon"><svg class="i"><use href="#i-terminal"/></svg></span>
+                    <span class="opt-text"><span class="toggle-title">Ren'Py derleme denetimi</span>
+                      <span class="field-hint">Çeviriden sonra oyunun kendi Ren'Py'siyle derler; hatalı satırı orijinaline döndürür.</span></span>
+                    <span class="switch"><input type="checkbox" id="compileToggle"><i></i></span>
+                  </label>
+                  <label class="opt">
                     <span class="opt-icon"><svg class="i"><use href="#i-flame"/></svg></span>
                     <span class="opt-text"><span class="toggle-title">Yetişkin (NSFW) sözlüğü</span>
                       <span class="field-hint">Argo ve yetişkin sahneleri doğal günlük dille aktarır.</span></span>
@@ -286,6 +292,8 @@
                 <button class="btn hidden" data-action="quality-pass" id="qualityBtn"><svg class="i"><use href="#i-sparkle"/></svg>Kalite editörü</button>
                 <button class="btn" data-action="export-patch"><svg class="i"><use href="#i-upload"/></svg>Yamayı dışa aktar</button>
                 <button class="btn" data-action="import-patch"><svg class="i"><use href="#i-download"/></svg>Yama içe aktar</button>
+                <button class="btn" data-action="export-csv" title="Excel / Google E-Tablolar'da düzeltmek için"><svg class="i"><use href="#i-lines"/></svg>Tablo (CSV)</button>
+                <button class="btn" data-action="import-csv"><svg class="i"><use href="#i-download"/></svg>Tabloyu içe aktar</button>
               </div>
             </div>
             <p class="page-sub">Çevirileri ara, düzelt ve oyuna uygula (API harcamaz). Turuncu satırlar incelenmeli.</p>
@@ -473,6 +481,12 @@
                 <li>Seçim ekranında <b>Esc</b> veya sağ tık iptal eder.</li>
               </ul>
             </div>
+          </div>
+          <div class="panel" id="ocrHistoryPanel">
+            <div class="panel-head"><div><div class="panel-title">Son ekran çevirileri</div>
+              <p class="panel-desc">Kaçırdığın altyazıları buradan oku. Yalnızca bu oturumda tutulur.</p></div>
+              <button class="btn sm" data-action="ocr-history-clear">Temizle</button></div>
+            <div class="list" id="ocrHistory"></div>
           </div>
         </section>
 
