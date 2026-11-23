@@ -23,6 +23,8 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Callable
+from fileio import atomic_write_text
+import cloud_providers
 
 
 LogFn = Callable[[str], None]
@@ -869,10 +871,7 @@ def repair_say_prefixes(tl_dir: Path, log: LogFn = print) -> dict[str, int]:
                 changed = True
 
         if changed:
-            temporary = path.with_suffix(path.suffix + ".prefix-fix.tmp")
-            with temporary.open("w", encoding="utf-8", newline="") as handle:
-                handle.writelines(lines)
-            temporary.replace(path)
+            atomic_write_text(path, "".join(lines))
             files_changed += 1
 
     log(
@@ -1223,10 +1222,7 @@ def overlay_english_dialogue_sources(
             index = new_index + 1
 
         if changed:
-            temporary = path.with_suffix(path.suffix + ".english.tmp")
-            with temporary.open("w", encoding="utf-8", newline="") as handle:
-                handle.writelines(lines)
-            temporary.replace(path)
+            atomic_write_text(path, "".join(lines))
             changed_files += 1
 
     if matched:
@@ -1458,10 +1454,7 @@ def augment_ui_string_templates(
         lines.append(f"    old {encode_literal(value)}\n")
         lines.append('    new ""\n')
         lines.append("\n")
-    temporary = target.with_suffix(target.suffix + ".tmp")
-    with temporary.open("w", encoding="utf-8", newline="") as handle:
-        handle.writelines(lines)
-    temporary.replace(target)
+    atomic_write_text(target, "".join(lines))
     log(f"Gelişmiş UI taraması: {len(found)} ek arayüz metni şablona eklendi.")
     if len(found) >= limit:
         log(f"UYARI: Arayüz metni sınırına ({limit}) ulaşıldı; kalan metinler bu çeviriye girmedi.")
@@ -1492,6 +1485,40 @@ def collect_empty_entries(root: Path):
             else:
                 entries.append((path, index, source))
     return entries, unparsed
+
+
+_SAY_WHO = re.compile(r"^\s*([A-Za-z_]\w*)\b")
+_NOT_SPEAKERS = {"old", "new", "voice", "extend", "nvl", "window", "show", "hide", "scene", "play", "stop", "queue",
+                 "with", "pause", "call", "jump", "return", "if", "elif", "else", "python", "renpy", "translate"}
+
+
+def entry_speakers(entries, character_names: dict[str, str] | None) -> dict[str, str]:
+    """{kaynak satır: konuşan karakterin adı}. Hedef satırın başındaki değişken (e "...") tanımlı karakter adına
+    çevrilir; anlatıcı satırları ve adı köşeli parantezli (değişken) karakterler atlanır. Aynı satırı farklı
+    karakterler söylüyorsa ilk konuşan alınır."""
+    if not character_names:
+        return {}
+    speakers: dict[str, str] = {}
+    lines_of: dict = {}
+    for path, index, source in entries:
+        if source in speakers:
+            continue
+        lines = lines_of.get(path)
+        if lines is None:
+            try:
+                lines = path.read_text(encoding="utf-8-sig", errors="replace").splitlines()
+            except OSError:
+                lines = []
+            lines_of[path] = lines
+        if index >= len(lines):
+            continue
+        match = _SAY_WHO.match(lines[index])
+        if not match or match.group(1) in _NOT_SPEAKERS:
+            continue
+        name = character_names.get(match.group(1))
+        if name and "[" not in name and "{" not in name and len(name) <= 40:
+            speakers[source] = name
+    return speakers
 
 
 def mask_text(text: str):
@@ -1806,7 +1833,11 @@ def editor_candidate_valid(
     candidate: str,
     speaker: str = "",
     following: str = "",
+    *,
+    rewrite_ok: bool = False,
 ) -> bool:
+    """rewrite_ok: belirli bir sorun (ör. kutuya sığmama) için istenen düzeltme; taslaktan belirgin biçimde kısalması
+    ya da değişmesi beklenir, benzerlik/uzunluk oranı denetimi atlanır."""
     if not candidate or not protected_content_valid(source, candidate):
         return False
     lowered = candidate.lower()
@@ -1839,7 +1870,7 @@ def editor_candidate_valid(
             draft_plain.casefold(),
             candidate_plain.casefold(),
         ).ratio()
-        if not needs_retranslation and (
+        if not needs_retranslation and not rewrite_ok and (
             draft_ratio < 0.65 or draft_ratio > 1.40 or similarity < 0.78
         ):
             return False
@@ -1917,10 +1948,7 @@ def write_quality_replacements(resolved: dict[tuple[Path, int], str]):
                 lines[index] = replacement
                 changed_file = True
         if changed_file:
-            temporary = path.with_suffix(path.suffix + ".quality.tmp")
-            with temporary.open("w", encoding="utf-8", newline="") as handle:
-                handle.writelines(lines)
-            temporary.replace(path)
+            atomic_write_text(path, "".join(lines))
 
 
 CACHE_FLUSH_INTERVAL = 5.0  # saniye; önbellek en fazla bu aralıkla diske yazılır
@@ -1929,10 +1957,7 @@ CACHE_FLUSH_INTERVAL = 5.0  # saniye; önbellek en fazla bu aralıkla diske yaz�
 def _write_cache_file(cache: dict[str, str], cache_path: Path, skip: set[str] | None = None) -> None:
     """Önbelleği atomik olarak (geçici dosya + replace) diske yazar."""
     data = {k: v for k, v in cache.items() if k not in skip} if skip else cache
-    cache_path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = cache_path.with_suffix(".tmp")
-    temporary.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
-    temporary.replace(cache_path)
+    atomic_write_text(cache_path, json.dumps(data, ensure_ascii=False))
 
 
 QUALITY_SYSTEM_TR = (
@@ -1941,7 +1966,8 @@ QUALITY_SYSTEM_TR = (
     "Görevin taslağı düzeltmek: anlam hataları, çevrilmeden kalan İngilizce, doğal olmayan veya robotik ifadeler, "
     "karakterin konuşma tarzına ve önceki satırlara uymayan hitap.\n"
     "Kurallar: {i}, [mc], {color=...} gibi etiketleri ve değişkenleri harfi harfine koru. İyi olan taslağı "
-    "gereksiz yere değiştirme. Konuşmacı adını cümleye ekleme. Sansür yapma.\n"
+    "gereksiz yere değiştirme. Konuşmacı adını cümleye ekleme. Sansür yapma. Öğede 'issue' alanı varsa tam olarak o "
+    "sorunu düzelt (ör. karakter sınırı verilmişse anlamı koruyarak o sınıra sığacak kadar kısalt).\n"
     "YALNIZCA şu biçimde geçerli JSON dizi döndür: [{\"id\": 0, \"tr\": \"düzeltilmiş çeviri\"}, ...]"
 )
 
@@ -1959,7 +1985,8 @@ def quality_system(target_lang: str = "tr") -> str:
         f"Fix the draft: meaning errors, untranslated English, unnatural or robotic {name}, and tone that does not fit the "
         "character or the previous lines.\n"
         "Rules: keep tags and variables such as {i}, [mc], {color=...}, \\C[1] exactly. Do not change a draft that is "
-        "already good. Do not add the speaker's name to the sentence. Do not censor.\n"
+        "already good. Do not add the speaker's name to the sentence. Do not censor. If an item has an 'issue' field, fix "
+        "exactly that problem (e.g. when a character limit is given, shorten it to fit while keeping the meaning).\n"
         'Return ONLY a valid JSON array in this form: [{"id": 0, "tr": "corrected translation"}, ...]'
     )
 
@@ -1973,24 +2000,32 @@ def quality_edit_pairs(
     progress: ProgressFn | None = None,
     extra_instruction: str = "",
     batch_size: int = 20,
+    issues: dict[str, str] | None = None,
+    order: list[str] | None = None,
 ) -> dict[str, str]:
     """
     Ren'Py dışındaki motorlar için kalite editörü: sorunlu taslaklar (çevrilmemiş, İngilizce kalıntılı, boyu tutarsız)
     oyundaki sıralarıyla, önceki iki satır bağlam olarak gönderilir. Yalnızca doğrulamadan geçen düzeltmeler döner.
+    issues: {kaynak: sorun açıklaması} verilirse yalnızca bu satırlar, sorunlarıyla birlikte gönderilir (editördeki
+    "incelenmeli" satırlar). order: bağlam için satırların oyundaki sırası (verilmezse sources).
     """
     system = quality_system(target_lang) + (f"\n\n{extra_instruction}" if extra_instruction else "")
+    order = order if order is not None else sources
+    position = {s: i for i, s in enumerate(order)}
     entries = []
     for index, source in enumerate(sources):
-        draft = translations.get(source)
+        draft = translations.get(source) or (source if issues and source in issues else None)
         if draft:
-            entry = QualityEntry(Path("."), index, source, draft, "", sources[max(0, index - 2):index], "")
-            if quality_entry_needs_edit(entry):
+            at = position.get(source, index)
+            entry = QualityEntry(Path("."), index, source, draft, "", order[max(0, at - 2):at], "")
+            if (issues and source in issues) or (not issues and quality_entry_needs_edit(entry)):
                 entries.append(entry)
     log(f"Kalite editörü: {len(sources)} satır · düzeltme adayı {len(entries)}")
     edits: dict[str, str] = {}
     for start in range(0, len(entries), batch_size):
         chunk = entries[start:start + batch_size]
-        payload = [{"id": n, "speaker": "", "context": e.previous, "en": e.source, "tr": e.draft} for n, e in enumerate(chunk)]
+        payload = [{"id": n, "speaker": "", "context": e.previous, "en": e.source, "tr": e.draft,
+                    **({"issue": issues[e.source]} if issues and e.source in issues else {})} for n, e in enumerate(chunk)]
         try:
             parsed = parse_editor_json(complete(system, json.dumps(payload, ensure_ascii=False)))
         except Exception as exc:
@@ -1998,7 +2033,8 @@ def quality_edit_pairs(
             parsed = {}
         for n, entry in enumerate(chunk):
             candidate = parsed.get(n)
-            if candidate and candidate != entry.draft and editor_candidate_valid(entry.source, entry.draft, candidate, "", ""):
+            if candidate and candidate != entry.draft and editor_candidate_valid(
+                    entry.source, entry.draft, candidate, "", "", rewrite_ok=bool(issues)):
                 edits[entry.source] = candidate
         if progress:
             progress(min(start + batch_size, len(entries)), len(entries))
@@ -2045,10 +2081,7 @@ def quality_edit_with_llm(
     edited = rejected = 0
 
     def flush():
-        quality_path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = quality_path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(qcache, ensure_ascii=False), encoding="utf-8")
-        tmp.replace(quality_path)
+        atomic_write_text(quality_path, json.dumps(qcache, ensure_ascii=False))
 
     for start in range(0, len(pending), batch_size):
         chunk = pending[start:start + batch_size]
@@ -2130,9 +2163,11 @@ def translate_with_gemini(
     max_workers: int | None = None,
     extra_instruction: str = "",
     protected: "re.Pattern | None" = None,
+    speakers: dict[str, str] | None = None,
 ) -> int:
     """protected: oyun motorunun etiket kuralı. Verilmezse Ren'Py kuralı kullanılır (köşeli parantez = değişken);
-    RPG Maker / Unity gibi motorlarda köşeli parantez sıradan metindir, kendi kurallarıyla denetlenmeleri gerekir."""
+    RPG Maker / Unity gibi motorlarda köşeli parantez sıradan metindir, kendi kurallarıyla denetlenmeleri gerekir.
+    speakers: {kaynak satır: konuşan karakter}; partideki konuşmacılar talimata not olarak eklenir (liste değişmez)."""
     if not missing:
         return 0
     if protected is None:
@@ -2207,8 +2242,10 @@ def translate_with_gemini(
             # 2.5 Flash varsayılan olarak "düşünür": çeviri için gereksiz ve yanıtı birkaç kat yavaşlatır
             if "2.5-flash" in model_name and "lite" not in model_name and model_name not in no_thinking_config:
                 config["thinkingConfig"] = {"thinkingBudget": 0}
+            from languages import speaker_note
+            note = speaker_note(items, speakers, target_lang)
             payload = {
-                "contents": [{"parts": [{"text": f"{system_instruction}\n\nİşte çevrilecek liste:\n{json.dumps(items, ensure_ascii=False)}"}]}],
+                "contents": [{"parts": [{"text": f"{system_instruction}{note}\n\nİşte çevrilecek liste:\n{json.dumps(items, ensure_ascii=False)}"}]}],
                 "generationConfig": config,
                 "safetySettings": safety_settings,
             }
@@ -2712,7 +2749,10 @@ def translate_templates(
     extra_instruction: str = "",
     target_lang: str = "tr",
     source_lang: str = "en",
+    character_names: dict[str, str] | None = None,
 ):
+    """character_names: {Ren'Py karakter değişkeni: görünen ad} (define e = Character("Elena")). Verilirse bulut
+    modellerine her satırı kimin söylediği bildirilir (cinsiyet, hitap, üslup için)."""
     entries, unparsed = collect_empty_entries(tl_dir)
     if unparsed:
         raise RuntimeError(f"{len(unparsed)} boş hedef ayrıştırılamadı.")
@@ -2750,6 +2790,8 @@ def translate_templates(
 
     if missing:
         selected_model = model_kind.casefold()
+        speakers = entry_speakers(entries, character_names)
+        speaker_kw = {"speakers": speakers} if speakers else {}
         if selected_model == "gemini":
             api_key = load_gemini_api_key()
             if not api_key:
@@ -2767,14 +2809,15 @@ def translate_templates(
                 extra_instruction=extra_instruction,
                 target_lang=target_lang,
                 source_lang=source_lang,
+                **speaker_kw,
             )
-        elif selected_model in ("openai", "anthropic", "deepl"):
+        elif selected_model in cloud_providers.TRANSLATE_IDS:
             from providers import translate_with_cloud
 
             translate_with_cloud(
                 selected_model, missing, cache, cache_path, log=log, progress=progress,
                 game_engine="Ren'Py Visual Novel", failed_out=failed_out, extra_instruction=extra_instruction,
-                target_lang=target_lang, source_lang=source_lang,
+                target_lang=target_lang, source_lang=source_lang, **speaker_kw,
             )
         elif selected_model in ("ollama", "local"):
             from engine_common import TranslationCache, make_llm_engine
@@ -2816,10 +2859,7 @@ def translate_templates(
                 + ending
             )
             written += 1
-        temporary = path.with_suffix(path.suffix + ".tmp")
-        with temporary.open("w", encoding="utf-8", newline="") as handle:
-            handle.writelines(lines)
-        temporary.replace(path)
+        atomic_write_text(path, "".join(lines))
     log(f"Dosyalara yazıldı: {written} satır")
     return written
 
@@ -3042,10 +3082,7 @@ def repair_safe_issues(tl_dir: Path, log: LogFn = print) -> int:
                 changed = True
                 repaired += 1
         if changed:
-            temporary = path.with_suffix(path.suffix + ".tmp")
-            with temporary.open("w", encoding="utf-8", newline="") as handle:
-                handle.writelines(lines)
-            temporary.replace(path)
+            atomic_write_text(path, "".join(lines))
     if repaired:
         log(f"Güvenli QA onarımı: {repaired} satır")
     return repaired

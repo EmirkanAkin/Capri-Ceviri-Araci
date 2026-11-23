@@ -4,6 +4,7 @@ import io
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
+from fileio import atomic_write
 
 # engine_common modülünden gerekli içe aktarımlar
 from engine_common import (
@@ -385,6 +386,7 @@ class ExtractedText:
     original: str
     context: str
     speaker: str = ""
+    face: bool = False      # 401: mesajda yüz görseli var (satır daha dar)
 
 def _command_texts(json_file: Path, commands: Any, base: str) -> List[ExtractedText]:
     """Bir olay komut listesindeki oyuncunun gördüğü metinler: konuşma (401, 101 başlığındaki ad), kayan metin (405)
@@ -392,16 +394,18 @@ def _command_texts(json_file: Path, commands: Any, base: str) -> List[ExtractedT
     found: List[ExtractedText] = []
     if not isinstance(commands, list):
         return found
-    speaker = ""
+    speaker, face = "", False
     for i, cmd in enumerate(commands):
         if not isinstance(cmd, dict):
             continue
         code, params = cmd.get("code"), cmd.get("parameters") or []
         if code == 101:
             speaker = params[4] if len(params) > 4 and isinstance(params[4], str) else ""
+            face = bool(params and isinstance(params[0], str) and params[0].strip())
         elif code in (401, 405) and params and isinstance(params[0], str) and params[0].strip():
             found.append(ExtractedText(json_file, f"{base}.list[{i}].parameters[0]", params[0],
-                                       "dialogue" if code == 401 else "scroll", speaker if code == 401 else ""))
+                                       "dialogue" if code == 401 else "scroll", speaker if code == 401 else "",
+                                       face=code == 401 and face))
         elif code == 102 and params and isinstance(params[0], list):
             for c_idx, choice in enumerate(params[0]):
                 if isinstance(choice, str) and choice.strip():
@@ -908,9 +912,7 @@ def write_translations_vxace(
                 node.text = new
                 changed += 1
         if changed:
-            temporary = path.with_suffix(path.suffix + ".tmp")
-            temporary.write_bytes(rgss_marshal.dumps(obj))
-            temporary.replace(path)
+            atomic_write(path, rgss_marshal.dumps(obj))
             changed_total += changed
             log(f"Güncellendi: {path.name} ({changed} metin)")
     return changed_total

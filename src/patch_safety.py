@@ -45,6 +45,15 @@ def engine_pattern(engine: str) -> "re.Pattern":
     if engine == "unreal":
         from engine_unreal import PROTECTED_UNREAL
         return PROTECTED_UNREAL
+    if engine in ("tyrano", "kirikiri"):
+        from kag_script import PROTECTED_KAG
+        return PROTECTED_KAG
+    if engine == "godot":
+        from engine_godot import PROTECTED_GODOT
+        return PROTECTED_GODOT
+    if engine == "wolf":
+        from engine_wolf import PROTECTED_WOLF
+        return PROTECTED_WOLF
     from providers import CLOUD_PROTECTED
     return CLOUD_PROTECTED
 

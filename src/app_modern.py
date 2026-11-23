@@ -40,9 +40,12 @@ TARGET_CODES = {c for _l, c in get_all_target_languages()}
 from library import ProjectLibrary, resolve_art
 from progress import LiveEta, SpeedStore, estimate, estimate_cost, format_duration, format_rate
 from languages import renpy_language_name
+from fileio import atomic_write_text
+import text_fit
+import cloud_providers
 from user_errors import describe_error
 
-APP_VERSION = "1.0.8"
+APP_VERSION = "1.0.9"
 from paths import APP_DIR, FROZEN, GLOSSARY_DIR, ICON_FILE, RES_DIR, WEB_DIR, seed_user_files
 SOUNDS_DIR = RES_DIR / "assets"
 import gpu_runtime
@@ -56,19 +59,26 @@ ENGINE_LABELS = {
     "unity": "Unity",
     "unreal": "Unreal Engine",
     "rpgmaker": "RPG Maker",
+    "tyrano": "TyranoScript",
+    "kirikiri": "KiriKiri",
+    "godot": "Godot",
+    "wolf": "WOLF RPG",
 }
+KAG_ENGINES = ("tyrano", "kirikiri")
 MODEL_LABELS = {
     "gemini": "Google Gemini",
     "openai": "OpenAI",
     "anthropic": "Anthropic Claude",
     "deepl": "DeepL",
+    **{pid: meta["title"] for pid, meta in cloud_providers.ALL.items()},
     "local": "Yerel model (dahili)",
     "ollama": "Ollama (yerel LLM)",
     "opus": "OPUS-MT (çevrimdışı)",
     "nllb": "NLLB-200 (çevrimdışı)",
 }
 FULL_TRANSLATION_MODELS = tuple(MODEL_LABELS)
-CLOUD_MODELS = ("openai", "anthropic", "deepl")
+CLOUD_MODELS = ("openai", "anthropic", "deepl", *cloud_providers.ALL)
+SPEAKER_MODELS = ("gemini", "openai", "anthropic", *cloud_providers.CHAT_PROVIDERS)   # konuşan karakteri bilen motorlar
 LOCAL_MODELS = ("opus", "nllb")          # Ekran kartında çalışan çevrimdışı modeller
 TURKISH_ONLY_MODELS = ("opus",)           # OPUS-MT yalnızca EN→TR; NLLB-200 çok dilli
 GLOSSARY_FILES = {"general": "glossary.json", "rpgmaker": "glossary_rpgm.json", "nsfw": "glossary_nsfw.json"}
@@ -77,19 +87,30 @@ DEFAULT_SETTINGS = {
     "gpu_auto": True,
     "ocr_hotkey": "Ctrl+Shift+T", "pin_hotkey": "Ctrl+Shift+Y", "ocr_model": "",
     "ocr_interval": 350, "ocr_place": "below",
-    "update_repo": "", "update_check": True,
+    "update_repo": "", "update_check": True, "ocr_speak": False, "tour_done": False, "game_tour_done": False, "tours_seen": [],
     "scan_on_start": True, "renpy_compile_check": True, "scan_folders": [], "scan_dismissed": [], "sound": True, "notify": True, "memory": True, "ui_language": None,
+    "auto_names": True,        # ilk çeviride karakter adlarını tarayıp oyuna özel sözlüğe ekle
     "local_model": None,       # dahili yerel model (local_llm.CATALOG kimliği); None: ekran kartına göre önerilen
 }
-# Güncelleme penceresinde gösterilir; ayrıntılar CHANGELOG.md'de
+# Güncelleme penceresinde ve GitHub sürüm notunda gösterilir; ayrıntılar CHANGELOG.md'de. Her sürümde yenilenmeli:
+# WHATS_NEW_VERSION, APP_VERSION'la aynı değilse sürüm derlemesi durur (build_exe.py --check-tag).
+WHATS_NEW_VERSION = "1.0.9"
 WHATS_NEW = [
-    "Unity: Naninovel görsel romanları dosyadan çevriliyor (BepInEx gerekmez)",
-    "Unity: PlayMaker, UI Text/TextMeshPro ve data.unity3d metinleri BepInEx'siz çevriliyor",
-    "Ren'Py: diyaloğu argümanla veren oyunlarda bütün satırlar çevriliyor",
-    "Sağlayıcılar sadeleşti: yerel modeller (TranslateGemma, OPUS-MT, NLLB) tek kartta",
-    "Açıklamalar kısaldı; ana sayfada ekran çevirisi (OCR) de görünüyor",
+    "Yeni motorlar: Godot, TyranoScript, KiriKiri ve WOLF RPG",
+    "WOLF RPG: şifreli Data.wolf arşivleri ve veritabanı (eşya, beceri, karakter adları)",
+    "Unity Localization tabloları ve Godot betiklerindeki metinler dosyadan çevrilir",
+    "Yerel model kitaplığı: 12 model kaliteye göre sıralı; OPUS-MT ve NLLB artık PyTorch'suz",
+    "Yeni bulut sağlayıcıları: DeepSeek, Mistral, Grok, Groq, OpenRouter, Qwen ve daha fazlası",
+    "Toplu çeviri: oyunları sıraya ekle, teker teker çevrilsin",
+    "Editör: kutuya sığmayan satırlar işaretlenir ve yapay zekâyla düzeltilir",
+    "Elle yaptığın düzeltmeler ve karakter adları diğer oyunlarda da kullanılır",
+    "Altyazı (.srt, .vtt, .ass) çevirisi ve ekran çevirisini sesli okuma",
+    "Maskot Capri eşliğinde tanıtım turu ve her sayfa için kısa anlatım",
 ]
 UI_PORT = 42001
+QUEUE_ASK_TIMEOUT = 60      # toplu çeviride onay sorusu en çok bu kadar bekler
+REVIEW_FIX_LIMIT = 400     # "İncelenmelileri düzelt" bir seferde en çok bu kadar satır gönderir
+COST_CONFIRM_USD = 3.0     # ücretli API'de bu tutarın üstündeki çeviriler başlamadan onay ister
 NOTO = "https://github.com/notofonts/noto-cjk/raw/main/Sans/SubsetOTF/{0}/NotoSans{0}-Regular.otf"
 NOTO_FONTS = {"ja": NOTO.format("JP"), "zh-CN": NOTO.format("SC"), "zh-TW": NOTO.format("TC"), "ko": NOTO.format("KR")}
 FONT_MAGIC = (b"OTTO", b"\x00\x01\x00\x00", b"true", b"ttcf")
@@ -136,7 +157,7 @@ def fetch_github_file(url: str, target: Path, log: Callable[[str], None] = print
     temp.write_bytes(data)
     temp.replace(target)
     return target
-ANALYSIS_VERSION = 6     # analiz biçimi değişince eski kayıtlar yok sayılır (6: Naninovel)
+ANALYSIS_VERSION = 7     # analiz biçimi değişince eski kayıtlar yok sayılır (7: metin kutusu sınırları)
 LEARN_MIN_LINES, LEARN_MIN_SECONDS = 20, 5.0
 OCR_TITLES = {"select": "Capri OCR Seçim", "popup": "Capri OCR Sonuç", "pin": "Capri OCR Sabit"}
 PATCH_SUFFIX = ".capripatch"
@@ -166,6 +187,27 @@ def _detect_here(p: Path) -> Tuple[Optional[str], Any]:
         info = detect_unreal_game(str(p))
         if info:
             return "unreal", info
+    except Exception:
+        pass
+    try:
+        from engine_kag import detect_kag_game
+        info = detect_kag_game(p)
+        if info:
+            return info.dialect, info
+    except Exception:
+        pass
+    try:
+        from engine_godot import detect_godot
+        info = detect_godot(p)
+        if info:
+            return "godot", info
+    except Exception:
+        pass
+    try:
+        from engine_wolf import detect_wolf
+        info = detect_wolf(p)
+        if info:
+            return "wolf", info
     except Exception:
         pass
     try:
@@ -214,6 +256,26 @@ def detect_any_game_type(path_str: str) -> Tuple[Optional[str], Any]:
                 deeper.append(child)
         frontier = deeper
     return None, None
+
+
+_KANA = re.compile(r"[぀-ヿ]")
+_HANGUL = re.compile(r"[가-힯]")
+_HAN = re.compile(r"[㐀-鿿]")
+
+
+def detect_source_language(texts: List[str], default: str = "en") -> str:
+    """Oyun metinlerinin dili (yalnızca alfabeye bakar): kana → ja, hangıl → ko, yalnızca Çince karakter → zh-CN."""
+    sample = [t for t in texts[:3000] if t.strip()]
+    if not sample:
+        return default
+    share = lambda rx: sum(1 for t in sample if rx.search(t)) / len(sample)   # noqa: E731
+    if share(_KANA) > 0.2:
+        return "ja"
+    if share(_HANGUL) > 0.2:
+        return "ko"
+    if share(_HAN) > 0.3:
+        return "zh-CN"
+    return default
 
 
 def game_root_of(game_type: str, info: Any, fallback: Path) -> Path:
@@ -269,6 +331,21 @@ def quick_line_count(game: Dict[str, Any]) -> Optional[int]:
         info = detect_unreal_game(root)
         if info is not None and info.locres_files:
             return len({t.original for t in extract_texts_unreal(info, log=quiet) if t.original.strip()}) or None
+    if game["engine"] in KAG_ENGINES:
+        from engine_kag import detect_kag_game, extract_texts
+        info = detect_kag_game(root)
+        if info is not None and not info.encrypted:
+            return len({t.original for t in extract_texts(info, log=quiet)}) or None
+    if game["engine"] == "godot":
+        import engine_godot
+        info = engine_godot.detect_godot(root)
+        if info is not None and not info.encrypted:
+            return len({t.original for t in engine_godot.extract_texts(info, log=quiet)}) or None
+    if game["engine"] == "wolf":
+        import engine_wolf
+        info = engine_wolf.detect_wolf(root)
+        if info is not None and not info.archived:
+            return len({t.original for t in engine_wolf.extract_texts(info, log=quiet)}) or None
     return None
 
 
@@ -414,6 +491,15 @@ def estimate_renpy_text(game_dir: Path) -> Dict[str, Any]:
     return {"unique": approx, "chars": approx * 45, "words": approx * 8, "exact": False} if approx else {}
 
 
+def renpy_character_map(game_dir: Path) -> Dict[str, str]:
+    """{karakter değişkeni: görünen ad} — define e = Character("Elena")."""
+    found: Dict[str, str] = {}
+    for text in _renpy_script_texts(game_dir):
+        for match in CHARACTER_DEFINE.finditer(text):
+            found.setdefault(match.group(1), match.group(3).strip())
+    return found
+
+
 def scan_renpy_characters(game_dir: Path) -> List[str]:
     """Ren'Py `define x = Character("Ad")` tanımlarını açık .rpy dosyalarından ve RPA arşivlerinden toplar."""
     names: List[str] = []
@@ -423,6 +509,34 @@ def scan_renpy_characters(game_dir: Path) -> List[str]:
             if name and "[" not in name and "{" not in name and name not in names and len(name) <= 40:
                 names.append(name)
     return names
+
+
+# Karakter tanımlarında sık geçen, çevrilmesi gereken genel sözcükler (özel ad değil)
+ROLE_WORDS = {
+    "mom", "mother", "dad", "father", "mum", "mama", "papa", "sister", "brother", "sis", "bro", "aunt", "uncle", "grandma",
+    "grandpa", "grandmother", "grandfather", "son", "daughter", "wife", "husband", "girlfriend", "boyfriend", "friend",
+    "guard", "soldier", "knight", "king", "queen", "prince", "princess", "lord", "lady", "sir", "madam", "master", "maid",
+    "butler", "servant", "teacher", "student", "professor", "doctor", "nurse", "boss", "manager", "officer", "police",
+    "policeman", "detective", "priest", "nun", "monk", "witch", "wizard", "mage", "hero", "heroine", "villain", "demon",
+    "angel", "ghost", "monster", "man", "woman", "boy", "girl", "child", "kid", "baby", "old", "young", "stranger",
+    "voice", "narrator", "announcer", "unknown", "someone", "everyone", "all", "both", "player", "you", "me", "crowd",
+    "customer", "clerk", "waiter", "waitress", "bartender", "driver", "receptionist", "shopkeeper", "merchant", "villager",
+    "townsperson", "guest", "host", "neighbor", "neighbour", "classmate", "roommate", "coworker", "colleague", "thug",
+    "bandit", "thief", "assistant", "secretary", "scientist", "guy", "dude", "gentleman", "mysterious", "girls",
+    "boys", "men", "women", "people", "group", "phone", "tv", "radio", "computer", "system", "note", "letter", "sign",
+}
+_NAME_WORD = r"[A-ZÀ-ÖØ-Þ](?:[a-zà-öø-ÿ]+|['’-][A-ZÀ-ÖØ-Þ]?[a-zà-öø-ÿ]+)+"
+_NAME_SHAPE = re.compile(rf"{_NAME_WORD}(?: {_NAME_WORD})?")
+LATIN_TARGETS = {"tr", "en", "es", "de", "fr", "it", "pt-BR", "pt", "pl", "nl", "id", "vi", "cs", "ro", "hu", "sv",
+                 "da", "no", "fi"}
+
+
+def looks_like_name(name: str) -> bool:
+    """"Elena", "Mary Jane" gibi özel adlar; "Mom", "Old Man", "???" gibi çevrilmesi gerekenler değil."""
+    name = str(name or "").strip()
+    if len(name) < 2 or len(name) > 30 or not _NAME_SHAPE.fullmatch(name):
+        return False
+    return not any(part.casefold().strip("'’") in ROLE_WORDS for part in name.split())
 
 
 def scan_rpgmaker_characters(data_dir: Path) -> List[str]:
@@ -437,8 +551,11 @@ def scan_rpgmaker_characters(data_dir: Path) -> List[str]:
     return names
 
 
+UNITY_LOCALIZATION_NOTE = ("Oyun, Unity'nin Localization paketini kullanıyor; dize tabloları dosyadan çevrilir. Veri "
+                           "dosyası tablolarında Türkçe oyunun dil listesine eklenir; paketli tablolarda oyunda English'i "
+                           "seçince Türkçe görünür.")
 OUTDATED_NOTE = ("Oyun dosyaları çeviriden sonra değişmiş (oyun güncellenmiş olabilir); çeviri kaybolmuş ya da yeni satırlar "
-                 "eklenmiş olabilir. 'Çeviriyi başlat' ile yeniden uygula — önbellekteki satırlar ücretsiz.")
+                 "eklenmiş olabilir. Yeniden uygularken önbellekteki satırlar ücretsizdir, yalnızca yeni satırlar çevrilir.")
 
 
 def game_files_stamp(root: str | Path, engine: str) -> Optional[str]:
@@ -455,6 +572,15 @@ def game_files_stamp(root: str | Path, engine: str) -> Optional[str]:
                  if "tl" not in f.relative_to(root / "game").parts[:1] and not f.name.lower().startswith(("zz_", "turkish_support"))]
     elif engine == "unreal":
         files = [f for ext in ("pak", "utoc", "ucas") for f in root.glob(f"**/Content/Paks/*.{ext}") if "~mods" not in f.parts]
+    elif engine in KAG_ENGINES:
+        from engine_kag import files_stamp_paths
+        files = files_stamp_paths(root)
+    elif engine == "godot":
+        from engine_godot import files_stamp_paths
+        files = files_stamp_paths(root)
+    elif engine == "wolf":
+        from engine_wolf import files_stamp_paths
+        files = files_stamp_paths(root)
     else:
         return None
     files = sorted({f for f in files if f.is_file() and "_capri_backups" not in f.parts})[:5000]
@@ -468,29 +594,66 @@ def game_files_stamp(root: str | Path, engine: str) -> Optional[str]:
 
 
 
+class TermRules:
+    """Oyuna özel terim kuralları. Bütün terimler tek bir birleşik desenle önce elenir (satırların çoğunda hiçbir terim
+    geçmez); yalnızca eşleşen satırlarda, metninde geçen terimlerin kendi kuralı denetlenir. Sonuç terim başına ayrı
+    arayan eski yöntemle birebir aynıdır, ama satır × terim kadar regex araması yapılmaz."""
+
+    def __init__(self, terms: Dict[str, str]):
+        self.rules: List[Tuple["re.Pattern", str, str]] = []
+        sources = set()
+        for source, target in (terms or {}).items():
+            source, target = str(source).strip(), str(target or "").strip()
+            if len(source) < 3 or not target:
+                continue
+            flags = 0 if source[:1].isupper() else re.IGNORECASE
+            self.rules.append((re.compile(r"(?<![\w])" + re.escape(source) + r"(?![\w])", flags), target.casefold(),
+                               source.casefold()))
+            sources.add(source)
+        # Ön eleme özgün yazımla kurulur: "İ".casefold() iki karakterdir ve büyük/küçük harf duyarsız regex onu "İ" ile eşleştirmez
+        alternatives = sorted((re.escape(x) for x in sources), key=len, reverse=True)
+        self.any = re.compile(r"(?<![\w])(?:" + "|".join(alternatives) + r")(?![\w])", re.IGNORECASE) \
+            if alternatives else None
+
+    def __bool__(self) -> bool:
+        return bool(self.rules)
+
+    def lost(self, src: str, tr: str) -> bool:
+        if not self.rules or not tr or tr == src or not self.any.search(src):
+            return False
+        lowered, folded = src.casefold(), tr.casefold()
+        return any(key in lowered and target not in folded and rx.search(src) for rx, target, key in self.rules)
+
+
+def term_rules(terms: Dict[str, str]) -> TermRules:
+    return TermRules(terms)
+
+
+def term_lost(src: str, tr: str, rules: Optional[TermRules]) -> bool:
+    return bool(rules) and rules.lost(src, tr)
+
+
 def term_inconsistencies(cache: Dict[str, str], terms: Dict[str, str], limit: int = 5000) -> List[str]:
     """Oyuna özel terimler (karakter adları, yer adları…) kaynakta geçip çeviride hiç geçmiyorsa o satırlar.
     Türkçe ekler sorun olmaz ("Elena'ya" içinde "Elena" var). Genel sözlük kullanılmaz: "Save" gibi sözcükler cümle
     içinde başka türlü çevrilebilir."""
-    rules = []
-    for source, target in (terms or {}).items():
-        source, target = str(source).strip(), str(target or "").strip()
-        if len(source) < 3 or not target:
-            continue
-        flags = 0 if source[:1].isupper() else re.IGNORECASE
-        rules.append((re.compile(r"(?<![\w])" + re.escape(source) + r"(?![\w])", flags), target.casefold()))
+    rules = term_rules(terms)
     if not rules:
         return []
     found = []
     for src, tr in cache.items():
-        if not tr or tr == src:
-            continue
-        folded = tr.casefold()
-        if any(rx.search(src) and target not in folded for rx, target in rules):
+        if term_lost(src, tr, rules):
             found.append(src)
             if len(found) >= limit:
                 break
     return found
+
+
+def _mtime_ns(path: Optional[Path]) -> Optional[int]:
+    try:
+        return path.stat().st_mtime_ns if path else None
+    except OSError:
+        return None
 
 
 def review_path_for(cache_path: Path) -> Path:
@@ -505,13 +668,7 @@ def _read_json(path: Path, default: Any) -> Any:
 
 
 def _write_json(path: Path, data: Any, indent: Any = 2) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    with open(tmp, "w", encoding="utf-8") as handle:
-        handle.write(json.dumps(data, ensure_ascii=False, indent=indent))
-        handle.flush()
-        os.fsync(handle.fileno())            # elektrik kesilirse yarım/boş dosya kalmasın
-    tmp.replace(path)
+    atomic_write_text(path, json.dumps(data, ensure_ascii=False, indent=indent))   # elektrik kesilirse yarım kalmaz
 
 
 def _n(value: Any) -> str:
@@ -705,6 +862,13 @@ class CapriBridge:
         self._ui_dict: Dict[str, str] = {}      # arayüz dili sözlüğü (Windows bildirimleri de çevrilir)
         self._speeds = SpeedStore(DATA_DIR / "speeds_v2.json")   # v2: Gemini hızlandı, eski ölçümler geçersiz
         self._editor_cache: Optional[Tuple[Tuple[str, int], Dict[str, str], Dict[str, bool]]] = None
+        self._editor_fold: Optional[Tuple[Dict[str, str], Dict[str, Tuple[str, str]]]] = None
+        self._review_ctx: Optional[Tuple[Tuple[Any, ...], Any]] = None   # editör: incelenmeli satır bağlamı
+        self._fit_missing: set = set()                 # çeviri klasörü olmayan Ren'Py oyunları (sınır hesaplanamaz)
+        self._queue: List[Dict[str, Any]] = []      # toplu çeviri sırası (yerinde değişir, _queue_lock ile korunur)
+        self._queue_lock = threading.Lock()
+        self._queue_running = False
+        self._queue_last_ask = ""
         self._analysis_thread: Optional[threading.Thread] = None
         self._scan_running = False
         self._scan_found: List[Dict[str, str]] = _read_json(DATA_DIR / "scan.json", [])
@@ -812,7 +976,11 @@ class CapriBridge:
         self._ui.emit("notice", {"text": text})
 
     def _ask(self, title: str, text: str, timeout: float = 300.0) -> bool:
-        """Arayüzde onay penceresi açar ve kullanıcının yanıtını bekler."""
+        """Arayüzde onay penceresi açar ve kullanıcının yanıtını bekler. Toplu çeviri sürerken (gözetimsiz çalışma)
+        en çok QUEUE_ASK_TIMEOUT saniye beklenir; yanıt gelmezse "hayır" sayılır ve soru oyunun notuna yazılır."""
+        if self._queue_running:
+            timeout = min(timeout, QUEUE_ASK_TIMEOUT)
+            self._queue_last_ask = title
         cid = uuid.uuid4().hex
         event, answer = threading.Event(), [False]
         self._confirms[cid] = (event, answer)
@@ -966,28 +1134,62 @@ class CapriBridge:
     def _memory_file(self) -> Path:
         return DATA_DIR / "memory" / f"ui_{self._settings['target']}.json"
 
+    def _fixes_file(self) -> Path:
+        return DATA_DIR / "memory" / f"fixes_{self._settings['target']}.json"
+
     def _seed_memory(self, cache_path: Path) -> int:
-        """Başka oyunlarda çevrilmiş arayüz metinlerini bu oyunun önbelleğine ekler (var olanlara dokunmaz)."""
+        """Başka oyunlarda çevrilmiş arayüz metinlerini ve Çeviri Editörü'nde elle yapılmış düzeltmeleri bu oyunun
+        önbelleğine ekler. Bu oyunda zaten çevrilmiş satırlara dokunmaz."""
         if not self._settings.get("memory", True):
             return 0
         memory = _read_json(self._memory_file(), {})
-        if not isinstance(memory, dict) or not memory:
+        fixes = _read_json(self._fixes_file(), {})
+        memory = memory if isinstance(memory, dict) else {}
+        fixes = fixes if isinstance(fixes, dict) else {}
+        if not memory and not fixes:
             return 0
         cache = _read_json(cache_path, {})
         if not isinstance(cache, dict):
             return 0
-        added = {source: text for source, text in memory.items() if source not in cache}
-        if added:
-            cache.update(added)
-            _write_json(cache_path, cache)
-            self._log(f"Ortak çeviri belleği: {_n(len(added))} arayüz metni hazır (başka oyunlarda çevrilmişti)")
-        return len(added)
+        from_fixes = {s: t for s, t in fixes.items() if isinstance(s, str) and isinstance(t, str) and t and s not in cache}
+        from_memory = {s: t for s, t in memory.items() if s not in cache and s not in from_fixes}
+        if from_fixes or from_memory:
+            cache.update(from_memory)
+            cache.update(from_fixes)
+            _write_json(cache_path, cache, indent=None)
+        if from_memory:
+            self._log(f"Ortak çeviri belleği: {_n(len(from_memory))} arayüz metni hazır (başka oyunlarda çevrilmişti)")
+        if from_fixes:
+            self._log(f"Düzeltme belleği: {_n(len(from_fixes))} satır başka oyunlarda elle düzelttiğin hâliyle geldi")
+        return len(from_memory) + len(from_fixes)
 
-    def _learn_memory(self, cache_path: Path) -> int:
-        """Bu oyunda çevrilen kısa arayüz metinlerini ortak belleğe ekler."""
+    def _learn_fixes(self, fixes: Dict[str, str]) -> int:
+        """Çeviri Editörü'nde elle düzeltilen satırlar: aynı cümle başka oyunda (ör. serinin devamında) geçerse
+        makine çevirisi yerine bu hâli kullanılır. Kısa arayüz metinleri ortak bellekte de güncellenir."""
+        fixes = {s: t for s, t in fixes.items() if isinstance(s, str) and isinstance(t, str) and s and t and t != s}
+        if not fixes or not self._settings.get("memory", True):
+            return 0
+        stored = _read_json(self._fixes_file(), {})
+        stored = stored if isinstance(stored, dict) else {}
+        for source in fixes:
+            stored.pop(source, None)            # yeniden düzeltilen satır en yeniler arasına geçer
+        stored.update(fixes)
+        if len(stored) > MEMORY_LIMIT:
+            stored = dict(list(stored.items())[-MEMORY_LIMIT:])
+        _write_json(self._fixes_file(), stored)
+        ui = {s: t for s, t in fixes.items() if is_ui_text(s)}
+        if ui:
+            memory = _read_json(self._memory_file(), {})
+            memory = memory if isinstance(memory, dict) else {}
+            memory.update(ui)
+            _write_json(self._memory_file(), memory)
+        return len(fixes)
+
+    def _learn_memory(self, cache_path: Path, cache: Optional[Dict[str, str]] = None) -> int:
+        """Bu oyunda çevrilen kısa arayüz metinlerini ortak belleğe ekler. cache: zaten okunmuş önbellek."""
         if not self._settings.get("memory", True):
             return 0
-        cache = _read_json(cache_path, {})
+        cache = _read_json(cache_path, {}) if cache is None else cache
         memory = _read_json(self._memory_file(), {})
         if not isinstance(cache, dict) or not isinstance(memory, dict):
             return 0
@@ -1000,12 +1202,55 @@ class CapriBridge:
             _write_json(self._memory_file(), memory)
         return len(new)
 
+    # ── Metin kutusuna sığma ────────────────────────────────────────────────
+    def _fit_path(self, game: Dict[str, Any]) -> Path:
+        return DATA_DIR / "reports" / f"{cache_file_for(Path(game['root']), DATA_DIR).stem}_{game['type']}.fit.json"
+
+    def _save_fit(self, game: Dict[str, Any], limits: Dict[str, int]) -> None:
+        text_fit.save_limits(self._fit_path(game), limits)
+
+    def _fit_limits(self, game: Dict[str, Any]) -> Dict[str, int]:
+        """Kaynak satır → metin kutusuna sığan en çok karakter. Ren'Py'de çeviri klasöründen hesaplanır (bir kez)."""
+        path = self._fit_path(game)
+        if game["type"] == "renpy" and not path.exists():
+            if ProjectLibrary.key(game["root"]) in self._fit_missing:   # çeviri klasörü yok: analiz her seferinde yinelenmez
+                return {}
+            from engine_renpy import analyze_game
+            info = analyze_game(game["root"], lambda s: None, language=renpy_language_name(self._settings["target"]))
+            if not info.tl_dir.is_dir():
+                self._fit_missing.add(ProjectLibrary.key(game["root"]))
+                return {}
+            self._save_fit(game, text_fit.renpy_limits(info.game_dir, info.tl_dir))
+        return text_fit.load_limits(path)
+
+    def _overflow_after_translate(self, game: Dict[str, Any], cache: Optional[Dict[str, str]] = None) -> List[str]:
+        """Çeviriden sonra: metin kutusundan taşabilecek satırlar (yalnızca RPG Maker MV/MZ ve Ren'Py)."""
+        if game["type"] not in text_fit.WIDTH_FUNCS:
+            return []
+        try:
+            if game["type"] == "renpy":
+                self._fit_path(game).unlink(missing_ok=True)     # çeviri klasörü yeniden üretildi
+                self._fit_missing.discard(ProjectLibrary.key(game["root"]))
+            limits = self._fit_limits(game)
+            found = text_fit.overflowing(_read_json(self._cache_path(), {}) if cache is None else cache, limits,
+                                         game["type"])
+        except Exception as exc:
+            self._log(f"Metin kutusu denetimi yapılamadı: {exc}")
+            return []
+        if found:
+            self._log(f"Metin kutusu denetimi: {_n(len(found))} satır kutuya sığmayabilir (tahmin).")
+            self._notify(f"{_n(len(found))} satır kutuya sığmayabilir",
+                         "Çevirisi orijinalinden uzun olup metin kutusunu aşabilecek satırlar editörde turuncu görünür. "
+                         "'İncelenmelileri düzelt' bunları yapay zekâyla kısaltır.", "warn", "edit",
+                         {"label": "Editörde aç", "page": "editor"})
+        return list(found)
+
     def _record_review(self, cache_path: Path, failed: set, terms: Optional[Dict[str, str]] = None,
-                       forced: Any = ()) -> None:
+                       forced: Any = (), cache: Optional[Dict[str, str]] = None) -> None:
         """Geçerli çeviri alınamayan, oyun terimini kaybeden ve derleme denetiminin orijinaline döndürdüğü (forced)
-        satırları editörde incelenmek üzere kaydeder."""
+        satırları editörde incelenmek üzere kaydeder. cache: zaten okunmuş önbellek (verilmezse dosyadan okunur)."""
         path = review_path_for(cache_path)
-        cache = _read_json(cache_path, {})
+        cache = _read_json(cache_path, {}) if cache is None else cache
         current = set(_read_json(path, [])) | set(failed)
         terms_lost = set(term_inconsistencies(cache, terms or {}))
         lost = terms_lost | set(forced or ())
@@ -1054,7 +1299,9 @@ class CapriBridge:
                 "deepl_key": cfg.deepl_key,
                 "ollama_host": cfg.ollama_host,
                 "ollama_model": cfg.ollama_model,
+                **self._extra_provider_fields(cfg),
             },
+            "provider_catalog": self._provider_catalog(),
             "models": {k: prov.get_offline_model_status(k) for k in ("opus", "nllb")},
             "whats_new": WHATS_NEW,
             "ui": self._ui_payload(),
@@ -1152,8 +1399,9 @@ class CapriBridge:
         from engine_renpy import load_gemini_api_key, translate_with_gemini
         cfg = prov.load_provider_config()
         keys = {"gemini": bool(cfg.gemini_keys or load_gemini_api_key()), "openai": bool(cfg.openai_key),
-                "anthropic": bool(cfg.anthropic_key), "deepl": bool(cfg.deepl_key)}
-        order = [self._settings["model"]] + ["gemini", "openai", "anthropic", "deepl"]
+                "anthropic": bool(cfg.anthropic_key), "deepl": bool(cfg.deepl_key),
+                **{pid: cloud_providers.configured(cfg, pid) for pid in cloud_providers.ALL}}
+        order = [self._settings["model"]] + ["gemini", "openai", "anthropic", "deepl", *cloud_providers.ALL]
         provider = next((p for p in order if keys.get(p)), None)
         if provider is None:
             return None
@@ -1472,28 +1720,7 @@ class CapriBridge:
 
         def work():
             try:
-                analysis = None if force else self._load_analysis(game)
-                if analysis is None:
-                    analysis = getattr(self, f"_analyze_{game['type']}")(game)
-                    self._prepare_analysis(game, analysis)
-                    self._save_analysis(game, analysis)
-                game["analysis"] = analysis
-                current = self._library.get(game["root"]) or {}
-                stamp = current.get("files_stamp")
-                if current.get("status") == "translated" and stamp and stamp != game_files_stamp(game["root"], game["type"]):
-                    # Oyun güncellendi: çeviri kaybolmuş olabilir; eski yedekler artık "orijinal" sayılmaz
-                    self._library.upsert(game["root"], touch=False, status="analyzed", files_changed_at=time.time(),
-                                         last_action="Oyun güncellenmiş", last_action_at=time.time())
-                    self._log("Oyun dosyaları çeviriden sonra değişmiş: çeviri yeniden uygulanmalı.")
-                    current = self._library.get(game["root"]) or {}
-                if current.get("last_action") == "Oyun güncellenmiş" and current.get("status") != "translated":
-                    analysis["advice"] = [{"tone": "warn", "text": OUTDATED_NOTE}] + [
-                        a for a in (analysis.get("advice") or []) if a.get("text") != OUTDATED_NOTE]
-                self._check_runtime_errors(game, analysis, current)
-                stats = analysis.get("stats") or {}
-                self._library.upsert(game["root"], touch=False, lines=analysis.get("lines"), unique=stats.get("unique"),
-                                     status=None if current.get("status") in ("translated", "paused", "error") else "analyzed")
-                analysis["estimate"] = self._estimate(game)
+                analysis = self._analyze_now(game, force)
                 if self._game is game:
                     self._ui.emit("analysis", analysis)
                     self._emit_project(game["root"])
@@ -1511,6 +1738,33 @@ class CapriBridge:
         self._analysis_thread = threading.Thread(target=work, daemon=True, name="Analiz")
         self._analysis_thread.start()
         return True
+
+    def _analyze_now(self, game: Dict[str, Any], force: bool = False) -> Dict[str, Any]:
+        """Analizi bu iş parçacığında yapar (değişmemiş oyunun sonucu diskten gelir) ve kütüphaneyi günceller."""
+        analysis = None if force else self._load_analysis(game)
+        if analysis is None:
+            analysis = getattr(self, f"_analyze_{game['type']}")(game)
+            self._prepare_analysis(game, analysis)
+            self._save_analysis(game, analysis)
+        game["analysis"] = analysis
+        current = self._library.get(game["root"]) or {}
+        stamp = current.get("files_stamp")
+        if current.get("status") == "translated" and stamp and stamp != game_files_stamp(game["root"], game["type"]):
+            # Oyun güncellendi: çeviri kaybolmuş olabilir; eski yedekler artık "orijinal" sayılmaz
+            self._library.upsert(game["root"], touch=False, status="analyzed", files_changed_at=time.time(),
+                                 last_action="Oyun güncellenmiş", last_action_at=time.time())
+            self._log("Oyun dosyaları çeviriden sonra değişmiş: çeviri yeniden uygulanmalı.")
+            current = self._library.get(game["root"]) or {}
+        analysis["advice"] = [a for a in (analysis.get("advice") or []) if a.get("action") != "reapply"]
+        if current.get("last_action") == "Oyun güncellenmiş" and current.get("status") != "translated":
+            analysis["advice"].insert(0, {"tone": "warn", "text": OUTDATED_NOTE, "action": "reapply",
+                                          "action_label": "Çeviriyi yeniden uygula"})
+        self._check_runtime_errors(game, analysis, current)
+        stats = analysis.get("stats") or {}
+        self._library.upsert(game["root"], touch=False, lines=analysis.get("lines"), unique=stats.get("unique"),
+                             status=None if current.get("status") in ("translated", "paused", "error") else "analyzed")
+        analysis["estimate"] = self._estimate(game)
+        return analysis
 
     def _wait_for_analysis(self) -> None:
         """Çeviri, aynı dosyaları okuyan analizin bitmesini bekler."""
@@ -1542,6 +1796,15 @@ class CapriBridge:
             paths = [*Path(info.data_dir).glob("*"), info.archive_path]
         elif kind == "renpy":
             paths = [*Path(info.game_dir).glob("*")]
+        elif kind in KAG_ENGINES:
+            from engine_kag import files_stamp_paths
+            paths = files_stamp_paths(Path(game["root"]))
+        elif kind == "godot":
+            from engine_godot import files_stamp_paths
+            paths = files_stamp_paths(Path(game["root"]))
+        elif kind == "wolf":
+            from engine_wolf import files_stamp_paths
+            paths = files_stamp_paths(Path(game["root"]))
         stamp = []
         for path in paths:
             try:
@@ -1684,7 +1947,8 @@ class CapriBridge:
         import bepinex_installer
         utage = sum(1 for t in texts if t.format_type == "utage")
         typed = info.typed_counts
-        needed = not texts or (info.runtime == "IL2CPP" and not utage and not typed)
+        localized = sum(1 for t in texts if t.format_type in ("loc_file", "loc_bundle"))
+        needed = not texts or (info.runtime == "IL2CPP" and not utage and not typed and not localized)
         installed = bepinex_installer.is_installed(info.root)
         if utage:
             notes.append(f"Utage senaryosu açık: {_n(utage)} satır. BepInEx gerekmez; oyunda English'i seç.")
@@ -1698,6 +1962,10 @@ class CapriBridge:
         # IL2CPP: metin derlenmiş kodda/tipsiz veride. Mono: veri açık ama Capri'nin okuyamadığı bir yapıda (PlayMaker,
         # Adventure Creator, tek paket data.unity3d…). İkisinde de oyunda görünen metni BepInEx + XUnity yakalar.
         bundled = (Path(info.data_dir) / "data.unity3d").is_file() if getattr(info, "data_dir", None) else False
+        from engine_unity import localization_tables
+        loc_tables = localization_tables(info)
+        if loc_tables:
+            notes.append(f"Unity Localization: {_n(len(loc_tables))} dize tablosu dosyası, {_n(localized)} metin.")
         if needed:
             notes.append(("Tüm veri tek pakette (data.unity3d)" if bundled and info.runtime != "IL2CPP"
                           else "Metinler dosyada açık değil")
@@ -1723,6 +1991,7 @@ class CapriBridge:
                       + ([{"tone": "info", "text": "Utage senaryosu: oyunda dil olarak English'i seçince Türkçe görünür."}] if utage else [])
                       + ([{"tone": "info", "text": "Metinler oyunun bileşenlerinden okundu. Oyunda dil olarak English'i seçince Türkçe görünür."}] if typed and not naninovel else [])
                       + ([{"tone": "info", "text": "Naninovel oyunu: oyunda dil olarak English'i seçince Türkçe görünür."}] if naninovel else [])
+                      + ([{"tone": "info", "text": UNITY_LOCALIZATION_NOTE}] if loc_tables else [])
                       + ([{"tone": "warn", "text": (
                             f"Oyunun fontunda {' '.join(info.missing_font_chars)} yok; bu harfler en yakın harfle yazılır "
                             "(ğ→g, ş→s, ı→i)."
@@ -1842,6 +2111,7 @@ class CapriBridge:
         game["info"] = info
         texts = self._rpgm_extract(info)
         game["texts"] = texts
+        self._safely(lambda: self._save_fit(game, text_fit.rpgm_limits(texts, info.data_dir, info.engine_type)))
         unique = len({t.original for t in texts if t.original.strip()})
         notes = [
             f"{info.version_label} · {info.map_count} harita · {len(info.json_files)} JSON",
@@ -1874,6 +2144,10 @@ class CapriBridge:
             from engine_renpy import load_gemini_api_key
             if not (cfg.gemini_keys or load_gemini_api_key()):
                 raise UserError("Gemini API anahtarı yok. Sağlayıcılar sayfasından ekleyin.")
+        elif model in cloud_providers.ALL:
+            if not cloud_providers.configured(cfg, model):
+                raise UserError(f"{MODEL_LABELS[model]} için " + ("sunucu adresi" if model == "custom" else "API anahtarı")
+                                + " yok. Sağlayıcılar sayfasından ekleyin.")
         elif model in CLOUD_MODELS:
             if not getattr(cfg, f"{model}_key"):
                 raise UserError(f"{MODEL_LABELS[model]} API anahtarı yok. Sağlayıcılar sayfasından ekleyin.")
@@ -1888,77 +2162,219 @@ class CapriBridge:
                 raise UserError(f"{local_llm.BY_ID[model_id]['label']} indirilmemiş. Yerel Modeller sayfasından tek "
                                 "tıkla indirebilirsin (Ollama gerekmez).")
         else:
-            if not gpu_runtime.ready():
-                raise UserError(f"{MODEL_LABELS[model]} için PyTorch kurulu değil; Yerel Modeller sayfasından tek tıkla kur.")
             status = prov.get_offline_model_status(model)
             if not status["is_ready"]:
                 raise UserError(
                     f"{MODEL_LABELS[model]} modeli eksik ({status['present_count']}/{status['total_files']} dosya). "
                     "Yerel Modeller sayfasından indirin."
                 )
+            if status.get("backend") == "torch" and not gpu_runtime.ready():
+                raise UserError(f"{MODEL_LABELS[model]} için PyTorch kurulu değil; Yerel Modeller sayfasından tek tıkla kur.")
+            if status.get("backend") == "ct2" and not gpu_runtime.ct2_ready():
+                raise UserError(f"{MODEL_LABELS[model]} için çalışma ortamı (≈40 MB) kurulu değil; Yerel Modeller "
+                                "sayfasından modeli yeniden indir, ortam da kurulur.")
             prov.release_offline_engines()  # Önizleme modelini VRAM'den boşalt
 
     def translate(self) -> bool:
-        def task():
-            game = self._require_game()
-            self._wait_for_analysis()
-            self._check_model_ready(game["type"])
-            s = self._settings
-            current = self._library.get(game["root"]) or {}
-            game["skip_backup"] = False
-            if current.get("status") == "translated" and not self._prepare_retranslation(game):
-                return
-            analysis = game.get("analysis")
-            self._library.upsert(game["root"], status="translating", model=s["model"], target=s["target"])
-            self._translating = True
-            self._emit_project(game["root"])
-            self._log(f"Çeviri başladı: {game['title']} · {MODEL_LABELS[s['model']]} · {s['source']} → {s['target']}")
-            if analysis:
-                plan = self._estimate(game)
-                self._eta_prior = plan["seconds"] / plan["pending"] if plan["pending"] else None
-            started = time.monotonic()
-            failed: set = set()
-            self._seed_memory(self._cache_path())          # başka oyunlarda çevrilmiş arayüz metinleri
-            written = getattr(self, f"_translate_{game['type']}")(game, failed)
-            took = int(time.monotonic() - started)
-            self._learn_speed(game)
-            self._record_review(self._cache_path(), failed, self._project_glossary().get("terms") or {},
-                                (game.get("compile_check") or {}).get("reverted_sources") or ())
-            self._safely(lambda: self._learn_memory(self._cache_path()))
-            note = game.pop("result_note", None)
-            if note and not written:     # köprü kuruldu ama henüz yazılacak satır yok: "tamamlandı" denmez
-                self._library.upsert(game["root"], status="analyzed", last_action="BepInEx kuruldu", last_action_at=time.time())
-                self._translating = False
-                self._emit_project(game["root"])
-                self._notify("BepInEx hazır", note, "ok", "download")
-                return
-            if not written and not failed and game["type"] != "renpy":
-                raise UserError("Oyuna yazılacak satır bulunamadı; oyunda değişiklik yapılmadı. Ayrıntı Teknik günlükte.")
-            if failed and not written:
-                raise UserError(f"{_n(len(failed))} satırın hiçbiri çevrilemedi. API anahtarını ve kotanı kontrol edip "
-                                "tekrar dene.")
-            self._library.upsert(game["root"], status="translated", translated_at=time.time(), written=written,
-                                 last_action="Çeviri tamamlandı", last_action_at=time.time(),
-                                 last_result={"written": written, "failed": len(failed), "took": took},
-                                 files_stamp=game_files_stamp(game["root"], game["type"]) or "")
-            self._translating = False
-            if analysis:    # oyun dosyaları artık çevrili: yeniden okunursa Türkçe metin "kaynak" sanılır
-                game["analysis"] = analysis
-                self._save_analysis(game, analysis)
-                self._emit_estimate(game)
-            self._emit_project(game["root"])
-            message = f"{_n(written)} satır oyuna yazıldı · {format_duration(max(took, 1))}"
-            self._status(message, "ok")
-            self._notify("Çeviri tamamlandı", f"{game['title']} · {message}", "ok", "check")
-            self._safely(lambda: self._attention("done", "Çeviri tamamlandı", f"{game['title']} · {message}"))
-            self._ui.emit("done", {"written": written, "failed": len(failed), "took": took})
-            self._emit_stats()
+        return self._run_task("Çeviri", self._translate_game)
 
-        return self._run_task("Çeviri", task)
+    def _translate_game(self) -> None:
+        """Seçili oyunu çevirir (görev iş parçacığında; toplu çeviri de bunu kullanır)."""
+        game = self._require_game()
+        self._wait_for_analysis()
+        self._check_model_ready(game["type"])
+        s = self._settings
+        current = self._library.get(game["root"]) or {}
+        game["skip_backup"] = False
+        analysis = game.get("analysis")
+        plan = self._estimate(game) if analysis else None
+        cost = (plan or {}).get("cost") or {}
+        if s["model"] in CLOUD_MODELS and (cost.get("usd") or 0) >= COST_CONFIRM_USD and not self._ask(
+                "Ücretli çeviri", f"Bu çeviri {MODEL_LABELS[s['model']]} hesabından yaklaşık {cost['usd']:.2f} $ tutabilir "
+                f"({_n(plan['pending'])} satır). Devam edilsin mi?"):
+            return
+        if current.get("status") == "translated" and not self._prepare_retranslation(game):
+            return
+        self._library.upsert(game["root"], status="translating", model=s["model"], target=s["target"])
+        self._translating = True
+        self._emit_project(game["root"])
+        self._log(f"Çeviri başladı: {game['title']} · {MODEL_LABELS[s['model']]} · {s['source']} → {s['target']}")
+        if plan:
+            self._eta_prior = plan["seconds"] / plan["pending"] if plan["pending"] else None
+        started = time.monotonic()
+        failed: set = set()
+        self._safely(lambda: self._auto_character_names(game))
+        self._seed_memory(self._cache_path())          # başka oyunlarda çevrilmiş arayüz metinleri
+        written = getattr(self, f"_translate_{game['type']}")(game, failed)
+        took = int(time.monotonic() - started)
+        self._learn_speed(game)
+        cache = _read_json(self._cache_path(), {})          # bir kez okunur, üç denetim paylaşır
+        cache = cache if isinstance(cache, dict) else {}
+        overflow = self._overflow_after_translate(game, cache)
+        self._record_review(self._cache_path(), failed, self._project_glossary().get("terms") or {},
+                            set((game.get("compile_check") or {}).get("reverted_sources") or ()) | set(overflow), cache)
+        self._safely(lambda: self._learn_memory(self._cache_path(), cache))
+        note = game.pop("result_note", None)
+        if note and not written:     # köprü kuruldu ama henüz yazılacak satır yok: "tamamlandı" denmez
+            self._library.upsert(game["root"], status="analyzed", last_action="BepInEx kuruldu", last_action_at=time.time())
+            self._translating = False
+            self._emit_project(game["root"])
+            self._notify("BepInEx hazır", note, "ok", "download")
+            return
+        if not written and not failed and game["type"] != "renpy":
+            raise UserError("Oyuna yazılacak satır bulunamadı; oyunda değişiklik yapılmadı. Ayrıntı Teknik günlükte.")
+        if failed and not written:
+            raise UserError(f"{_n(len(failed))} satırın hiçbiri çevrilemedi. API anahtarını ve kotanı kontrol edip "
+                            "tekrar dene.")
+        self._library.upsert(game["root"], status="translated", translated_at=time.time(), written=written,
+                             last_action="Çeviri tamamlandı", last_action_at=time.time(),
+                             last_result={"written": written, "failed": len(failed), "took": took},
+                             files_stamp=game_files_stamp(game["root"], game["type"]) or "")
+        self._translating = False
+        if analysis:    # oyun dosyaları artık çevrili: yeniden okunursa Türkçe metin "kaynak" sanılır
+            game["analysis"] = analysis
+            self._save_analysis(game, analysis)
+            self._emit_estimate(game)
+        self._emit_project(game["root"])
+        message = f"{_n(written)} satır oyuna yazıldı · {format_duration(max(took, 1))}"
+        self._status(message, "ok")
+        self._notify("Çeviri tamamlandı", f"{game['title']} · {message}", "ok", "check")
+        self._safely(lambda: self._attention("done", "Çeviri tamamlandı", f"{game['title']} · {message}"))
+        self._ui.emit("done", {"written": written, "failed": len(failed), "took": took})
+        self._emit_stats()
+
+    # ── Toplu çeviri ─────────────────────────────────────────────────────────
+    def queue_state(self) -> Dict[str, Any]:
+        with self._queue_lock:
+            return {"items": [dict(item) for item in self._queue], "running": self._queue_running}
+
+    def _queue_update(self, item: Dict[str, Any], **fields: Any) -> None:
+        with self._queue_lock:
+            item.update(fields)
+        self._emit_queue()
+
+    def _next_waiting(self) -> Optional[Dict[str, Any]]:
+        """Sıradaki bekleyen oyun: her turda güncel listeden seçilir (çıkarılan oyun seçilmez, eklenen seçilir)."""
+        with self._queue_lock:
+            return next((i for i in self._queue if i["state"] == "waiting"), None)
+
+    def _emit_queue(self) -> None:
+        self._ui.emit("queue", self.queue_state())
+
+    def queue_add(self, paths: List[str]) -> Dict[str, Any]:
+        """Kütüphanedeki oyunları sıraya ekler (aynı oyun iki kez eklenmez)."""
+        with self._queue_lock:
+            queued = {ProjectLibrary.key(item["path"]) for item in self._queue}
+            for path in paths or []:
+                item = self._library.get(path)
+                if not item or ProjectLibrary.key(item["path"]) in queued:
+                    continue
+                queued.add(ProjectLibrary.key(item["path"]))
+                self._queue.append({"path": item["path"], "title": item.get("title") or Path(item["path"]).name,
+                                    "state": "waiting", "note": ""})
+        self._emit_queue()
+        return self.queue_state()
+
+    def queue_remove(self, path: str) -> Dict[str, Any]:
+        key = ProjectLibrary.key(path)
+        with self._queue_lock:
+            self._queue[:] = [i for i in self._queue if ProjectLibrary.key(i["path"]) != key or i["state"] == "running"]
+        self._emit_queue()
+        return self.queue_state()
+
+    def queue_clear(self) -> Dict[str, Any]:
+        """Bitmiş ve bekleyen satırları temizler (çevrilmekte olan kalır)."""
+        with self._queue_lock:
+            self._queue[:] = [i for i in self._queue if i["state"] == "running"]
+        self._emit_queue()
+        return self.queue_state()
+
+    def queue_start(self) -> bool:
+        """Sıradaki oyunları teker teker çevirir. Bir oyunda hata olursa not düşülüp sonrakine geçilir; "Durdur"
+        bütün sırayı durdurur (çevrilen satırlar kaybolmaz, kalan oyunlar sırada bekler)."""
+        if self._next_waiting() is None:
+            self._toast("Sırada bekleyen oyun yok.", "warn")
+            return False
+
+        def task():
+            self._queue_running = True
+            done = failed = skipped = 0
+            try:
+                while not self._cancel.is_set():
+                    item = self._next_waiting()
+                    if item is None:
+                        break
+                    outcome, note = self._queue_one(item)
+                    self._queue_update(item, state=outcome, note=note)
+                    done += outcome == "done"
+                    failed += outcome == "failed"
+                    skipped += outcome == "skipped"
+                    if outcome == "waiting":          # kullanıcı durdurdu
+                        raise TranslationCancelled()
+            finally:
+                self._queue_running = False
+                self._emit_queue()
+            parts = [f"{_n(done)} oyun çevrildi"] + ([f"{_n(failed)} hata"] if failed else []) + \
+                    ([f"{_n(skipped)} atlandı"] if skipped else [])
+            self._status("Toplu çeviri bitti", "ok" if not failed else "warn")
+            self._notify("Toplu çeviri bitti", " · ".join(parts), "ok" if not failed else "warn", "check",
+                         {"label": "Kütüphane", "page": "library"})
+            self._safely(lambda: self._attention("done", "Toplu çeviri bitti", " · ".join(parts)))
+
+        return self._run_task("Toplu çeviri", task)
+
+    def _queue_one(self, item: Dict[str, Any]) -> Tuple[str, str]:
+        """Sıradaki bir oyunu açar, analiz eder ve çevirir: (durum, not)."""
+        path = item["path"]
+        if not Path(path).is_dir():
+            return "failed", "Oyun klasörü bulunamadı"
+        current = self._library.get(path) or {}
+        if current.get("status") == "translated":
+            return "skipped", "Zaten çevrilmiş"
+        self._queue_update(item, state="running", note="")
+        self._queue_last_ask = ""
+        self._eta, self._eta_prior, self._translating = LiveEta(), None, False
+        self._ui.clear_progress()
+        try:
+            self._select_game(path)
+            self._emit_project(self._game["root"])
+            self._ui.emit("analyzing", {"active": True, "path": self._game["root"]})
+            try:
+                analysis = self._analyze_now(self._game)
+            finally:
+                self._ui.emit("analyzing", {"active": False, "path": self._game["root"]})
+            self._ui.emit("analysis", analysis)
+            self._translate_game()
+        except TranslationCancelled:
+            if self._cancel.is_set():
+                if self._translating and self._game:
+                    self._library.upsert(self._game["root"], status="paused", last_action="Çeviri durduruldu",
+                                         last_action_at=time.time())
+                    self._emit_project(self._game["root"])
+                return "waiting", "Durduruldu"
+            asked = self._queue_last_ask
+            return "skipped", f"Onay verilmedi: {asked}" if asked else "Onay verilmedi"
+        except UserError as exc:
+            self._log(f"Toplu çeviri: {item['title']} — {exc}")
+            self._library.upsert(path, status="error", last_action="Çeviri başarısız", last_action_at=time.time())
+            return "failed", str(exc)
+        except Exception as exc:
+            self._safely(lambda: self._log(traceback.format_exc()))
+            self._library.upsert(path, status="error", last_action="Çeviri başarısız", last_action_at=time.time())
+            return "failed", describe_error(exc).get("title") or str(exc)
+        finally:
+            self._translating = False
+            self._safely(lambda: self._emit_project(path))
+        after = self._library.get(path) or {}
+        if after.get("status") == "translated":
+            return "done", ""
+        if after.get("last_action") == "BepInEx kuruldu":
+            return "skipped", "BepInEx kuruldu; oyunu bir kez açıp kapattıktan sonra yeniden çevir"
+        return "skipped", "Yazılacak satır yok"
 
     def _prepare_retranslation(self, game: Dict[str, Any]) -> bool:
         """Zaten çevrilmiş oyun baştan çevrilirken dosyaları değişen motorlarda önce orijinaller geri yüklenir."""
-        in_place = game["type"] in ("unity", "rpgmaker")
+        in_place = game["type"] in ("unity", "rpgmaker", "godot", "wolf", *KAG_ENGINES)
         if not self._ask("Baştan çevir", "Oyun orijinaline döndürülüp baştan çevrilecek; önbellekteki satırlar ücretsiz. "
                          "Devam edilsin mi?" if in_place else
                          "Oyun baştan çevrilecek; önbellekteki satırlar ücretsiz. Devam edilsin mi?"):
@@ -1989,7 +2405,7 @@ class CapriBridge:
         return bool(self._settings["backup"]) and not game.get("skip_backup")
 
     def _project_glossary(self) -> Dict[str, Any]:
-        default = {"terms": {}, "address": "sen", "notes": "", "aes_key": ""}
+        default = {"terms": {}, "address": "sen", "notes": "", "aes_key": "", "names_scanned": False}
         if not self._game:
             return default
         data = _read_json(project_glossary_path(Path(self._game["root"])), {})
@@ -2056,18 +2472,55 @@ class CapriBridge:
         terms = {str(a).strip(): str(b).strip() for a, b in (r for r in rows if len(r) == 2) if str(a).strip() and str(b).strip()}
         key = self._project_glossary()["aes_key"] if aes_key is None else re.sub(r"\s+", "", aes_key)
         _write_json(project_glossary_path(Path(game["root"])),
-                    {"terms": terms, "address": "siz" if address == "siz" else "sen", "notes": notes or "", "aes_key": key})
+                    {"terms": terms, "address": "siz" if address == "siz" else "sen", "notes": notes or "", "aes_key": key,
+                     "names_scanned": bool(self._project_glossary().get("names_scanned"))})
         return {"ok": True, "count": len(terms)}
+
+    @staticmethod
+    def _character_names(game: Dict[str, Any]) -> Optional[List[str]]:
+        """Oyunun karakter adları (motor desteklemiyorsa None)."""
+        info = game["info"]
+        if game["type"] == "renpy":
+            return scan_renpy_characters(Path(info.game_dir))
+        if game["type"] == "rpgmaker":
+            return scan_rpgmaker_characters(Path(info.data_dir))
+        if game["type"] in KAG_ENGINES:
+            from engine_kag import character_names
+            return character_names(info, lambda s: None)
+        return None
+
+    def _auto_character_names(self, game: Dict[str, Any]) -> List[str]:
+        """İlk çeviriden önce oyunun karakter adlarını bir kez tarayıp proje sözlüğüne "olduğu gibi kalsın" diye ekler.
+        Yalnızca özel ada benzeyenler alınır ("Mom", "Guard", "???" gibi çevrilmesi gerekenler alınmaz) ve yalnızca
+        Latin alfabeli hedef dillerde yapılır (Rusça/Japonca'da adlar o alfabeye aktarılmalı)."""
+        if not self._settings.get("auto_names", True) or self._settings["target"] not in LATIN_TARGETS:
+            return []
+        pg = self._project_glossary()
+        if pg.get("names_scanned"):
+            return []
+        try:
+            names = self._character_names(game)
+        except Exception as exc:
+            self._log(f"Karakter adları taranamadı: {exc}")
+            return []
+        if names is None:
+            return []
+        added = [n for n in names if looks_like_name(n) and n not in pg["terms"]][:200]
+        pg["terms"].update({n: n for n in added})
+        pg["names_scanned"] = True
+        _write_json(project_glossary_path(Path(game["root"])), pg)
+        if added:
+            shown = ", ".join(added[:6]) + ("…" if len(added) > 6 else "")
+            self._log(f"Karakter adları oyuna özel sözlüğe eklendi: {', '.join(added)}")
+            self._notify(f"{_n(len(added))} karakter adı korunacak", f"{shown}. Oyuna özel sözlükten değiştirebilirsin.",
+                         "info", "book", {"label": "Sözlük", "page": "glossary"})
+        return added
 
     def project_scan_characters(self) -> Dict[str, Any]:
         """Karakter adlarını oyundan tarar ve proje sözlüğüne (adı aynen koruyacak şekilde) ekler."""
         game = self._require_game()
-        info = game["info"]
-        if game["type"] == "renpy":
-            names = scan_renpy_characters(Path(info.game_dir))
-        elif game["type"] == "rpgmaker":
-            names = scan_rpgmaker_characters(Path(info.data_dir))
-        else:
+        names = self._character_names(game)
+        if names is None:
             return {"ok": False, "msg": f"{ENGINE_LABELS[game['type']]} için karakter taraması desteklenmiyor.", "added": 0}
         pg = self._project_glossary()
         added = [n for n in names if n not in pg["terms"]]
@@ -2077,9 +2530,11 @@ class CapriBridge:
 
     def _translate_strings(self, unique: List[str], cache_path: Path, pattern: Any, glossary: Glossary,
                            game_engine: str, failed: set, extra: Optional[str] = None,
-                           engine_tags: Any = None) -> Dict[str, str]:
+                           engine_tags: Any = None, speakers: Optional[Dict[str, str]] = None,
+                           source_lang: Optional[str] = None) -> Dict[str, str]:
         """Motor bağımsız: benzersiz metinleri seçili sağlayıcıyla çevirir (önbellek + sözlük).
-        engine_tags: bulut motorlarının etiket denetiminde kullanılacak motor kuralı (yoksa Ren'Py/genel kural)."""
+        engine_tags: bulut motorlarının etiket denetiminde kullanılacak motor kuralı (yoksa Ren'Py/genel kural).
+        speakers: {kaynak: konuşan karakter} — Gemini/OpenAI/Claude'a hitap ve cinsiyet için bildirilir."""
         from engine_common import TranslationEngine, make_llm_engine
         from engine_renpy import load_gemini_api_key, translate_with_gemini
         s, cfg, model = self._settings, prov.load_provider_config(), self._settings["model"]
@@ -2100,26 +2555,26 @@ class CapriBridge:
             return not cjk_target and cache.get(src) == src and bool(foreign.search(src))
         missing = [src for src in unique if src not in translations and (src not in cache or stale(src))]
         self._log(f"Benzersiz: {_n(len(unique))} · Önbellekte: {_n(len(unique) - len(missing))} · Çevrilecek: {_n(len(missing))}")
-        source = "en" if s["source"] == "auto" else s["source"]
+        source = source_lang or ("en" if s["source"] == "auto" else s["source"])
         extra = self._extra_instruction() if extra is None else extra
         if missing:
             if model == "gemini":
                 translate_with_gemini(missing, cache.data, cache_path, load_gemini_api_key(), log=self._log,
                                       progress=self._progress, target_lang=s["target"], source_lang=source,
                                       game_engine=game_engine, failed_out=failed, extra_instruction=extra,
-                                      protected=engine_tags)
+                                      protected=engine_tags, speakers=speakers)
             elif model in CLOUD_MODELS:
                 prov.translate_with_cloud(model, missing, cache.data, cache_path, cfg, log=self._log,
                                           progress=self._progress, target_lang=s["target"], source_lang=source,
                                           game_engine=game_engine, failed_out=failed, extra_instruction=extra,
-                                          protected=engine_tags)
+                                          protected=engine_tags, speakers=speakers)
             else:
                 if model in ("ollama", "local"):
                     engine = make_llm_engine(model, self._llm_model(cfg), cfg.ollama_host, cache, pattern, self._log,
                                              s["target"], source, glossary=glossary)
                 else:
                     engine = TranslationEngine(
-                        model_dir=prov.resolve_model_dir("model_nllb" if model == "nllb" else "model"),
+                        model_dir=prov.offline_model_dir(model),
                         model_kind=model, cache=cache, glossary=glossary, protected_pattern=pattern, log=self._log,
                         source_lang=source, target_lang=s["target"],
                     )
@@ -2155,7 +2610,7 @@ class CapriBridge:
         self._stage("translate", f"{MODEL_LABELS[s['model']]} çeviriyor")
         written = translate_templates(
             tl_dir=tl_dir,
-            model_dir=prov.resolve_model_dir("model_nllb" if s["model"] == "nllb" else "model"),
+            model_dir=prov.offline_model_dir(s["model"]),
             cache_path=self._cache_path(),
             glossary_path=self._glossary_path(),
             log=self._log,
@@ -2167,6 +2622,7 @@ class CapriBridge:
             extra_instruction=self._extra_instruction(),
             target_lang=s["target"],
             source_lang="en" if s["source"] == "auto" else s["source"],
+            character_names=renpy_character_map(info.game_dir) if s["model"] in SPEAKER_MODELS else None,
         )
         self._learn_speed(game)
         if s.get("quality_pass"):
@@ -2206,7 +2662,7 @@ class CapriBridge:
         # İzin çeviriden önce istenir: "hayır" denirse boşuna API harcanmaz
         use_bridge = False
         # Utage gibi senaryosu dosyada açık oyunlar IL2CPP olsa da köprüye ihtiyaç duymaz
-        scenario_in_files = any(t.format_type in ("utage", "typed") for t in texts)
+        scenario_in_files = any(t.format_type in ("utage", "typed", "loc_file", "loc_bundle") for t in texts)
         if not texts or (info.runtime == "IL2CPP" and not scenario_in_files):
             import bepinex_installer
             installed = is_bepinex_installed(info.root)
@@ -2225,13 +2681,16 @@ class CapriBridge:
             if not use_bridge and not texts:
                 raise UserError("Metinler dosyalarda açık değil; BepInEx olmadan çevrilemez. İstersen çeviriyi yeniden başlatıp izin ver.")
         if self._want_backup(game):
+            from engine_unity import localization_outputs
             files = {info.root / t.source_file for t in texts if t.format_type == "tsv_file"}
             if info.resources_assets_path and any(t.source_file == "resources.assets" for t in texts):
                 files.add(info.resources_assets_path)
             files |= {info.data_dir / t.source_file for t in texts if t.format_type in ("utage", "tsv_col", "i2", "typed")}
-            if files:
+            loc_backup, loc_created = localization_outputs(info, texts, s["target"])
+            files |= set(loc_backup)
+            if files or loc_created:
                 self._stage("backup", "Orijinal dosyalar yedekleniyor")
-                create_game_backup(info.root, "unity", sorted(files), log=self._log)
+                create_game_backup(info.root, "unity", sorted(files), log=self._log, created=loc_created)
         self._stage("translate", f"{MODEL_LABELS[s['model']]} çeviriyor")
         translations = translate_texts_unity(
             unique_sources=unique,
@@ -2240,7 +2699,7 @@ class CapriBridge:
             glossary=self._glossary("glossary.json"),
             log=self._log, progress=self._progress, tracker=None,
             model_kind=s["model"],
-            model_dir=prov.resolve_model_dir("model_nllb" if s["model"] == "nllb" else "model"),
+            model_dir=prov.offline_model_dir(s["model"]),
             ollama_model=self._llm_model(cfg), ollama_host=cfg.ollama_host, failed_out=failed,
             extra_instruction=self._extra_instruction(),
         )
@@ -2296,7 +2755,7 @@ class CapriBridge:
         return translate_texts_unreal(
             unique_sources=unique, cache_path=self._cache_path(), target_lang=s["target"], source_lang=s["source"],
             glossary=self._glossary("glossary.json"), log=self._log, progress=self._progress, tracker=None,
-            model_kind=s["model"], model_dir=prov.resolve_model_dir("model_nllb" if s["model"] == "nllb" else "model"),
+            model_kind=s["model"], model_dir=prov.offline_model_dir(s["model"]),
             ollama_model=self._llm_model(cfg), ollama_host=cfg.ollama_host, failed_out=failed,
             extra_instruction=self._extra_instruction(),
         )
@@ -2378,7 +2837,8 @@ class CapriBridge:
 
     def _translate_rpgmaker(self, game: Dict[str, Any], failed: set) -> int:
         from engine_rpgmaker import (PROTECTED_RPGM, RGSS_EXT, RPGM_EXTRA_INSTRUCTION, detect_rpgmaker_game,
-                                     join_speaker, speaker_sources, write_translations_mv_mz, write_translations_vxace)
+                                     join_speaker, speaker_sources, split_speaker, write_translations_mv_mz,
+                                     write_translations_vxace)
         info = game["info"] or detect_rpgmaker_game(game["root"])
         rgss = info.engine_type in RGSS_EXT
         if rgss and self._rgss_archive(info):
@@ -2396,13 +2856,21 @@ class CapriBridge:
             create_game_backup(info.root, "rpgmaker", files, log=self._log)
         self._stage("prepare", "Oyunun metinleri hazırlanıyor")
         texts = game["texts"] if game["texts"] is not None else self._rpgm_extract(info)
+        self._safely(lambda: self._save_fit(game, text_fit.rpgm_limits(texts, info.data_dir, info.engine_type)))
         unique = list(dict.fromkeys(t.original for t in texts if t.original.strip()))
         sources = speaker_sources(unique)   # \name[勇者] satırları: ad ve gövde ayrı çevrilir
         self._stage("translate", f"{MODEL_LABELS[self._settings['model']]} çeviriyor")
         extra = "\n\n".join(x for x in (self._extra_instruction(), RPGM_EXTRA_INSTRUCTION) if x)
+        speakers: Dict[str, str] = {}
+        for t in texts:
+            if t.context == "dialogue" and t.speaker.strip():
+                speakers.setdefault(t.original, t.speaker.strip())
+            name, body = split_speaker(t.original)
+            if name and body.strip():
+                speakers.setdefault(body, name)
         translations = self._translate_strings(sources, self._cache_path(), PROTECTED_RPGM,
                                                self._glossary("glossary_rpgm.json"), "RPG Maker Game", failed,
-                                               extra=extra, engine_tags=PROTECTED_RPGM)
+                                               extra=extra, engine_tags=PROTECTED_RPGM, speakers=speakers)
         self._learn_speed(game)
         if self._settings.get("quality_pass"):
             translations.update(self._quality_edits(sources, translations))
@@ -2413,6 +2881,218 @@ class CapriBridge:
         if rgss:
             return write_translations_vxace(info.data_dir, translations, self._log, engine_type=info.engine_type)
         return write_translations_mv_mz(info.data_dir, translations, self._log, language=self._settings["target"])
+
+    # ── Dosya tabanlı motorlar: TyranoScript, KiriKiri, Godot, WOLF RPG ───────
+    # Dördü aynı yolu izler: algıla → metinleri çıkar → (yedekle) → çevir → yaz. Motora özgü olan yalnızca algılama,
+    # çıkarma, yazma, etiket deseni ve ek talimattır; ortak adımlar aşağıdaki iki yardımcıdadır.
+    def _unreadable_analysis(self, game: Dict[str, Any], info: Any, note: str, summary: str) -> Dict[str, Any]:
+        """Şifreli / okunamayan oyun: satır yok, uyarı var."""
+        game["texts"] = []
+        self._log(note)
+        return {"engine": game["type"], "lines": 0, "unique": 0, "notes": [info.label, note], "engine_detail": info.label,
+                "advice": [{"tone": "warn", "text": note}], "sample": "", "summary": summary, "meta": "şifreli"}
+
+    def _file_engine_analysis(self, game: Dict[str, Any], info: Any, texts: List[Any], notes: List[str],
+                              advice: Optional[List[Dict[str, str]]] = None) -> Dict[str, Any]:
+        game["texts"] = texts
+        unique = len({t.original for t in texts})
+        for note in notes:
+            self._log(note)
+        return {"engine": game["type"], "lines": len(texts), "unique": unique, "notes": notes,
+                "engine_detail": info.label, "advice": advice or [], "sample": texts[0].original if texts else "",
+                "summary": f"{_n(len(texts))} satır ({_n(unique)} benzersiz) bulundu.", "meta": f"{_n(unique)} satır"}
+
+    def _translate_file_engine(self, game: Dict[str, Any], failed: set, texts: List[Any], *, root: Path,
+                               backup: Callable[[], Tuple[List[Path], List[Path]]], pattern: Any, instruction: str,
+                               game_engine: str, write: Callable[[Dict[str, str]], int],
+                               speakers: Optional[Dict[str, str]] = None, default_lang: str = "en",
+                               write_label: str = "Çeviri oyuna yazılıyor") -> int:
+        """Ortak çeviri yolu. Kaynak dil metinden algılanır; OPUS-MT yalnızca İngilizceden çevirdiği için başka dilde
+        durdurulur. Türkçe hedefte ve İngilizce kaynakta genel sözlük, diğerlerinde yalnızca oyuna özel terimler."""
+        sources = list(dict.fromkeys(t.original for t in texts))
+        if not sources:
+            raise UserError("Oyuna yazılacak satır bulunamadı; oyunda değişiklik yapılmadı.")
+        source_lang = detect_source_language(sources, default_lang)
+        if self._settings["model"] in TURKISH_ONLY_MODELS and source_lang != "en":
+            raise UserError(f"{MODEL_LABELS[self._settings['model']]} yalnızca İngilizceden çevirir; bu oyunun dili "
+                            f"{source_lang}. Gemini, OpenAI, Claude ya da NLLB seç.")
+        if self._want_backup(game):
+            self._stage("backup", "Orijinal dosyalar yedekleniyor")
+            files, created = backup()
+            create_game_backup(root, game["type"], files, log=self._log, created=created)
+        self._stage("translate", f"{MODEL_LABELS[self._settings['model']]} çeviriyor")
+        extra = "\n\n".join(x for x in (self._extra_instruction(), instruction) if x)
+        glossary = self._glossary("glossary.json") if self._settings["target"] == "tr" and source_lang == "en" \
+            else Glossary(self._project_glossary()["terms"])
+        translations = self._translate_strings(sources, self._cache_path(), pattern, glossary, game_engine, failed,
+                                               extra=extra, engine_tags=pattern, speakers=speakers,
+                                               source_lang=source_lang)
+        self._learn_speed(game)
+        if self._settings.get("quality_pass"):
+            translations.update(self._quality_edits(sources, translations))
+        self._stage("write", write_label)
+        game["texts"] = None
+        game["analysis"] = None
+        return write(translations)
+
+    # TyranoScript / KiriKiri
+    def _analyze_kag(self, game: Dict[str, Any]) -> Dict[str, Any]:
+        from engine_kag import detect_kag_game, extract_texts
+        info = game["info"] or detect_kag_game(game["root"])
+        game["info"] = info
+        if info.encrypted:
+            return self._unreadable_analysis(game, info, (
+                "Oyunun arşivi (xp3) oyuna özel bir şifreyle korunuyor; senaryo okunamıyor. Bu oyun ekran "
+                "çevirisiyle (OCR) çevrilebilir."), "Arşiv şifreli; metin okunamadı.")
+        texts = extract_texts(info, log=self._log)
+        unique = len({t.original for t in texts})
+        choices = sum(1 for t in texts if t.context == "choice")
+        notes = [info.label, f"{_n(len(info.scenario))} senaryo dosyası",
+                 f"Çevrilebilir metin: {_n(len(texts))} satır ({_n(unique)} benzersiz, {_n(choices)} seçenek)"]
+        source = detect_source_language([t.original for t in texts])
+        if source != "en":
+            notes.append(f"Kaynak dil: {source} (otomatik algılandı)")
+        return self._file_engine_analysis(game, info, texts, notes)
+
+    _analyze_tyrano = _analyze_kirikiri = _analyze_kag
+
+    def _translate_kag(self, game: Dict[str, Any], failed: set) -> int:
+        from engine_kag import (KAG_EXTRA_INSTRUCTION, PROTECTED_KAG, detect_kag_game, extract_texts,
+                                files_to_backup, write_translations)
+        info = game["info"] or detect_kag_game(game["root"])
+        if info is None:
+            raise UserError("Oyunun senaryo dosyaları bulunamadı.")
+        if info.encrypted:
+            raise UserError("Oyunun arşivi şifreli; senaryo okunamıyor. Bu oyunu ekran çevirisiyle (OCR) çevirebilirsin.")
+        texts = game["texts"] if game.get("texts") is not None else extract_texts(info, log=self._log)
+        return self._translate_file_engine(
+            game, failed, texts, root=info.root, backup=lambda: files_to_backup(info), pattern=PROTECTED_KAG,
+            instruction=KAG_EXTRA_INSTRUCTION, game_engine="visual novel",
+            speakers={t.original: t.speaker for t in texts if t.speaker},
+            write=lambda translations: write_translations(info, translations, self._log))
+
+    _translate_tyrano = _translate_kirikiri = _translate_kag
+
+    def _apply_kag(self, game: Dict[str, Any], cache: Dict[str, str]) -> int:
+        from engine_kag import detect_kag_game, write_translations
+        self._restore_originals(game)
+        return write_translations(detect_kag_game(game["root"]), cache, self._log)
+
+    _apply_tyrano = _apply_kirikiri = _apply_kag
+
+    # Godot
+    def _analyze_godot(self, game: Dict[str, Any]) -> Dict[str, Any]:
+        import engine_godot
+        info = game["info"] or engine_godot.detect_godot(game["root"])
+        game["info"] = info
+        if info.encrypted:
+            return self._unreadable_analysis(
+                game, info, "Oyunun Godot paketi şifreli; metinler okunamıyor. Bu oyun ekran çevirisiyle (OCR) çevrilebilir.",
+                "Paket şifreli; metin okunamadı.")
+        texts = engine_godot.extract_texts(info, log=self._log)
+        tables = sum(1 for t in texts if t.kind != "ui")
+        notes = [info.label, f"Kaynak dil: {info.source_locale}",
+                 f"Çeviri tablosu metni: {_n(tables)} · sahnelerdeki arayüz yazısı: {_n(len(texts) - tables)}"]
+        advice = [] if texts else [{"tone": "warn", "text": (
+            "Bu oyunun metinleri çeviri tablolarında ya da sahnelerde değil, büyük olasılıkla betiklerin içinde. "
+            "Ekran çevirisi (OCR) kullanılabilir.")}]
+        return self._file_engine_analysis(game, info, texts, notes, advice)
+
+    def _translate_godot(self, game: Dict[str, Any], failed: set) -> int:
+        import engine_godot
+        info = game["info"] or engine_godot.detect_godot(game["root"])
+        if info is None or info.encrypted:
+            raise UserError("Oyunun Godot paketi okunamıyor (şifreli olabilir). Ekran çevirisini (OCR) kullanabilirsin.")
+        engine_godot.load_details(info)
+        texts = game["texts"] if game.get("texts") is not None else engine_godot.extract_texts(info, log=self._log)
+        return self._translate_file_engine(
+            game, failed, texts, root=info.root, backup=lambda: engine_godot.files_to_backup(info),
+            pattern=engine_godot.PROTECTED_GODOT, instruction=engine_godot.GODOT_EXTRA_INSTRUCTION,
+            game_engine="video game", default_lang=info.source_locale.split("_")[0] or "en",
+            write_label="Çeviri yaması yazılıyor",
+            write=lambda translations: engine_godot.write_translations(info, translations, self._log, units=texts))
+
+    def _apply_godot(self, game: Dict[str, Any], cache: Dict[str, str]) -> int:
+        import engine_godot
+        self._restore_originals(game)
+        return engine_godot.write_translations(engine_godot.detect_godot(game["root"]), cache, self._log)
+
+    # WOLF RPG
+    WOLF_ARCHIVE_NOTE = ("Oyunun verileri WOLF Pro ile oyuna özel anahtarla şifrelenmiş; Capri bu arşivi açamıyor. "
+                         "Bu oyun için ekran çevirisini (OCR) kullanabilirsin.")
+    WOLF_PACKED_NOTE = ("Veriler şifreli .wolf arşivinde ({label}). Çeviri başlarken arşiv oyun klasörüne açılır, "
+                        "orijinali yedeklenir; Yedekler'den tek tıkla geri konabilir.")
+    WOLF_SJIS_NOTE = ("Bu oyun eski WOLF RPG sürümüyle (Shift-JIS) yapılmış: ğ, ş, ı, ç, ö, ü gibi harfler oyunda "
+                      "gösterilemediği için en yakın harfle (g, s, i…) yazılır.")
+
+    def _analyze_wolf(self, game: Dict[str, Any]) -> Dict[str, Any]:
+        import engine_wolf
+        info = game["info"] or engine_wolf.detect_wolf(game["root"])
+        game["info"] = info
+        if info.archived and not info.archive_supported:
+            self._log(f"WOLF arşivi açılamadı: {info.archive_error}")
+            return self._unreadable_analysis(game, info, self.WOLF_ARCHIVE_NOTE, "Veriler şifreli arşivde; metin okunamadı.")
+        texts = engine_wolf.extract_texts(info, log=self._log)
+        unique = len({t.original for t in texts})
+        notes = [info.label, f"{_n(len(info.files))} veri dosyası · {_n(len(texts))} satır ({_n(unique)} benzersiz)"]
+        if info.archived:
+            notes.append(self.WOLF_PACKED_NOTE.format(label=info.archive_label))
+        if info.encrypted_files:
+            notes.append(f"Şifreli dosyalar atlandı: {', '.join(info.encrypted_files[:5])}")
+        advice = [{"tone": "warn", "text": self.WOLF_SJIS_NOTE}] \
+            if info.utf8 is False and self._settings["target"] not in ("ja", "en") else []
+        return self._file_engine_analysis(game, info, texts, notes, advice)
+
+    def _translate_wolf(self, game: Dict[str, Any], failed: set) -> int:
+        import engine_wolf
+        info = game["info"] or engine_wolf.detect_wolf(game["root"])
+        if info is not None and info.archived:
+            info = self._wolf_unpack(game, info)
+        if info is None or info.archived:
+            raise UserError(self.WOLF_ARCHIVE_NOTE)
+        texts = game["texts"] if game.get("texts") is not None else engine_wolf.extract_texts(info, log=self._log)
+        return self._translate_file_engine(
+            game, failed, texts, root=info.root, backup=lambda: (engine_wolf.files_to_backup(info), []),
+            pattern=engine_wolf.PROTECTED_WOLF, instruction=engine_wolf.WOLF_EXTRA_INSTRUCTION, game_engine="RPG game",
+            write=lambda translations: self._write_wolf(info, translations))
+
+    def _write_wolf(self, info: Any, translations: Dict[str, str]) -> int:
+        import engine_wolf
+        written, lossy = engine_wolf.write_translations(info, translations, self._log)
+        if lossy:
+            self._notify(f"{_n(lossy)} satırda harfler sadeleşti", self.WOLF_SJIS_NOTE, "warn", "alert")
+        return written
+
+    def _apply_wolf(self, game: Dict[str, Any], cache: Dict[str, str]) -> int:
+        import engine_wolf
+        info = engine_wolf.detect_wolf(game["root"])
+        if info is not None and info.archived:
+            info = self._wolf_unpack(game, info)
+        self._restore_originals(game)
+        return self._write_wolf(info, cache)
+
+    def _wolf_unpack(self, game: Dict[str, Any], info: Any) -> Any:
+        """Şifreli WOLF arşivini kullanıcıya sorarak oyun klasörüne açar; açık klasörlü oyun bilgisini döndürür."""
+        import engine_wolf
+        if not info.archive_supported:
+            self._log(f"WOLF arşivi açılamadı: {info.archive_error}")
+            raise UserError(self.WOLF_ARCHIVE_NOTE)
+        size_mb = max(1, sum((Path(info.root) / a).stat().st_size for a in info.archives) // (1 << 20))
+        names = ", ".join(Path(a).name for a in info.archives[:3]) + ("…" if len(info.archives) > 3 else "")
+        if not self._ask("Şifreli arşiv açılacak",
+                         f"Oyunun dosyaları şifreli {names} arşivinde ({info.archive_label}). Capri arşivi oyun "
+                         f"klasörüne açacak (~{size_mb} MB) ve orijinalini yedekleyecek; Yedekler'den geri alınabilir. "
+                         "Devam edilsin mi?"):
+            raise TranslationCancelled()
+        self._stage("prepare", "WOLF arşivi açılıyor")
+        self._progress_unit = "dosya"
+        try:
+            info = engine_wolf.unpack_archives(info, log=self._log, progress=self._progress)
+        finally:
+            self._progress_unit = "satır"
+        self._notify("Arşiv açıldı", f"{names} oyun klasörüne çıkarıldı; orijinali yedeklendi.", "ok", "archive")
+        game["info"] = info
+        return info
 
     # ── BepInEx (Unity) ──────────────────────────────────────────────────────
     def install_bepinex(self) -> bool:
@@ -2450,15 +3130,24 @@ class CapriBridge:
 
     # ── Kalite editörü (Ren'Py) ──────────────────────────────────────────────
     def _quality_provider(self) -> str:
+        import local_llm
         from engine_common import ollama_family
         model = self._settings["model"]
+        if model == "local" and local_llm.family(self._local_model_id()) == "gemma4":
+            return "local"                                          # dahili Gemma 4 sohbet modeli
         translation_only = model == "local" or (
             model == "ollama" and ollama_family(prov.load_provider_config().ollama_model) != "chat")
         if model in prov.LLM_PROVIDERS and not translation_only:   # TranslateGemma/MiLMMT düzeltme yazamaz
             return model
         if prov.load_provider_config().gemini_keys:
             return "gemini"
-        raise UserError("Kalite editörü bir sohbet modeli ister: Gemini, OpenAI, Claude veya Ollama seçin.")
+        raise UserError("Kalite editörü bir sohbet modeli ister: Gemini, OpenAI, Claude, Ollama ya da yerel Gemma 4 seçin.")
+
+    def _completer(self, provider: str, cfg: Any) -> Callable[[str, str], str]:
+        if provider != "local":
+            return lambda system, user: prov.llm_complete(provider, system, user, cfg)
+        local = self._local_model_id()
+        return lambda system, user: prov.llm_complete(provider, system, user, cfg, local_model=local)
 
     def _quality_edits(self, sources: List[str], translations: Dict[str, str]) -> Dict[str, str]:
         """Ren'Py dışı motorlar: sorunlu taslakları düzeltir, önbelleğe yazar ve düzeltmeleri döndürür."""
@@ -2466,7 +3155,7 @@ class CapriBridge:
         provider = self._quality_provider()
         cfg = prov.load_provider_config()
         self._stage("translate", f"Kalite editörü sorunlu satırları düzeltiyor ({MODEL_LABELS[provider]})")
-        edits = quality_edit_pairs(sources, translations, lambda system, user: prov.llm_complete(provider, system, user, cfg),
+        edits = quality_edit_pairs(sources, translations, self._completer(provider, cfg),
                                    target_lang=self._settings["target"], log=self._log, progress=self._progress,
                                    extra_instruction=self._extra_instruction())
         if edits:
@@ -2483,7 +3172,7 @@ class CapriBridge:
         cfg = prov.load_provider_config()
         self._status(f"Kalite editörü çalışıyor ({MODEL_LABELS[provider]})…")
         result = quality_edit_with_llm(
-            tl_dir, self._cache_path(), lambda system, user: prov.llm_complete(provider, system, user, cfg),
+            tl_dir, self._cache_path(), self._completer(provider, cfg),
             log=self._log, progress=self._progress, extra_instruction=self._extra_instruction(),
             target_lang=self._settings["target"],
         )
@@ -2526,32 +3215,82 @@ class CapriBridge:
                             "count": len(_read_json(path, {})), "review": len(_read_json(review_path_for(path), []))})
         return out
 
+    def _line_issues(self, src: str, tr: str, review: set, terms: Any, limits: Dict[str, int],
+                     engine: str) -> List[str]:
+        """Editörde bir satırın neden incelenmesi gerektiği (arayüz metni olarak)."""
+        issues = []
+        if tr == src or not tr:
+            if src in review or re.search(r"[A-Za-z]{3}", src):
+                issues.append("Çevrilmedi")
+        elif not prov.placeholders_valid(src, tr):
+            issues.append("Etiket ya da değişken farklı")
+        if term_lost(src, tr, terms if isinstance(terms, TermRules) else term_rules(terms)):
+            issues.append("Oyun terimi çeviride yok")
+        if text_fit.too_long(src, tr, limits.get(src), engine):
+            issues.append(f"Kutuya sığmayabilir (en çok {limits[src]} karakter)")
+        if src in review and not issues:
+            issues.append("İncelenmeli")
+        return issues
+
+    def _review_context(self, path: Path) -> Tuple[set, Dict[str, str], Dict[str, int], str, Any]:
+        """(incelenmeli satırlar, terimler, kutu sınırları, motor, terim kuralları). Editör her aramada bunu ister:
+        ilgili dosyalar değişmedikçe bellekten gelir."""
+        game = self._game or {}
+        fit = self._fit_path(game) if game.get("type") in text_fit.WIDTH_FUNCS else None
+        glossary = project_glossary_path(Path(game["root"])) if game.get("root") else None
+        key = (str(path), game.get("root"), game.get("type"), _mtime_ns(review_path_for(path)), _mtime_ns(fit),
+               _mtime_ns(glossary))
+        held = self._review_ctx
+        if held and held[0] == key:
+            return held[1]
+        value = self._compute_review_context(path, game)
+        self._review_ctx = (key, value)
+        return value
+
+    def _compute_review_context(self, path: Path, game: Dict[str, Any]) -> Tuple[set, Dict[str, str], Dict[str, int], str, Any]:
+        limits: Dict[str, int] = {}
+        if game.get("type") in text_fit.WIDTH_FUNCS:
+            try:
+                limits = self._fit_limits(game)
+            except Exception:
+                limits = {}
+        terms = self._project_glossary().get("terms") or {}
+        return set(_read_json(review_path_for(path), [])), terms, limits, game.get("type") or "", term_rules(terms)
+
     def editor_load(self, model: str, query: str = "", only_review: bool = False,
                     offset: int = 0, limit: int = 80) -> Dict[str, Any]:
         path = self._cache_path(model)
         cache, flags = self._editor_data(path)
-        review = set(_read_json(review_path_for(path), []))
+        review, _terms, limits, engine, rules = self._review_context(path)
 
         def flagged(src: str, tr: str) -> bool:
             if src in review:
                 return True
             value = flags.get(src)
             if value is None:   # doğrulama pahalı: yalnızca gerektiğinde hesaplanır, sonucu saklanır
-                value = (tr == src and bool(re.search(r"[A-Za-z]{3}", src))) or (bool(tr) and not prov.placeholders_valid(src, tr))
+                value = (tr == src and bool(re.search(r"[A-Za-z]{3}", src))) or (bool(tr) and not prov.placeholders_valid(src, tr)) \
+                    or text_fit.too_long(src, tr, limits.get(src), engine) or term_lost(src, tr, rules)
                 flags[src] = value
             return value
 
         q = (query or "").casefold()
+        folded = self._editor_folded(cache) if q else {}
         matches = []
         for src in list(cache) + [r for r in review if r not in cache]:
             tr = cache.get(src, "")
-            if q and q not in src.casefold() and q not in tr.casefold():
-                continue
+            if q:
+                low_src, low_tr = folded.get(src) or (src.casefold(), "")
+                if q not in low_src and q not in low_tr:
+                    continue
             if only_review and not flagged(src, tr):
                 continue
             matches.append(src)
-        items = [{"src": src, "tr": cache.get(src, ""), "flag": flagged(src, cache.get(src, ""))}
-                 for src in matches[offset:offset + limit]]
+        items = []
+        for src in matches[offset:offset + limit]:
+            tr = cache.get(src, "")
+            flag = flagged(src, tr)
+            items.append({"src": src, "tr": tr, "flag": flag,
+                          "why": self._line_issues(src, tr, review, rules, limits, engine) if flag else []})
         return {"total": len(matches), "items": items, "offset": offset,
                 "model": model, "label": MODEL_LABELS.get(model, model)}
 
@@ -2566,7 +3305,18 @@ class CapriBridge:
             return held[1], held[2]
         data = _read_json(path, {})
         self._editor_cache = (stamp, data, {})
+        self._editor_fold = None
         return data, self._editor_cache[2]
+
+    def _editor_folded(self, cache: Dict[str, str]) -> Dict[str, Tuple[str, str]]:
+        """{kaynak: (kaynak, çeviri) küçük harfli} — arama her tuşta bütün satırları yeniden küçültmez. Önbellek
+        dosyası değişince (_editor_data) sıfırlanır."""
+        held = self._editor_fold
+        if held is not None and held[0] is cache:
+            return held[1]
+        folded = {src: (src.casefold(), str(tr).casefold()) for src, tr in cache.items()}
+        self._editor_fold = (cache, folded)
+        return folded
 
     def editor_save(self, model: str, changes: Dict[str, str]) -> Dict[str, Any]:
         path = self._cache_path(model)
@@ -2574,8 +3324,10 @@ class CapriBridge:
         bad = [src for src, tr in changes.items() if tr and not prov.placeholders_valid(src, tr)]
         if bad:
             return {"ok": False, "msg": f"{len(bad)} satırda etiket/değişken eksik veya fazla: {bad[0][:60]}"}
+        fixes = {src: tr for src, tr in changes.items() if tr and cache.get(src) != tr}
         cache.update({src: tr for src, tr in changes.items() if tr})
         _write_json(path, cache, indent=None)
+        self._safely(lambda: self._learn_fixes(fixes))
         review_file = review_path_for(path)
         review = [r for r in _read_json(review_file, []) if r not in changes]
         if review:
@@ -2583,6 +3335,86 @@ class CapriBridge:
         elif review_file.exists():
             review_file.unlink()
         return {"ok": True, "msg": f"{len(changes)} satır kaydedildi."}
+
+    def _review_sources(self, path: Path, cache: Dict[str, str]) -> Dict[str, List[str]]:
+        """İncelenmesi gereken satırlar ve sorunları (editördeki turuncu satırlar), oyundaki sıralarıyla."""
+        review, _terms, limits, engine, rules = self._review_context(path)
+        found: Dict[str, List[str]] = {}
+        for src in list(cache) + [r for r in review if r not in cache]:
+            tr = cache.get(src, "")
+            if src in review or tr == src or (tr and not prov.placeholders_valid(src, tr)) \
+                    or text_fit.too_long(src, tr, limits.get(src), engine) or term_lost(src, tr, rules):
+                issues = self._line_issues(src, tr, review, rules, limits, engine)
+                if issues and re.search(r"[^\W\d_]", src):
+                    found[src] = issues
+        return found
+
+    def editor_fix_review(self, model: str) -> bool:
+        """İncelenmeli satırları (çevrilmemiş, etiketi bozuk, terimi kayıp, kutuya sığmayan) sorunlarıyla birlikte bir
+        sohbet modeline düzelttirir. Düzeltmeler önbelleğe yazılır; oyuna uygulamak kullanıcının kararıdır."""
+        def task():
+            from engine_renpy import quality_edit_pairs
+            game = self._require_game()
+            path = self._cache_path(model)
+            cache: Dict[str, str] = _read_json(path, {})
+            found = self._review_sources(path, cache)
+            if not found:
+                raise UserError("İncelenecek satır yok.")
+            sources = list(found)[:REVIEW_FIX_LIMIT]
+            _review, terms, limits, engine, rules = self._review_context(path)
+            issues = {src: self._issue_text(src, found[src], terms, limits, engine) for src in sources}
+            provider = self._quality_provider()
+            cfg = prov.load_provider_config()
+            self._stage("translate", f"İncelenmeli satırlar düzeltiliyor ({MODEL_LABELS[provider]})")
+            edits = quality_edit_pairs(sources, cache, self._completer(provider, cfg),
+                                       target_lang=self._settings["target"], log=self._log, progress=self._progress,
+                                       extra_instruction=self._extra_instruction(), issues=issues, order=list(cache))
+            accepted = {}
+            for src, candidate in edits.items():
+                if not prov.placeholders_valid(src, candidate):
+                    continue
+                if text_fit.too_long(src, candidate, limits.get(src), engine) and \
+                        text_fit.WIDTH_FUNCS[engine](candidate) >= text_fit.WIDTH_FUNCS[engine](cache.get(src) or src):
+                    continue                     # kısaltılması istenip kısalmayan öneri alınmaz
+                accepted[src] = candidate
+            if accepted:
+                cache = _read_json(path, {})
+                cache.update(accepted)
+                _write_json(path, cache, indent=None)
+                fixed = {s for s, t in accepted.items() if not self._line_issues(s, t, set(), rules, limits, engine)}
+                review_file = review_path_for(path)
+                left = [r for r in _read_json(review_file, []) if r not in fixed]
+                if left:
+                    _write_json(review_file, left)
+                elif review_file.exists():
+                    review_file.unlink()
+            self._editor_cache = None
+            more = len(found) - len(sources)
+            self._status(f"{_n(len(accepted))} satır düzeltildi.", "ok")
+            self._notify(f"{_n(len(accepted))} / {_n(len(sources))} satır düzeltildi",
+                         ("Değişiklikleri editörde gözden geçirip 'Oyuna uygula'ya bas."
+                          + (f" {_n(more)} satır daha var; tekrar çalıştırabilirsin." if more > 0 else "")),
+                         "ok" if accepted else "warn", "edit", {"label": "Editörde aç", "page": "editor"})
+
+        return self._run_task("İncelenmelileri düzelt", task)
+
+    @staticmethod
+    def _issue_text(src: str, issues: List[str], terms: Dict[str, str], limits: Dict[str, int], engine: str) -> str:
+        """Modele giden sorun açıklaması (İngilizce)."""
+        out = []
+        for issue in issues:
+            if issue == "Çevrilmedi":
+                out.append("still untranslated: translate it")
+            elif issue == "Etiket ya da değişken farklı":
+                out.append("tags/variables differ from the source: keep every tag and variable exactly once")
+            elif issue == "Oyun terimi çeviride yok":
+                pairs = [f"{k} → {v}" for k, v in terms.items() if k and k in src][:5]
+                out.append("a game term is missing; use exactly: " + "; ".join(pairs))
+            elif issue.startswith("Kutuya sığmayabilir") and limits.get(src):
+                out.append(text_fit.describe(limits[src], engine))
+            else:
+                out.append("review and improve the translation")
+        return "; ".join(out)
 
     def editor_apply(self, model: str) -> bool:
         """Önbellekteki (düzenlenmiş) çevirileri oyun dosyalarına yeniden yazar — API harcamaz."""
@@ -2631,10 +3463,7 @@ class CapriBridge:
                     changed += 1
                     file_changed = True
             if file_changed:
-                tmp = path.with_suffix(path.suffix + ".tmp")
-                with tmp.open("w", encoding="utf-8", newline="") as handle:
-                    handle.writelines(lines)
-                tmp.replace(path)
+                atomic_write_text(path, "".join(lines))
         if changed and self._settings.get("renpy_compile_check", True):
             from engine_renpy import compile_check
             self._stage("write", "Oyunun Ren'Py'siyle derleme denetimi")
@@ -2725,18 +3554,33 @@ class CapriBridge:
         if mode == "folder":
             result = self._window.create_file_dialog(webview.FileDialog.FOLDER)
         else:
-            result = self._window.create_file_dialog(webview.FileDialog.OPEN, file_types=("JSON dosyası (*.json)",))
+            result = self._window.create_file_dialog(webview.FileDialog.OPEN, file_types=(
+                "JSON ve altyazı (*.json;*.srt;*.vtt;*.ass;*.ssa)", "JSON dosyası (*.json)",
+                "Altyazı (*.srt;*.vtt;*.ass;*.ssa)"))
         return result[0] if result else None
 
     def json_translate(self, input_path: str, output_path: str = "") -> bool:
         def task():
+            import subtitles
             from engine_json import PROTECTED_JSON, apply_translations, collect_strings
             src = Path(input_path)
             if not src.exists():
                 raise UserError("Giriş dosyası/klasörü bulunamadı.")
             self._check_model_ready(None)
-            files = sorted(src.rglob("*.json")) if src.is_dir() else [src]
-            out_root = Path(output_path) if output_path else (
+            target_lang = self._settings["target"]
+            if src.is_dir():
+                files = sorted(src.rglob("*.json"))
+                subs = [f for f in subtitles.find_files(src) if not subtitles.is_output(f, target_lang)]
+            else:
+                is_sub = src.suffix.lower() in subtitles.SUBTITLE_EXTS
+                files, subs = ([], [src]) if is_sub else ([src], [])
+            if not files and not subs:
+                raise UserError("Bu klasörde .json ya da altyazı (.srt, .vtt, .ass) dosyası yok.")
+            if subs:
+                self._translate_subtitles(src, subs, Path(output_path) if output_path else None)
+            if not files:
+                return
+            out_root = Path(output_path) if output_path and (src.is_dir() or not subs) else (
                 src.with_name(src.name + "_tr") if src.is_dir() else src.with_name(f"{src.stem}_tr{src.suffix}"))
             failed: set = set()
             total = 0
@@ -2764,6 +3608,50 @@ class CapriBridge:
                              "warn", "alert")
 
         return self._run_task("JSON çevirisi", task)
+
+    def _translate_subtitles(self, src: Path, files: List[Path], output: Optional[Path]) -> None:
+        """Altyazı dosyalarını çevirir; her biri "ad.<dil>.uzantı" olarak (klasör seçildiyse çıkış klasörüne,
+        tek dosya seçildiyse verilen çıkış yoluna) yazılır. Orijinallere dokunulmaz."""
+        import subtitles
+        target_lang = self._settings["target"]
+        glossary = self._glossary("glossary.json") if target_lang == "tr" else Glossary(self._project_glossary()["terms"])
+        failed: set = set()
+        written: List[Path] = []
+        total = 0
+        for index, file in enumerate(files, 1):
+            try:
+                sub = subtitles.load(file)
+            except (OSError, ValueError) as exc:
+                self._log(f"Atlandı (okunamadı): {file.name}: {exc}")
+                continue
+            unique = list(dict.fromkeys(subtitles.texts(sub)))
+            if not unique:
+                self._log(f"Atlandı (çevrilecek metin yok): {file.name}")
+                continue
+            self._status(f"{file.name}: {_n(len(unique))} altyazı satırı çevriliyor ({index}/{len(files)})…")
+            cache_path = cache_file_for(file.resolve(), DATA_DIR,
+                                        suffix=f"_sub_{self._settings['model']}_{target_lang}")
+            translations = self._translate_strings(unique, cache_path, subtitles.PROTECTED_SUB, glossary,
+                                                   "film / video game subtitles", failed, extra="",
+                                                   engine_tags=subtitles.PROTECTED_SUB)
+            name = subtitles.output_path(file, target_lang)
+            if output and src.is_dir():
+                target = output / name.relative_to(src)
+            elif output and len(files) == 1:
+                target = output if output.suffix else output / name.name
+            else:
+                target = name
+            written.append(subtitles.save(sub, translations, target))
+            total += len(unique)
+        if not written:
+            raise UserError("Çevrilebilecek altyazı satırı bulunamadı.")
+        folder = written[0].parent
+        self._status(f"Altyazı çevirisi tamamlandı: {_n(len(written))} dosya · {_n(total)} satır", "ok")
+        self._notify("Altyazı çevirisi tamamlandı", f"{_n(len(written))} dosya · {_n(total)} satır → {written[0].name}"
+                     + ("…" if len(written) > 1 else ""), "ok", "check", {"label": "Klasörü aç", "path": str(folder)})
+        if failed:
+            self._notify(f"{_n(len(failed))} altyazı satırı çevrilemedi",
+                         "Orijinal hâliyle bırakıldı; tekrar çalıştırınca yeniden denenir.", "warn", "alert")
 
     # ── Yama paylaşımı ───────────────────────────────────────────────────────
     def export_patch(self) -> Optional[str]:
@@ -3046,16 +3934,18 @@ class CapriBridge:
 
     # ── Dahili yerel modeller (llama.cpp, Ollama'sız) ────────────────────────
     def _local_model_id(self, ocr: bool = False) -> str:
-        """Seçili dahili model; seçilmemişse ekran kartına göre önerilen. Ekran çevirisinde (tek satır) MiLMMT kuruluysa
-        o kullanılır: tek satırda ~0,1 sn ve TranslateGemma'dan hızlı."""
+        """Seçili dahili model; seçilmemişse kurulu en iyi model, o da yoksa ekran kartına göre önerilen. Ekran çevirisinde
+        (tek satır) MiLMMT ya da Hy-MT2 1.8B kuruluysa o kullanılır: tek satırda ~0,1 sn."""
         import local_llm
-        if ocr and local_llm.model_installed("milmmt-4b"):
-            return "milmmt-4b"
+        if ocr:   # tek satır: en hızlı küçük çeviri modelleri (MiLMMT ~0,1 sn, Hy-MT2 1.8B)
+            fast = next((m for m in ("milmmt-4b", "hymt2-1.8b") if m in local_llm.BY_ID and local_llm.model_installed(m)), None)
+            if fast:
+                return fast
         chosen = self._settings.get("local_model")
         if chosen in local_llm.BY_ID:
             return chosen
-        installed = [m["id"] for m in local_llm.CATALOG if local_llm.model_installed(m["id"]) and m["family"] != "milmmt"]
-        return installed[0] if installed else local_llm.recommend((self._gpu or {}).get("vram_gb"))["model"]
+        installed = sorted((m for m in local_llm.CATALOG if local_llm.model_installed(m["id"])), key=local_llm.score, reverse=True)
+        return installed[0]["id"] if installed else local_llm.recommend((self._gpu or {}).get("vram_gb"))["model"]
 
     def _vram_gb(self) -> Optional[float]:
         """Ekran kartı belleği. Açılıştaki tespit arka planda sürüyorsa beklemeden doğrudan okunur (~50 ms); yoksa
@@ -3073,7 +3963,8 @@ class CapriBridge:
     def local_models(self) -> Dict[str, Any]:
         import local_llm
         vram = self._vram_gb()
-        data = local_llm.status(vram)
+        classic = {k: bool(prov.get_offline_model_status(k).get("is_ready")) for k in ("opus", "nllb")}
+        data = local_llm.status(vram, classic_ready=classic)
         data["selected"] = self._local_model_id()
         data["vram_gb"] = vram
         return data
@@ -3094,7 +3985,7 @@ class CapriBridge:
             self._stage("download", f"{spec['label']} indiriliyor")
             self._progress_unit = "MB"
             local_llm.install_model(model_id, lambda d, t: self._progress(d >> 20, max(1, t >> 20)), self._cancel, self._log)
-            if spec["family"] != "milmmt" and not local_llm.model_installed(self._settings.get("local_model") or ""):
+            if not local_llm.model_installed(self._settings.get("local_model") or ""):
                 self._settings["local_model"] = model_id
                 save_settings(self._settings)
             self._ui.emit("models", self.model_status())
@@ -3296,7 +4187,8 @@ class CapriBridge:
         ok, translated, latency, cached = self._ocr_translate(text)
         meta = f"OCR {result.ms:.0f} ms · çeviri {'önbellekten' if cached else f'{latency} ms'}"
         self._ocr_popup(rect, {"state": "ok" if ok else "error", "original": text, "translation": translated if ok else "",
-                               "error": "" if ok else translated, "engine": label, "meta": meta})
+                               "error": "" if ok else translated, "engine": label, "meta": meta,
+                               "lang": self._settings["target"], "speak": bool(self._settings.get("ocr_speak"))})
         self._log(f"OCR: {text[:80]!r} → {translated[:80]!r}")
 
     def _ocr_popup(self, rect: Tuple[int, int, int, int], payload: Dict[str, Any]) -> None:
@@ -3353,7 +4245,9 @@ class CapriBridge:
         self._ocr_anchor["pin_width"] = width
         win = self._ocr_win["pin"]
         win.evaluate_js("OCRPIN.update(%s)" % json.dumps({
-            "place": "over" if over else "below", "translation": self._tr("Alan izleniyor…"), "state": "live", "meta": ""}))
+            "place": "over" if over else "below", "lang": self._settings["target"],
+            "speak": bool(self._settings.get("ocr_speak")), "translation": self._tr("Alan izleniyor…"),
+            "placeholder": True, "state": "live", "meta": ""}))
         self._place("pin", width, 96)
         win.show()
         self._pin_watcher = RegionWatcher(rect, self._settings["source"], self._pin_on_text, self._pin_on_state,
@@ -3411,6 +4305,17 @@ class CapriBridge:
         return {"running": self._scan_running, "found": found, "folders": self._settings.get("scan_folders", []),
                 "on_start": bool(self._settings.get("scan_on_start"))}
 
+    @staticmethod
+    def _scan_line_count(game: Dict[str, Any], before: Optional[Dict[str, Any]]) -> None:
+        """Önerinin yaklaşık satır sayısı. Oyunun ana dosyaları önceki taramadan beri değişmediyse (parmak izi aynı)
+        oyun yeniden çözümlenmez, önceki sayı kullanılır."""
+        stamp = game_files_stamp(game["path"], game["engine"]) or ""
+        if stamp and before and before.get("stamp") == stamp and before.get("engine") == game["engine"] \
+                and "lines" in before:
+            game.update(lines=before["lines"], stamp=stamp)
+            return
+        game.update(lines=quick_line_count(game), stamp=stamp)
+
     def scan_games(self, manual: bool = True) -> bool:
         """Bilgisayardaki oyunları arka planda arar (salt okunur); bulunanlar öneri olarak listelenir."""
         if self._scan_running:
@@ -3420,13 +4325,14 @@ class CapriBridge:
 
         def work():
             import game_scanner
-            previous = {ProjectLibrary.key(g["path"]) for g in self._scan_found}
+            earlier = {ProjectLibrary.key(g["path"]): g for g in self._scan_found if isinstance(g, dict) and g.get("path")}
+            previous = set(earlier)
             try:
                 parents, direct = game_scanner.scan_sources(self._settings.get("scan_folders", []))
                 known = [p["path"] for p in self._library.list()]
                 self._scan_found = game_scanner.scan(detect_any_game_type, game_root_of, game_title_of, parents, direct, known)
                 for game in self._scan_found:
-                    self._safely(lambda: game.update(lines=quick_line_count(game)))
+                    self._safely(lambda: self._scan_line_count(game, earlier.get(ProjectLibrary.key(game["path"]))))
                 _write_json(DATA_DIR / "scan.json", self._scan_found, indent=None)
             except Exception:
                 self._safely(lambda: self._log(traceback.format_exc()))
@@ -3585,7 +4491,8 @@ class CapriBridge:
     def _preload_engines() -> None:
         """İlk oyun açılışı beklemesin: ağır motor modülleri arayüz açıldıktan sonra arka planda yüklenir."""
         time.sleep(1.5)
-        for module in ("engine_unity", "engine_renpy", "engine_unreal", "engine_rpgmaker"):
+        for module in ("engine_unity", "engine_renpy", "engine_unreal", "engine_rpgmaker", "engine_kag", "engine_godot",
+                       "engine_wolf"):
             try:
                 __import__(module)
             except Exception:
@@ -3615,14 +4522,54 @@ class CapriBridge:
             names = ", ".join(changed[:3]) + ("…" if len(changed) > 3 else "")
             self._log(f"Çeviriden sonra dosyaları değişen oyunlar: {', '.join(changed)}")
             self._notify(f"{_n(len(changed))} oyun güncellenmiş",
-                         f"{names}: çeviriyi yeniden uygulamak için oyunu açıp 'Çeviriyi başlat'a bas (önbellekteki satırlar "
-                         "ücretsiz).", "warn", "alert",
+                         f"{names}: oyunu açıp 'Çeviriyi yeniden uygula'ya bas (önbellekteki satırlar ücretsiz, "
+                         "yalnızca yeni satırlar çevrilir).", "warn", "alert",
                          {"label": "Kütüphane", "page": "library"})
         return changed
 
     # ── Sağlayıcılar ─────────────────────────────────────────────────────────
+    EXTRA_FIELDS = ("key", "model", "base_url", "region")
+
+    @staticmethod
+    def _extra_provider_fields(cfg: Any) -> Dict[str, str]:
+        """Ek sağlayıcıların alanları arayüzde düz adlarla: deepseek_key, deepseek_model, custom_base_url…"""
+        out = {}
+        for pid in cloud_providers.ALL:
+            values = cloud_providers.extra(cfg, pid)
+            for name in CapriBridge.EXTRA_FIELDS:
+                out[f"{pid}_{name}"] = values.get(name, "")
+        return out
+
+    @staticmethod
+    def _provider_catalog() -> List[Dict[str, Any]]:
+        """Arayüzdeki sağlayıcı kartları (ek bulut sağlayıcıları; ilk dördü app.js'de)."""
+        items = []
+        for pid, meta in cloud_providers.ALL.items():
+            if pid == "custom":
+                fields = [["custom_base_url", "Sunucu adresi (…/v1)", "text", "full"], ["custom_key", "API anahtarı (isteğe bağlı)", "password", ""],
+                          ["custom_model", "Model", "model", ""]]
+                test = "custom_base_url"
+            elif pid == "azure_translator":
+                fields = [["azure_translator_key", "API anahtarı", "password", ""], ["azure_translator_region", "Bölge (isteğe bağlı)", "text", ""]]
+                test = "azure_translator_key"
+            elif pid in cloud_providers.MT_PROVIDERS:
+                fields = [[f"{pid}_key", "API anahtarı", "password", "full"]]
+                test = f"{pid}_key"
+            else:
+                fields = [[f"{pid}_key", "API anahtarı", "password", ""], [f"{pid}_model", "Model", "model", ""]]
+                test = f"{pid}_key"
+            items.append({"id": pid, "short": meta["short"], "group": "cloud", "title": meta["title"], "tag": meta["tag"],
+                          "desc": meta["desc"], "fields": fields, "test": test, "key_url": meta.get("key_url", ""),
+                          "default_model": meta.get("model", ""), "kind": "mt" if pid in cloud_providers.MT_PROVIDERS else "chat"})
+        return items
+
     def save_providers(self, data: Dict[str, Any]) -> Dict[str, Any]:
         cfg = prov.load_provider_config()
+        for pid in cloud_providers.ALL:
+            for name in self.EXTRA_FIELDS:
+                value = data.get(f"{pid}_{name}")
+                if isinstance(value, str):
+                    cloud_providers.extra(cfg, pid)[name] = value.strip()
         keys = data.get("gemini_keys", cfg.gemini_keys)
         if isinstance(keys, str):
             keys = [k.strip() for k in keys.splitlines() if k.strip()]
@@ -3716,6 +4663,9 @@ class CapriBridge:
             status = prov.get_offline_model_status(provider)
             ok = status["is_ready"]
             msg = f"Kurulu ({status['size_mb']} MB)" if ok else f"Eksik: {', '.join(status['missing_files'][:3])}"
+        elif provider in cloud_providers.ALL:
+            ok, msg, models = cloud_providers.test(cfg, provider, value)
+            return {"ok": ok, "msg": msg, "models": models[:200]}
         else:
             ok, msg = False, "Bilinmeyen sağlayıcı."
         return {"ok": ok, "msg": msg}
@@ -3724,7 +4674,7 @@ class CapriBridge:
     def model_status(self) -> Dict[str, Any]:
         data: Dict[str, Any] = {k: prov.get_offline_model_status(k) for k in ("opus", "nllb")}
         data["runtime"] = {"ready": gpu_runtime.ready(), "missing": gpu_runtime.missing(),
-                           "dir": str(gpu_runtime.SITE_DIR)}
+                           "dir": str(gpu_runtime.SITE_DIR), "ct2_ready": gpu_runtime.ct2_ready()}
         data["llm"] = self.local_models()
         return data
 
@@ -3735,14 +4685,14 @@ class CapriBridge:
         cuda = gpu_runtime.driver_cuda()
         size = gpu_runtime.estimate_mb(cuda)
         kind = (f"NVIDIA ekran kartın için CUDA destekli PyTorch" if cuda else "NVIDIA ekran kartı bulunamadığı için CPU sürümü PyTorch")
-        if not self._ask("Yerel model ortamı kurulacak",
+        if not self._ask("OPUS-MT ve NLLB için PyTorch kurulacak",
                          f"OPUS-MT ve NLLB için PyTorch ve Transformers gerekiyor. Capri, {kind} ile birlikte bunları "
                          f"resmi kaynaklardan (download.pytorch.org, pypi.org) indirip kuracak (~{_n(size)} MB, bir kez). "
                          "Devam edilsin mi?"):
             return False
-        self._status("Yerel model ortamı kuruluyor…")
+        self._status("PyTorch kuruluyor…")
         torch = gpu_runtime.install(log=self._log, progress=self._progress)
-        self._notify("Yerel model ortamı kuruldu",
+        self._notify("PyTorch kuruldu",
                      f"PyTorch {torch['version']} ({torch['variant']})" if torch else "Eksik kütüphaneler kuruldu.", "ok", "cpu")
         self._detect_gpu()
         return True
@@ -3750,7 +4700,7 @@ class CapriBridge:
     def install_runtime(self) -> bool:
         def task():
             if gpu_runtime.ready():
-                self._notify("Yerel model ortamı hazır", "PyTorch ve Transformers zaten kurulu.", "ok", "cpu")
+                self._notify("PyTorch hazır", "PyTorch ve Transformers zaten kurulu.", "ok", "cpu")
             self._ensure_runtime()
             self._ui.emit("models", self.model_status())
 
@@ -3761,8 +4711,9 @@ class CapriBridge:
             return False
 
         def task():
-            if not self._ensure_runtime():
-                return
+            if not gpu_runtime.ct2_ready():           # PyTorch yerine ~40 MB'lık CTranslate2 ortamı
+                self._status("Çalışma ortamı kuruluyor (≈40 MB)…")
+                gpu_runtime.install_ct2(log=self._log, progress=self._progress)
             status = prov.get_offline_model_status(kind)
             if status["is_ready"]:
                 self._notify(f"{status['label']} hazır", f"Tüm dosyalar yerinde ({status['size_mb']} MB).", "ok", "cpu")
@@ -3806,6 +4757,7 @@ class CapriBridge:
         if not self._game:
             return []
         import rgss_archive
+        import wolf_archive
         root = Path(self._game["root"])
         items = []
         if rgss_archive.is_unpacked(root):
@@ -3815,6 +4767,14 @@ class CapriBridge:
                           "date": time.strftime("%d.%m.%Y %H:%M", time.localtime((root / rgss_archive.MANIFEST).stat().st_mtime)),
                           "files": len(manifest.get("extracted", [])), "size": archive.stat().st_size if archive.exists() else 0,
                           "zip": False})
+        if wolf_archive.is_unpacked(root):
+            manifest = _read_json(root / wolf_archive.MANIFEST, {})
+            kept = [root / wolf_archive.BACKUP_DIR / rel for rel in manifest.get("archives", [])]
+            items.append({"path": str(root / wolf_archive.BACKUP_DIR), "engine": "Şifreli arşiv",
+                          "archive": ", ".join(Path(rel).name for rel in manifest.get("archives", [])),
+                          "date": time.strftime("%d.%m.%Y %H:%M", time.localtime((root / wolf_archive.MANIFEST).stat().st_mtime)),
+                          "files": len(manifest.get("extracted", [])),
+                          "size": sum(p.stat().st_size for p in kept if p.exists()), "zip": False})
         return items + [
             {
                 "path": str(b.path), "engine": b.engine, "date": b.date_str,
@@ -3830,7 +4790,13 @@ class CapriBridge:
             if not self._ask("Şifreli arşivi geri koy",
                              "Açılan dosyalar silinip orijinal arşiv geri konacak. Devam edilsin mi?"):
                 return
-            removed = rgss_archive.restore(Path(game["root"]), log=self._log)
+            import wolf_archive
+            root = Path(game["root"])
+            removed = 0
+            if wolf_archive.is_unpacked(root):
+                removed += wolf_archive.restore(root, log=self._log)
+            if rgss_archive.is_unpacked(root):
+                removed += rgss_archive.restore(root, log=self._log)
             game.update(info=None, texts=None, analysis=None)
             self._library.upsert(game["root"], status="restored", last_action="Orijinal arşiv geri konuldu", last_action_at=time.time())
             self._emit_project(game["root"])

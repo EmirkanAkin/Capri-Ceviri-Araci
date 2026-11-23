@@ -1,5 +1,116 @@
 # Capri — Değişim Günlüğü
 
+## [1.0.9] - 2026-11-23
+### Yeni motorlar
+- **Godot 3 / 4:** Dışa aktarılmış oyunların çeviri tabloları (CSV'den üretilen OptimizedTranslation / PHashTranslation,
+  düz Translation, .po) ve sahnelerdeki arayüz yazıları (Label, Button… `text`) çevriliyor. Oyunun paketine dokunulmuyor:
+  Capri `capri_tr.pck` yaması, onu yükleyen küçük bir betik (`capri_tr.gd`) ve `override.cfg` ekliyor; oyunun kendi
+  override.cfg'si varsa yalnızca bir satır ekleniyor. Ayrı .pck ve exe'ye gömülü paket okunuyor; şifreli paketler
+  anlaşılır biçimde bildiriliyor. Gerçek Godot 4.7.2 ve 3.6.3 ile (headless) Türkçe ve İngilizce sistem dilinde doğrulandı.
+- **TyranoScript:** `.ks` senaryoları (konuşmalar, `#isim` satırları, `glink` seçenekleri, `chara_new` adları);
+  `[iscript]` / `[html]` blokları ve yorumlar atlanıyor, ruby okunuşları çeviriden önce çıkarılıyor. Oyun klasör, NW.js
+  paketi (`package.nw` ya da exe'nin sonuna eklenmiş zip) veya Electron paketi (`resources/app.asar`, bütünlük özetleri
+  güncellenerek) olabilir. asar yazımı resmi `@electron/asar` aracıyla doğrulandı.
+- **KiriKiri 2 / Z:** `data.xp3` (2.30+ başlığı, zlib'li dizin ve bölümler) ya da açık `data/` klasöründeki `.ks`
+  senaryoları; `【isim】` satırları ve `seladd` seçenekleri. Çeviri oyunun arşivine dokunmadan ayrı bir `patch.xp3`
+  yamasına yazılıyor, resmi yamalar korunuyor; Shift-JIS'e sığmayan harfler için dosya UTF-16 olarak yazılıyor.
+  Şifreli arşivler okunamıyor, anlaşılır not gösteriliyor.
+- **WOLF RPG Editor 2 / 3:** Haritalardaki ve ortak olaylardaki konuşmalar, seçenekler ve metin resimleri ile
+  veritabanlarındaki (DataBase, CDataBase) eşya, beceri, karakter adları, açıklamalar ve savaş mesajları çevriliyor
+  (3.x'in LZ4 sıkıştırması dahil). Veritabanında yalnızca "dosya" türünde olmayan metin alanları değişiyor; dosya
+  yolları, kayıt adları, oyundaki bir dosyanın adıyla aynı değerler ve sistem veritabanı korunuyor. Dosya motorun
+  okuduğu sırayla gezilip yalnızca dizeler değiştiriliyor, yazılan dosya yeniden çözümleniyor.
+- **Şifreli WOLF arşivleri (Data.wolf, Data/*.wolf):** WOLF 2.01, 2.10, 2.20, 2.225, 3.00, 3.14, 3.31, 3.50 ve ChaCha20
+  şifreli arşivler açılıyor (DXArchive sürüm 1–8, LZ + Huffman, 3.31+ adres karıştırma, AES-CTR ve 768 baytlık XOR).
+  Analizde yalnızca metin dosyaları geçici bir klasöre açılıyor, oyuna dokunulmuyor; çeviri başlarken onayınla arşiv
+  oyun klasörüne açılıp orijinali yedekleniyor, "Arşivi geri koy" her şeyi bayt bayt geri alıyor. WOLF Pro (oyuna
+  özel anahtar) arşivleri anlaşılır biçimde bildiriliyor. 17 ücretsiz oyunun arşivinde (11.000+ dosya) doğrulandı.
+- Japonca / Korece / Çince kaynak metin otomatik algılanıyor.
+- **Unity Localization paketi:** Dize tabloları dosyadan çevriliyor. Unity 6 veri dosyası tablolarında
+  (`StreamingAssets/LocalizationTables/*_en.json`) Capri `…_tr.json` ekliyor: oyunun dosyalarına dokunulmadan Türkçe
+  oyunun dil listesine giriyor, Türkçe Windows'ta kendiliğinden seçiliyor. Addressables paketlerinde (StringTable)
+  kaynak dil metinleri yerinde çevriliyor ve değişen paketin katalogdaki CRC denetimi aynı uzunlukta kapatılıyor;
+  bileşen birebir okunamazsa ya da CRC güvenle kapatılamazsa dosyalara dokunulmuyor.
+- **Godot betiklerine gömülü metinler:** GDScript'te `label.text = "…"` gibi yazılan metinler (düz .gd, Godot 3
+  derlenmiş .gdc, Godot 4.3+ sıkıştırılmış ikili belirteçler) okunuyor ve çeviri tablosuna ekleniyor. Betiklerin
+  kendisi değişmiyor; yollar, giriş eylemleri, tanımlayıcılar ve anahtar dizeleri ayıklanıyor.
+- Capri'nin oyuna eklediği dosyalar (yama arşivleri, override.cfg) yedekte not ediliyor; "Orijinale dön" bunları siliyor.
+
+### Yerel model kitaplığı
+- **12 yerel model, üç ağırlık grubu:** Hafif (zayıf bilgisayarlar, ekran kartsız da çalışır): Gemma 4 E2B, MiLMMT-46 4B,
+  Hy-MT2 1.8B, TranslateGemma 4B. Orta (6-8 GB ekran kartı): Hy-MT2 7B, Gemma 4 E4B. Ağır (10 GB+): Gemma 4 26B-A4B,
+  MiLMMT-46 12B, Gemma 4 12B, Hy-MT2 30B-A3B, TranslateGemma 12B ve 27B. Her model ne işe yaradığını anlatan bir
+  açıklama, kalite çubukları, ekran kartıyla ve kartsız hızla gösteriliyor.
+- **Kaliteye göre sıralama:** Her grup Capri'nin kendi testine göre iyiden kötüye sıralı: WMT24++ (İngilizce → 14 dil,
+  Türkçe 60 cümle, diğerleri 16'şar) chrF++ ve Capri'nin etiket maskesiyle 24 oyun satırında etiket koruma. Türkçe iki
+  kat sayılıyor. Öneri, ekran kartına tamamen sığan en iyi model (RTX 5070 12 GB: MiLMMT-46 12B).
+- Testte TranslateGemma 4B metne olmayan şeyler ekledi ve sayıları değiştirdi; artık önerilmiyor. Hy-MT2 çok satırlı
+  metinde satırları birleştirebildiği, MiLMMT'nin istemi satır sonunda bittiği için ikisi de satır satır çeviriyor.
+- **Sade sayfa:** Yerel Modeller sayfası bilgisayarına önerilen modeli ve her grubun en iyisini gösteriyor; bütün
+  modeller ve ayrıntıları "Tüm modelleri göster" ile açılıyor.
+- Gemma 4 modelleri sohbet modeli olduğu için yerel **kalite editörü** olarak da çalışıyor (JSON yanıt kipiyle).
+- 1,25 bitlik Hy-MT2 1.8B özel bir sayı biçimi istediği için standart llama.cpp ile açılmıyor; kitaplığa alınmadı.
+- **OPUS-MT ve NLLB artık PyTorch'suz:** İki klasik model CTranslate2 ile işlemcide çalışıyor. ≈2,9 GB'lık PyTorch
+  yerine ≈40 MB'lık bir ortam kuruluyor; NLLB 2,5 GB yerine 0,6 GB (int8). OPUS-MT işlemcide eski ekran kartı
+  hızından bile hızlı (cümle başına 0,22 sn) ve Türkçe puanı biraz yükseldi (51,8 → 52,4). NLLB int8'de dil başına
+  ortalama ~2 puan kaybediyor (Türkçe 40,0 → 37,8). Dosyalar sabit bir sürümden indirilip SHA-256 ile doğrulanıyor.
+  Daha önce PyTorch ile kurulmuş modeller aynen çalışmaya devam ediyor.
+
+### Çeviri kalitesi
+- **Düzeltme belleği:** Çeviri Editörü'nde elle düzelttiğin cümleler, aynı cümle başka bir oyunda (ör. serinin
+  devamında) geçince makine çevirisi yerine kullanılıyor.
+- **Karakter adları:** İlk çeviriden önce oyunun karakter adları (Ren'Py `Character`, RPG Maker aktörleri, Tyrano /
+  KiriKiri isimleri) bir kez taranıp oyuna özel sözlüğe "aynen kalsın" diye ekleniyor. "Mom", "Guard" gibi çevrilmesi
+  gereken adlar alınmıyor; Latin alfabeli olmayan hedef dillerde yapılmıyor. Ayarlardan kapatılabilir.
+- **Konuşan karakter:** Gemini, OpenAI ve Claude'a her partide hangi satırı kimin söylediği bildiriliyor (dilbilgisel
+  cinsiyet, hitap, üslup için); liste ve yanıt biçimi değişmiyor.
+- **Metin kutusuna sığma:** RPG Maker MV/MZ'de mesaj penceresi genişliği (System.json, Community_Basic, yüz görseli),
+  Ren'Py'de gui.rpy ölçüleriyle çevirisi kutudan taşabilecek satırlar işaretleniyor. Yalnızca orijinali sığıp çevirisi
+  sığmayanlar işaretlenir; kaydırma eklentisi kullanan satırlar atlanır.
+- **İncelenmelileri düzelt:** Editördeki turuncu satırlar (çevrilmemiş, etiketi bozuk, terimi kayıp, kutuya
+  sığmayan) sorunlarının açıklamasıyla bir sohbet modeline düzelttiriliyor; kısaltılması istenip kısalmayan ya da
+  etiketi bozan öneriler alınmıyor. Editör her satırın neden işaretlendiğini gösteriyor.
+
+### Yeni çeviri motorları
+- **OpenAI uyumlu bulut sağlayıcıları:** DeepSeek, Mistral AI, xAI Grok, Groq, OpenRouter, Cerebras, Alibaba Qwen
+  (uluslararası DashScope) ve Cohere. Model alanı boş bırakılırsa önerilen model ya da sağlayıcının listesinden hızlı bir
+  sohbet modeli seçilir; "Bağlantıyı test et" sağlayıcının model listesini öneri olarak getirir. JSON kipini
+  desteklemeyen modellerde kipsiz yeniden denenir. Hepsi oyun çevirisi, metin çevirici, ekran çevirisi, kalite
+  editörü ve konuşan karakter bilgisiyle çalışıyor.
+- **OpenAI uyumlu (özel) sunucu:** LM Studio, vLLM, Together, Fireworks gibi herhangi bir `…/v1` adresi; yerel
+  sunucularda anahtar gerekmez.
+- **Google Cloud Translation ve Microsoft Translator:** makine çevirisi API'leri; oyun etiketleri `notranslate`
+  bölümleriyle korunuyor, satır sonları kalıyor.
+- Yeni anahtarlar da Windows Kimlik Bilgisi Yöneticisi'nde saklanıyor; kaydedilmemiş bir anahtarla yapılan bağlantı
+  testi ayarlara karışmıyor.
+
+### Performans ve güvenilirlik
+- Terim denetimi büyük oyunlarda ~80 kat hızlandı (50 bin satır, 200 terim: 8,6 sn → 0,1 sn); sonuç aynı.
+- Toplu çeviri kuyruğu kilitlendi: çalışırken sıradan çıkarılan oyun çevrilmiyor, eklenen oyun çevriliyor. Gözetimsiz
+  çalışmada onay soruları en çok 1 dakika bekliyor ve soru oyunun notuna yazılıyor.
+- NW.js paketleri (package.nw / exe içi zip) yeniden yazılırken değişmeyen dosyalar yeniden sıkıştırılmıyor, arşiv
+  belleğe alınmıyor (80 MB paket: 0,07 sn, 2 MB bellek); okumada CRC denetleniyor.
+- Oyun taraması, dosyaları değişmemiş oyunların satır sayısını yeniden hesaplamıyor; Godot algılaması hafifledi.
+- Godot paketi okunurken tek tutamak kullanılıyor; analizde çıkarılan metinler yazmada yeniden okunmuyor. WOLF dosyaları
+  bir kez çözümleniyor.
+- Çeviri Editörü'nde arama, büyük oyunlarda her tuşta dosya okumuyor.
+- Bütün kalıcı yazımlar tek bir güvenli yazma yardımcısından geçiyor (fsync, yarıda kalırsa asıl dosya korunur).
+
+### Kolaylık
+- **Toplu çeviri:** Kütüphaneden oyunlar sıraya eklenip teker teker çevriliyor; bir oyundaki hata sırayı durdurmuyor,
+  "Durdur" bütün sırayı durduruyor (kalanlar sırada bekler).
+- **Güncellemeden sonra tek tık:** Oyun güncellenince analizde "Çeviriyi yeniden uygula" düğmesi çıkıyor.
+- **Pahalı çeviri onayı:** OpenAI / Claude / DeepL ile yaklaşık 3 $'ın üstündeki çeviriler başlamadan onay istiyor.
+- **Ekran çevirisini sesli okuma:** Windows'un yerel sesleriyle (çevrimiçi sesler metni dışarı göndereceği için
+  kullanılmaz); sabit çeviride her yeni satır okunuyor.
+- **Altyazı çevirisi:** Dosya Çevirici `.srt`, `.vtt`, `.ass/.ssa` dosyalarını sıra numaraları, zaman kodları, stil
+  satırları ve biçim etiketleri korunarak çeviriyor; çıktı "ad.tr.srt" olarak yanına yazılıyor.
+- **Tanıtım turları ve maskot Capri:** İlk açılışta kısa bir tanıtım turu, ilk oyun eklenince çeviri adımları ve her
+  sayfanın kendi kısa turu (başlığın yanındaki "?" ile yeniden açılır). Turları maskot Capri anlatıyor: her adımda
+  anlatılana uyan bir poz (30 poz: selam, oyun kutusu, büyüteç, kalkan, ekran kartı, dürbün…), her tıklamada farklı
+  bir giriş efekti ve başının üstünde kısa bir söz balonu; maskota tıklayınca pozu değişir. Tur açıkken arkadaki
+  menüler kilitli; pencere başlık çubuğundan taşınabiliyor, tekerlek sayfayı kaydırıyor.
+
 ## [1.0.8] - 2026-11-22
 ### Yeni
 - **Ren'Py derleme denetimi:** Çeviri yazıldıktan sonra oyun, kendi Ren'Py'siyle `compile` komutuyla derleniyor.

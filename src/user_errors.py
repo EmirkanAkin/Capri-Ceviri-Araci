@@ -31,8 +31,8 @@ def describe_error(exc: BaseException) -> Dict[str, Any]:
     if isinstance(exc, ImportError):
         module = (getattr(exc, "name", "") or "").split(".")[0]
         if module in AI_MODULES:
-            return _result("Yerel model ortamı eksik",
-                           "Bu motor için gereken kütüphaneler kurulu değil. Yerel Modeller sayfasından tek tıkla kurabilirsin.",
+            return _result("PyTorch eksik",
+                           "OPUS-MT ve NLLB için gereken PyTorch kurulu değil. Yerel Modeller sayfasından tek tıkla kurabilirsin.",
                            detail, MODELS_ACTION)
         return _result("Uygulamanın bir parçası eksik",
                        "Capri paketleme hatası. Son sürümü aynı klasöre aç; ayarların korunur.", detail, {"label": "Güncellemeleri kontrol et", "update": True})

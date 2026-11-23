@@ -1,4 +1,5 @@
-"""Testler için llama-server taklidi: /health ve /completion. Gelen istemdeki metni "TR(...)" olarak çevirir.
+"""Testler için llama-server taklidi: /health, /completion ve /v1/chat/completions. Gelen istemdeki metni "TR(...)"
+olarak çevirir.
 Kullanım: python fake_llama_server.py --port N [--crash]"""
 import json
 import sys
@@ -16,6 +17,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        if self.path.endswith("/chat/completions"):                # Hy-MT2 / Gemma 4: metin son boş satırdan sonra
+            text = body["messages"][-1]["content"].rsplit("\n\n", 1)[1]
+            return self._send({"choices": [{"message": {"role": "assistant", "content": f"TR({text})"}}]})
         prompt = body["prompt"]
         if prompt.startswith("<start_of_turn>user\n"):          # TranslateGemma: metin 3 satır sonundan sonra
             text = prompt.split("\n\n\n", 1)[1].rsplit("<end_of_turn>", 1)[0]

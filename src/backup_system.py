@@ -15,7 +15,7 @@ import zipfile
 import zlib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, List, Tuple
+from typing import Callable, Iterable, List, Tuple
 
 LogFn = Callable[[str], None]
 
@@ -51,9 +51,12 @@ def create_game_backup(
     engine: str,
     files_to_backup: List[Path],
     log: LogFn = print,
+    created: Iterable[Path] = (),
 ) -> Path:
     """
     Belirtilen motor için dosyaları yedekler ve manifest oluşturur.
+    created: Capri'nin oyuna yeni ekleyeceği dosyalar (ör. yama arşivi, override.cfg). Şu an yoksa manifestte
+    "created" olarak not edilir; yedek geri yüklenince silinir, böylece oyun gerçekten orijinal hâline döner.
     """
     game_root = Path(game_root).resolve()
     backup_base = game_root / "_capri_backups"
@@ -65,7 +68,7 @@ def create_game_backup(
     backup_dir.mkdir(parents=True, exist_ok=True)
     log(f"Yedekleme baslatildi [{engine.upper()}] -> {backup_dir.name}")
     try:
-        return _fill_backup(game_root, engine, files_to_backup, backup_dir, timestamp, date_str, log)
+        return _fill_backup(game_root, engine, files_to_backup, backup_dir, timestamp, date_str, log, created)
     except BaseException:
         # Yarım kalan yedek (manifestsiz) listede "geri yüklenebilir" görünmesin
         shutil.rmtree(backup_dir, ignore_errors=True)
@@ -73,7 +76,17 @@ def create_game_backup(
 
 
 def _fill_backup(game_root: Path, engine: str, files_to_backup: List[Path], backup_dir: Path, timestamp: str,
-                 date_str: str, log: LogFn) -> Path:
+                 date_str: str, log: LogFn, created: Iterable[Path] = ()) -> Path:
+    new_files = []
+    for path in created:
+        path = Path(path)
+        if path.exists():
+            files_to_backup = list(files_to_backup) + [path]      # önceki çalıştırmadan kalmış: yedeklenir
+            continue
+        try:
+            new_files.append(str(path.resolve().relative_to(game_root)).replace("\\", "/"))
+        except ValueError:
+            continue
     manifest_files = []
     backed_count = 0
     total_bytes = 0
@@ -112,6 +125,7 @@ def _fill_backup(game_root: Path, engine: str, files_to_backup: List[Path], back
         "file_count": backed_count,
         "total_bytes": total_bytes,
         "files": manifest_files,
+        "created": new_files,
     }
     (backup_dir / "manifest.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
 
@@ -212,6 +226,23 @@ def verify_backup(backup: BackupEntry) -> List[str]:
     return problems
 
 
+def _remove_created(backup_dir: Path, game_root: Path, log: LogFn) -> int:
+    """Yedek alınırken olmayan, Capri'nin eklediği dosyaları siler (yalnızca oyun klasörünün içindekiler)."""
+    try:
+        created = json.loads((backup_dir / "manifest.json").read_text(encoding="utf-8")).get("created") or []
+    except (OSError, ValueError):
+        return 0
+    removed = 0
+    for rel in created:
+        target = (game_root / str(rel)).resolve()
+        if game_root not in target.parents or not target.is_file():
+            continue
+        target.unlink()
+        removed += 1
+        log(f"  [SILINDI] {rel} (Capri eklemişti)")
+    return removed
+
+
 def restore_game_backup(
     backup: BackupEntry,
     game_root: Path,
@@ -260,6 +291,8 @@ def restore_game_backup(
                     os.replace(temp, target)
                     restored_count += 1
                     log(f"  [GERI YUKLENDI] {rel} ({target.stat().st_size:,} bayt)")
+
+            restored_count += _remove_created(backup.path, game_root, log)
 
         log(f"Basariyla geri yuklendi: Toplam {restored_count} dosya.")
         return True, restored_count, f"{restored_count} dosya basariyla eski orijinal haline getirildi."

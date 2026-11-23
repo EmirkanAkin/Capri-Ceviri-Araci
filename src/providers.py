@@ -24,6 +24,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 import requests
 
 from paths import APP_DIR
+import cloud_providers
 CONFIG_FILE = APP_DIR / "portable_cache" / "providers.json"
 LEGACY_CONFIG_FILE = APP_DIR / "config_providers.json"
 GEMINI_LEGACY_FILE = APP_DIR / "gemini_api_key.txt"
@@ -74,6 +75,8 @@ class ProviderConfig:
     # Çevrimdışı Modeller
     opus_dir: str = "model"
     nllb_dir: str = "model_nllb"
+    # Ek bulut sağlayıcıları (cloud_providers): {id: {"key", "model", "base_url", "region"}}
+    extra: Dict[str, Dict[str, str]] = field(default_factory=dict)
 
 
 PROVIDER_DISPLAY_INFO = {
@@ -189,6 +192,10 @@ def load_provider_config() -> ProviderConfig:
             cfg.ollama_model = data.get("ollama_model", "translategemma:4b")
             cfg.opus_dir = data.get("opus_dir", "model")
             cfg.nllb_dir = data.get("nllb_dir", "model_nllb")
+            stored_extra = data.get("extra") if isinstance(data.get("extra"), dict) else {}
+            cfg.extra = {pid: {k: str(v) for k, v in values.items() if isinstance(v, (str, int))}
+                         for pid, values in stored_extra.items()
+                         if pid in cloud_providers.ALL and isinstance(values, dict)}
         except Exception:
             pass
 
@@ -201,6 +208,12 @@ def load_provider_config() -> ProviderConfig:
                 setattr(cfg, name, [k for k in stored.splitlines() if k.strip()] if name == "gemini_keys" else stored)
             elif _secret_value(cfg, name):
                 migrate = True  # düz metin anahtar bulundu → güvenli depoya taşı
+        for pid in cloud_providers.ALL:
+            stored = secrets_store.get(f"{pid}_key")
+            if stored is not None:
+                cloud_providers.extra(cfg, pid)["key"] = stored
+            elif cloud_providers.key_of(cfg, pid):
+                migrate = True
         if migrate:
             save_provider_config(cfg)
     return cfg
@@ -293,8 +306,9 @@ def save_provider_config(cfg: ProviderConfig) -> None:
     import secrets_store
     secure = secrets_store.available()
     if secure:
-        for name in SECRET_FIELDS:
-            value = _secret_value(cfg, name)
+        secrets = [(name, _secret_value(cfg, name)) for name in SECRET_FIELDS] + \
+            [(f"{pid}_key", cloud_providers.key_of(cfg, pid)) for pid in cloud_providers.ALL]
+        for name, value in secrets:
             if not secrets_store.set(name, value) or (secrets_store.get(name) or "") != value:
                 secure = False
                 break
@@ -311,6 +325,8 @@ def save_provider_config(cfg: ProviderConfig) -> None:
         "ollama_model": cfg.ollama_model,
         "opus_dir": cfg.opus_dir,
         "nllb_dir": cfg.nllb_dir,
+        "extra": {pid: {k: v for k, v in values.items() if v and (k != "key" or not secure)}
+                  for pid, values in cfg.extra.items() if pid in cloud_providers.ALL},
     }
     if secure:
         data.update({"gemini_keys": [], "openai_key": "", "anthropic_key": "", "deepl_key": "",
@@ -463,7 +479,44 @@ def resolve_model_dir(folder_name: str) -> Path:
     return APP_DIR / folder_name
 
 
+def _ct2_status(kind: str) -> Dict[str, Any]:
+    """CTranslate2 biçimli modelin disk durumu (yeni indirmeler bu biçimde gelir)."""
+    from engine_common import CT2_MODELS
+    spec = CT2_MODELS[kind]
+    m_dir = resolve_model_dir(spec["dir"])
+    missing, total = [], 0
+    for name, (size, _sha) in spec["files"].items():
+        path = m_dir / name
+        if path.is_file() and path.stat().st_size == size:
+            total += size
+        else:
+            missing.append(name)
+    expected = sum(size for size, _sha in spec["files"].values())
+    return {
+        "kind": kind, "label": spec["label"], "dir": str(m_dir), "is_ready": not missing,
+        "present_count": len(spec["files"]) - len(missing), "total_files": len(spec["files"]),
+        "missing_files": missing, "size_mb": round(total / (1024 * 1024), 1),
+        "expected_mb": round(expected / (1024 * 1024), 1), "compact": True, "backend": "ct2",
+        "base_url": f"https://huggingface.co/{spec['repo']}",
+    }
+
+
+def offline_model_dir(kind: str) -> Path:
+    """Çeviride kullanılacak klasör: CTranslate2 modeli varsa o, yoksa eski PyTorch modeli."""
+    return Path(get_offline_model_status(kind)["dir"])
+
+
 def get_offline_model_status(kind: str, base_dir: Optional[Path] = None) -> Dict[str, Any]:
+    """CTranslate2 modeli kuruluysa onun durumu; değilse eski (PyTorch) model kuruluysa onunki; ikisi de yoksa
+    indirilecek CTranslate2 modelinin eksik dosyaları."""
+    ct2 = _ct2_status("nllb" if kind == "nllb" else "opus")
+    if ct2["is_ready"]:
+        return ct2
+    legacy = _legacy_model_status(kind)
+    return legacy if legacy["is_ready"] else ct2
+
+
+def _legacy_model_status(kind: str) -> Dict[str, Any]:
     """
     Çevrimdışı modelin (OPUS veya NLLB) disk durumunu analiz eder:
     - Kurulmuş mu?
@@ -514,6 +567,7 @@ def get_offline_model_status(kind: str, base_dir: Optional[Path] = None) -> Dict
         "expected_mb": round((total_expected_bytes - expected["pytorch_model.bin"]
                               + (m_dir / "model.safetensors").stat().st_size if compact else total_expected_bytes) / (1024 * 1024), 1),
         "compact": compact,
+        "backend": "torch",
         "base_url": base_url,
     }
 
@@ -525,70 +579,44 @@ def download_offline_model(
     progress_callback: Optional[Callable[[int, int, str], None]] = None,
 ) -> bool:
     """
-    OPUS veya NLLB çevrimdışı modelini Hugging Face üzerinden indirir.
-    Gerektiğinde curl fallback desteği sunar.
+    OPUS veya NLLB modelini CTranslate2 biçiminde (PyTorch gerektirmez) Hugging Face'ten sabit bir sürümden indirir.
+    Her dosyanın boyutu ve SHA-256'sı doğrulanır; uymayan dosya kurulmaz.
     """
-    base = base_dir or APP_DIR
-    if kind == "nllb":
-        m_dir = base / "model_nllb"
-        expected = NLLB_MODEL_FILES
-        base_url = NLLB_BASE_URL
-        label = "Meta NLLB-200"
-    else:
-        m_dir = base / "model"
-        expected = OPUS_MODEL_FILES
-        base_url = OPUS_BASE_URL
-        label = "Helsinki-NLP OPUS"
-
+    import hashlib
+    from engine_common import CT2_MODELS, ct2_model_url
+    kind = "nllb" if kind == "nllb" else "opus"
+    spec = CT2_MODELS[kind]
+    m_dir = (base_dir / spec["dir"]) if base_dir else resolve_model_dir(spec["dir"])
     m_dir.mkdir(parents=True, exist_ok=True)
-    log(f"📥 {label} modeli indirme işlemi başlatılıyor -> {m_dir}")
-
-    total_files = len(expected)
-    compact = (m_dir / "model.safetensors").is_file()
-    for idx, (name, exp_size) in enumerate(expected.items(), 1):
+    total_bytes = sum(size for size, _sha in spec["files"].values())
+    done_bytes = 0
+    log(f"{spec['label']} modeli indiriliyor (CTranslate2, {total_bytes / (1024 * 1024):.0f} MB) → {m_dir}")
+    for idx, (name, (size, sha)) in enumerate(spec["files"].items(), 1):
         target = m_dir / name
-        if name == "pytorch_model.bin" and compact:
-            log(f"✔ [{idx}/{total_files}] fp16 model mevcut: model.safetensors")
+        if target.is_file() and target.stat().st_size == size:
+            done_bytes += size
             continue
-        if target.exists() and target.stat().st_size >= max(1, exp_size - 16):
-            log(f"✔ [{idx}/{total_files}] Zaten mevcut: {name}")
-            continue
-
-        url = f"{base_url}/{name}"
-        temp_file = target.with_suffix(target.suffix + ".part")
-        log(f"⬇ [{idx}/{total_files}] İndiriliyor: {name} ({exp_size / (1024*1024):.1f} MB)...")
-
-        if progress_callback:
-            progress_callback(idx, total_files, f"İndiriliyor: {name}")
-
-        download_success = False
-        try:
-            req = urllib.request.Request(url, headers={"User-Agent": "Capri-Downloader/1.0"})
-            with urllib.request.urlopen(req, timeout=60) as resp, temp_file.open("wb") as out:
-                shutil.copyfileobj(resp, out, length=1024 * 1024)
-            download_success = True
-        except Exception as err:
-            log(f"Standart indirme hatası: {err}. curl ile deneniyor...")
-            curl = shutil.which("curl.exe") or shutil.which("curl")
-            if curl:
-                res = subprocess.run(
-                    [curl, "-k", "-fL", "--retry", "3", "-o", str(temp_file), url],
-                    creationflags=(subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0),
-                )
-                if res.returncode == 0:
-                    download_success = True
-
-        if download_success and temp_file.exists():
-            if target.exists():
-                target.unlink()
-            temp_file.rename(target)
-            log(f"✔ Dosya tamamlandı: {name}")
-        else:
-            if temp_file.exists():
-                temp_file.unlink()
-            raise RuntimeError(f"{name} indirilemedi! İnternet bağlantınızı kontrol edin: {url}")
-
-    log(f"🎉 {label} modeli tamamen indirildi ve kullanıma hazır!")
+        part = target.with_suffix(target.suffix + ".part")
+        hasher = hashlib.sha256()
+        log(f"[{idx}/{len(spec['files'])}] {name} ({size / (1024 * 1024):.1f} MB)")
+        req = urllib.request.Request(ct2_model_url(kind, name), headers={"User-Agent": "Capri-Downloader/1.0"})
+        got = 0
+        with urllib.request.urlopen(req, timeout=60) as resp, part.open("wb") as out:
+            while True:
+                chunk = resp.read(1 << 20)
+                if not chunk:
+                    break
+                out.write(chunk)
+                hasher.update(chunk)
+                got += len(chunk)
+                if progress_callback and total_bytes:
+                    progress_callback((done_bytes + got) >> 20, max(1, total_bytes >> 20), f"İndiriliyor: {name}")
+        if got != size or hasher.hexdigest() != sha:
+            part.unlink(missing_ok=True)
+            raise RuntimeError(f"{name} doğrulanamadı (eksik ya da bozuk indi); kurulmadı. Tekrar dene.")
+        part.replace(target)
+        done_bytes += size
+    log(f"{spec['label']} modeli hazır.")
     return True
 
 
@@ -606,13 +634,22 @@ def send_to_recycle_bin(path: Path) -> bool:
     return ctypes.windll.shell32.SHFileOperationW(ctypes.byref(op)) == 0 and not Path(path).exists()
 
 
-LLM_PROVIDERS = ("gemini", "openai", "anthropic", "ollama")
+LLM_PROVIDERS = ("gemini", "openai", "anthropic", "ollama", *cloud_providers.CHAT_PROVIDERS)
+CLOUD_TRANSLATE_IDS = cloud_providers.TRANSLATE_IDS
 
 
 def llm_complete(provider: str, system: str, user: str, cfg: Optional[ProviderConfig] = None,
-                 max_tokens: int = 8192) -> str:
-    """Sohbet modelinden ham metin yanıtı alır (kalite editörü gibi serbest biçimli işler için)."""
+                 max_tokens: int = 8192, local_model: Optional[str] = None) -> str:
+    """Sohbet modelinden ham metin yanıtı alır (kalite editörü gibi serbest biçimli işler için). local_model: Capri'nin
+    dahili sohbet modeli (Gemma 4); çeviri modelleri (TranslateGemma, MiLMMT, Hy-MT2) serbest metin üretemez."""
     cfg = cfg or load_provider_config()
+    if provider == "local":
+        import local_llm
+        if not local_model or local_llm.family(local_model) != "gemma4":
+            raise RuntimeError("Seçili yerel model yalnızca çeviri yapar; kalite editörü için Gemma 4 gerekir.")
+        return local_llm.SERVER.chat(local_model, f"{system}\n\n{user}\n\nYanıtı {{\"items\": [...]}} nesnesi olarak ver.",
+                                     0.2, min(max_tokens, 4096), 900, response_format={"type": "json_object"},
+                                     chat_template_kwargs={"enable_thinking": False})
     if provider == "gemini":
         key = next(iter(cfg.gemini_keys), "")
         if not key:
@@ -645,6 +682,9 @@ def llm_complete(provider: str, system: str, user: str, cfg: Optional[ProviderCo
         if resp.status_code != 200:
             raise RuntimeError(f"Claude HTTP {resp.status_code}: {resp.text[:160]}")
         return "".join(part.get("text", "") for part in resp.json().get("content", []))
+    if provider in cloud_providers.CHAT_PROVIDERS:
+        return cloud_providers.chat(cfg, provider, system + '\nYanıtı {"items": [...]} nesnesi olarak ver.', user,
+                                    max_tokens=max_tokens)
     if provider == "ollama":
         from engine_common import ollama_family
         if ollama_family(cfg.ollama_model) != "chat":
@@ -656,7 +696,8 @@ def llm_complete(provider: str, system: str, user: str, cfg: Optional[ProviderCo
         if resp.status_code != 200:
             raise RuntimeError(f"Ollama HTTP {resp.status_code}")
         return resp.json()["message"]["content"]
-    raise RuntimeError(f"{provider} serbest metin üretemez (kalite editörü için Gemini, OpenAI, Claude veya Ollama gerekir).")
+    raise RuntimeError(f"{provider} serbest metin üretemez (kalite editörü için Gemini, OpenAI, Claude, Ollama ya da "
+                       "yerel Gemma 4 gerekir).")
 
 
 def compact_offline_model(kind: str, log: Callable[[str], None] = print) -> Dict[str, Any]:
@@ -793,8 +834,7 @@ def _offline_engine(kind: str, log: Callable[[str], None]):
         engine = _OFFLINE_ENGINES.get(kind)
         if engine is None:
             from engine_common import TranslationEngine
-            m_dir = resolve_model_dir("model_nllb" if kind == "nllb" else "model")
-            engine = TranslationEngine(model_dir=m_dir, model_kind=kind, log=log)
+            engine = TranslationEngine(model_dir=offline_model_dir(kind), model_kind=kind, log=log)
             engine.load_model()
             _OFFLINE_ENGINES[kind] = engine
         return engine
@@ -935,6 +975,18 @@ def translate_single_text(
             return False, f"DeepL Hatası {resp.status_code}: {resp.text[:120]}", lat
         except Exception as e:
             return False, f"DeepL Hatası: {e}", 0
+
+    elif p_id in cloud_providers.ALL:
+        if not cloud_providers.configured(cfg, p_id):
+            return False, f"{cloud_providers.ALL[p_id]['title']} için API anahtarı girilmedi.", 0
+        from languages import build_system_instruction
+        try:
+            res = cloud_providers.translate_one(cfg, p_id, text, target_lang, source_lang,
+                                                build_system_instruction(target_lang, source_lang, "video game"),
+                                                CLOUD_PROTECTED)
+            return True, res, int((time.monotonic() - t0) * 1000)
+        except Exception as e:
+            return False, f"{cloud_providers.ALL[p_id]['title']} hatası: {e}", int((time.monotonic() - t0) * 1000)
 
     # 5. Ollama
     elif p_id == "local":
@@ -1105,8 +1157,10 @@ def translate_with_cloud(
     failed_out: Optional[set] = None,
     extra_instruction: str = "",
     protected: Optional["re.Pattern"] = None,
+    speakers: Optional[Dict[str, str]] = None,
 ) -> int:
     """
+    speakers: {kaynak: konuşan karakter}; OpenAI/Claude talimatına partideki konuşmacılar not olarak eklenir.
     OpenAI, Claude veya DeepL ile satırları toplu çevirir ve `cache` sözlüğüne
     yazar. Geçersiz yanıt alınan satırlar kaynak metinle bırakılır, `failed_out`
     kümesine eklenir ve diske yazılmaz (sonraki çalıştırmada yeniden denenir).
@@ -1115,32 +1169,42 @@ def translate_with_cloud(
     if not missing:
         return 0
     cfg = cfg or load_provider_config()
-    key = {"openai": cfg.openai_key, "anthropic": cfg.anthropic_key, "deepl": cfg.deepl_key}.get(provider)
-    label = PROVIDER_DISPLAY_INFO[provider]["title"]
-    if not key:
-        raise RuntimeError(f"{label} API anahtarı girilmemiş.")
-    from languages import build_system_instruction
+    if provider in cloud_providers.ALL:
+        label = cloud_providers.ALL[provider]["title"]
+        if not cloud_providers.configured(cfg, provider):
+            raise RuntimeError(f"{label} için API anahtarı ya da sunucu adresi girilmemiş.")
+    else:
+        key = {"openai": cfg.openai_key, "anthropic": cfg.anthropic_key, "deepl": cfg.deepl_key}.get(provider)
+        label = PROVIDER_DISPLAY_INFO[provider]["title"]
+        if not key:
+            raise RuntimeError(f"{label} API anahtarı girilmemiş.")
+    from languages import build_system_instruction, speaker_note
     system = build_system_instruction(target_lang, source_lang, game_engine)
     if extra_instruction:
         system += "\n\n" + extra_instruction
     failed = failed_out if failed_out is not None else set()
-    batch_size = 50 if provider == "deepl" else 40
+    batch_size = 50 if provider in ("deepl", *cloud_providers.MT_PROVIDERS) else 40
     total, done, last_flush = len(missing), 0, time.monotonic()
     log(f"{label} ile {total} benzersiz satır çevriliyor… [Hedef: {target_lang}]")
 
     def flush() -> None:
+        from fileio import atomic_write_text
         data = {k: v for k, v in cache.items() if k not in failed}
-        cache_path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = cache_path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
-        tmp.replace(cache_path)
+        atomic_write_text(cache_path, json.dumps(data, ensure_ascii=False))
 
     def translate_items(items: List[str]) -> List[Optional[str]]:
         for attempt in range(3):
             try:
                 if provider == "deepl":
                     return list(_deepl_batch(items, target_lang, source_lang, cfg, protected))
-                result = _llm_batch(provider, items, system, cfg)
+                if provider in cloud_providers.MT_PROVIDERS:
+                    return list(cloud_providers.mt_batch(cfg, provider, items, target_lang, source_lang,
+                                                         protected or CLOUD_PROTECTED))
+                if provider in cloud_providers.CHAT_PROVIDERS:
+                    result = cloud_providers.llm_batch(cfg, provider, items,
+                                                       system + speaker_note(items, speakers, target_lang))
+                else:
+                    result = _llm_batch(provider, items, system + speaker_note(items, speakers, target_lang), cfg)
                 if result is not None:
                     return list(result)
                 break  # satır sayısı uyuşmadı: bölerek dene

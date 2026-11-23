@@ -63,7 +63,7 @@ def test_notify_failure_cannot_leave_project_stuck(tmp_path, monkeypatch):
     (TimeoutError("timed out"), "Sunucu yanıt vermedi", None),
     (OSError(28, "No space left"), "Diskte yer kalmadı", None),
     (MemoryError(), "Bellek yetmedi", "models"),
-    (ModuleNotFoundError("No module named 'torch'", name="torch"), "Yerel model ortamı eksik", "models"),
+    (ModuleNotFoundError("No module named 'torch'", name="torch"), "PyTorch eksik", "models"),
     (ModuleNotFoundError("No module named 'UnityPy.resources'", name="UnityPy.resources"), "Uygulamanın bir parçası eksik", None),
     (UnicodeEncodeError("charmap", "→", 0, 1, "x"), "Beklenmeyen bir hata oluştu", None),
 ])
@@ -1160,3 +1160,11 @@ def test_renpy_turkish_survives_games_own_language_picker(tmp_path):
     (game / "tl" / "english" / "s.rpy").write_text('translate english strings:\n', encoding="utf-8")
     er.enable_turkish(info, True, log=lambda s: None)
     assert 'Language("english")]' in info.support_file.read_text(encoding="utf-8")
+
+
+def test_whats_new_is_written_for_this_or_the_next_version():
+    """Sürüm notu WHATS_NEW'dan üretilir: eski liste yeni sürüme taşınmasın (1.0.8'de olduğu gibi)."""
+    build = _build_module()
+    as_tuple = lambda v: tuple(int(x) for x in v.split("."))  # noqa: E731
+    assert build.whats_new_version() == app_modern.WHATS_NEW_VERSION
+    assert as_tuple(app_modern.WHATS_NEW_VERSION) >= as_tuple(app_modern.APP_VERSION)

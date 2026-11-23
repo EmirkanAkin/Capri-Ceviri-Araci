@@ -13,7 +13,9 @@ from pathlib import Path
 from typing import Any, Callable, Deque, Dict, Optional, Tuple
 
 # Başlangıç hızları: karakter/sn, tek iş parçacığı (Gemini: anahtar başına). Gerçek çevirilerden öğrenilip güncellenir.
-PRIOR_CPS = {"gemini": 900, "openai": 200, "anthropic": 200, "deepl": 1500, "ollama": 50, "opus": 2500, "nllb": 1500}
+PRIOR_CPS = {"gemini": 900, "openai": 200, "anthropic": 200, "deepl": 1500, "ollama": 50, "opus": 2500, "nllb": 1500,
+             "deepseek": 150, "mistral": 250, "xai": 200, "groq": 1200, "openrouter": 200, "cerebras": 1500,
+             "qwen": 250, "cohere": 200, "custom": 100, "google_translate": 2000, "azure_translator": 2000}
 DEFAULT_CPS = 150
 CPU_PENALTY = 10            # yerel modeller GPU'suz yaklaşık bu kadar yavaş
 RATE_WINDOW = 90.0

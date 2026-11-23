@@ -12,16 +12,24 @@
       <span class="pill ok live" id="state">Canlı</span>
       <span class="grow"></span>
       <span class="meta" id="meta" style="flex:0 1 auto;margin-right:4px"></span>
+      <button class="icon-btn" id="speak" title="Sesli oku (açık / kapalı)"><svg class="i" viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11"/></svg></button>
       <button class="icon-btn" id="toggle" title="Duraklat / sürdür"><svg class="i" viewBox="0 0 24 24" id="toggleIcon"><path d="M8 5v14M16 5v14"/></svg></button>
       <button class="icon-btn close" id="close" title="Sabitlemeyi kaldır"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
     </div>
     <div class="body"><div class="tr selectable" id="tr">Alan izleniyor…</div></div>
   </div>
   <script src="i18n.js"></script>
+  <script src="speech.js"></script>
   <script>
     "use strict";
     const $ = (s) => document.querySelector(s);
     const api = () => window.pywebview && window.pywebview.api;
+    let speakOn = false;
+    function setSpeak(on) {
+      speakOn = !!on;
+      $("#speak").classList.toggle("on", speakOn);
+      if (!speakOn) CapriSpeech.stop();
+    }
     const PAUSE = '<path d="M8 5v14M16 5v14"/>', PLAY = '<path d="M7 5v14l11-7z"/>';
 
     function fit() {
@@ -31,7 +39,12 @@
     window.OCRPIN = {
       update(d) {
         if (d.place) document.body.classList.toggle("over", d.place === "over");
-        if (d.translation !== undefined) $("#tr").textContent = d.translation || "…";
+        if (d.lang) CapriSpeech.setLang(d.lang);
+        if (d.speak !== undefined) setSpeak(d.speak);
+        if (d.translation !== undefined) {
+          $("#tr").textContent = d.translation || "…";
+          if (speakOn && d.translation && !d.placeholder && d.state !== "error") CapriSpeech.speak(d.translation);
+        }
         if (d.meta !== undefined) $("#meta").textContent = d.meta;
         if (d.state) {
           const map = { live: ["Canlı", "pill ok live"], paused: ["Duraklatıldı", "pill warn"], busy: ["Çevriliyor", "pill ok live"], error: ["Hata", "pill warn"] };
@@ -44,7 +57,14 @@
       },
     };
     $("#toggle").addEventListener("click", () => api().ocr_pin_toggle());
-    $("#close").addEventListener("click", () => api().ocr_pin_stop());
+    $("#close").addEventListener("click", () => { CapriSpeech.stop(); api().ocr_pin_stop(); });
+    $("#speak").addEventListener("click", () => {
+      const next = !speakOn;
+      if (next && !CapriSpeech.available()) { $("#meta").textContent = I18N.t(CapriSpeech.missingHint()); fit(); return; }
+      setSpeak(next);
+      if (next) CapriSpeech.speak($("#tr").textContent, true);
+      if (api()) api().update_settings({ ocr_speak: next });
+    });
     // Arayüz dili: ana pencereyle aynı sözlük (dil değişince Python tarafı yeniden gönderir)
     const loadUiLanguage = () => api() && api().ui_dictionary && api().ui_dictionary()
       .then((r) => r && window.I18N && I18N.set(r.language, r.dict)).catch(() => {});

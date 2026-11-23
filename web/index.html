@@ -77,7 +77,7 @@
       <button class="nav" data-page="glossary"><svg class="i"><use href="#i-dict"/></svg>Sözlük</button>
       <button class="nav" data-page="translator"><svg class="i"><use href="#i-type"/></svg>Metin Çevirici</button>
       <button class="nav" data-page="ocr"><svg class="i"><use href="#i-scan"/></svg>Ekran Çevirisi<span class="dot hidden" id="ocrDot"></span></button>
-      <button class="nav" data-page="json"><svg class="i"><use href="#i-braces"/></svg>JSON Çevirici</button>
+      <button class="nav" data-page="json"><svg class="i"><use href="#i-braces"/></svg>Dosya Çevirici</button>
       <div class="side-label">Sistem</div>
       <button class="nav" data-page="providers"><svg class="i"><use href="#i-diamond"/></svg>Sağlayıcılar</button>
       <button class="nav" data-page="models"><svg class="i"><use href="#i-cpu"/></svg>Yerel Modeller</button>
@@ -170,7 +170,7 @@
                   <div class="docr-pop-text" id="docrTr"></div>
                 </div>
               </div>
-              <div class="demo-engines" id="demoEngines"><span>Ren'Py</span><span>Unity</span><span>Unreal</span><span>RPG Maker</span><span>JSON</span><span>Ekran (OCR)</span></div>
+              <div class="demo-engines" id="demoEngines"><span>Ren'Py</span><span>Unity</span><span>Unreal</span><span>RPG Maker</span><span>Godot</span><span>Ekran (OCR)</span></div>
             </div>
             <div class="hero-nav hidden" id="heroNav">
               <div class="hero-dots" id="heroDots"></div>
@@ -230,8 +230,14 @@
                   <label class="opt">
                     <span class="opt-icon"><svg class="i"><use href="#i-layers"/></svg></span>
                     <span class="opt-text"><span class="toggle-title">Ortak çeviri belleği</span>
-                      <span class="field-hint">"Save", "Options" gibi arayüz metinleri bir oyunda çevrilince diğer oyunlarda yeniden çevrilmez.</span></span>
+                      <span class="field-hint">"Save", "Options" gibi arayüz metinleri ve editörde elle düzelttiğin cümleler diğer oyunlarda yeniden kullanılır.</span></span>
                     <span class="switch"><input type="checkbox" id="memoryToggle"><i></i></span>
+                  </label>
+                  <label class="opt">
+                    <span class="opt-icon"><svg class="i"><use href="#i-book"/></svg></span>
+                    <span class="opt-text"><span class="toggle-title">Karakter adlarını koru</span>
+                      <span class="field-hint">İlk çeviride oyunun karakter adları bulunup oyuna özel sözlüğe eklenir; adlar çevrilmez.</span></span>
+                    <span class="switch"><input type="checkbox" id="namesToggle"><i></i></span>
                   </label>
                 </div>
                 <div class="opt-group">
@@ -274,11 +280,13 @@
             <div class="section-head"><h2 class="section-title">Tüm projeler</h2>
               <div class="row-actions" style="margin:0">
                 <button class="btn" data-action="import-patch"><svg class="i"><use href="#i-download"/></svg>Yama içe aktar</button>
+                <button class="btn" data-action="queue-toggle"><svg class="i"><use href="#i-play"/></svg>Toplu çeviri</button>
                 <button class="btn lime" data-action="pick"><svg class="i"><use href="#i-plus"/></svg>Oyun ekle</button>
               </div>
             </div>
             <p class="page-sub">Eklediğin oyunlar. Açmak için karta tıkla.</p>
           </div>
+          <div id="queuePanel"></div>
           <div id="scanPanel"></div>
           <div id="fullLibrary"></div>
         </section>
@@ -335,14 +343,14 @@
         <!-- JSON -->
         <section class="page" id="page-json">
           <div class="page-head">
-            <span class="eyebrow">JSON çevirici</span>
-            <div class="section-head"><h2 class="section-title">Motor bağımsız JSON</h2></div>
-            <p class="page-sub">Kendi motorunu kullanan oyunların JSON dosyalarını çevir; anahtarlar ve kodlar korunur.</p>
+            <span class="eyebrow">Dosya çevirici</span>
+            <div class="section-head"><h2 class="section-title">JSON ve altyazı dosyaları</h2></div>
+            <p class="page-sub">Kendi motorunu kullanan oyunların JSON dosyalarını ve .srt / .vtt / .ass altyazılarını çevir; anahtarlar, zaman kodları ve biçim etiketleri korunur.</p>
           </div>
           <div class="panels">
             <div class="panel">
               <div class="panel-title">Giriş</div>
-              <p class="panel-desc">Tek bir .json dosyası ya da içinde .json dosyaları olan bir klasör.</p>
+              <p class="panel-desc">Tek bir .json / altyazı dosyası ya da bunları içeren bir klasör.</p>
               <input class="input" id="jsonInput" placeholder="Dosya veya klasör yolu" spellcheck="false">
               <div class="row-actions">
                 <button class="btn" data-action="json-file"><svg class="i"><use href="#i-braces"/></svg>Dosya seç</button>
@@ -351,7 +359,7 @@
             </div>
             <div class="panel">
               <div class="panel-title">Çıkış</div>
-              <p class="panel-desc">Boş bırakılırsa dosya adının sonuna “_tr” eklenir; orijinal dosyaya dokunulmaz.</p>
+              <p class="panel-desc">Boş bırakılırsa JSON'da adın sonuna “_tr” eklenir, altyazı “ad.tr.srt” olarak yanına yazılır; orijinale dokunulmaz.</p>
               <input class="input" id="jsonOutput" placeholder="Otomatik" spellcheck="false">
               <div class="row-actions">
                 <button class="btn lime" data-action="json-run"><svg class="i"><use href="#i-play"/></svg>Çevir</button>
@@ -380,10 +388,10 @@
             <p class="page-sub">İnternetsiz ve kotasız çalışan çeviri modelleri.</p>
           </div>
           <div class="panel llm-panel" id="llmPanel"></div>
-          <div class="group-head">Ekran kartı modelleri</div>
-          <div class="panel runtime-panel hidden" id="runtimePanel"></div>
           <div class="panels" id="modelPanels"></div>
-          <div class="panel gpu-panel" id="gpuPanel"></div>
+          <div class="group-head hidden" id="classicHead">OPUS-MT ve NLLB</div>
+          <div class="panel runtime-panel hidden" id="runtimePanel"></div>
+          <div class="panel gpu-panel hidden" id="gpuPanel"></div>
         </section>
 
         <!-- METİN ÇEVİRİCİ -->
@@ -467,6 +475,12 @@
                   <input type="range" class="range" id="ocrInterval" min="150" max="1500" step="50"></div>
                 <div><div class="field-label">Sabit çeviri penceresi</div>
                   <div class="seg" id="ocrPlace"><button data-place="below">Alanın altında</button><button data-place="over">Orijinalin üstünde</button></div></div>
+                <label class="opt full">
+                  <span class="opt-icon"><svg class="i"><use href="#i-bell"/></svg></span>
+                  <span class="opt-text"><span class="toggle-title">Çeviriyi sesli oku</span>
+                    <span class="field-hint">Windows'un yüklü sesiyle okunur. Canlı çeviride her yeni satır okunur; penceredeki hoparlör düğmesiyle de açılıp kapanır.</span></span>
+                  <span class="switch"><input type="checkbox" id="ocrSpeakToggle"><i></i></span>
+                </label>
               </div>
             </div>
             <div class="panel">
@@ -494,11 +508,13 @@
         <section class="page" id="page-guide">
           <div class="page-head">
             <span class="eyebrow">Rehber</span>
-            <div class="section-head"><h2 class="section-title">Nasıl çalışır?</h2></div>
+            <div class="section-head"><h2 class="section-title">Nasıl çalışır?</h2>
+              <span class="row-actions" style="margin:0"><button class="btn lime" data-action="tour"><svg class="i"><use href="#i-play"/></svg>Tanıtım turunu başlat</button>
+                <button class="btn" data-action="tour" data-which="game"><svg class="i"><use href="#i-play"/></svg>Çeviri adımlarını göster</button></span></div>
           </div>
           <div class="panels">
             <div class="panel"><div class="panel-title">1 · Oyunu ekle</div><p class="panel-desc">“Oyun ekle” ile oyun klasörünü seç; motor otomatik algılanır.</p></div>
-            <div class="panel"><div class="panel-title">2 · Motoru seç</div><p class="panel-desc">Gemini hızlı ve doğaldır; birden fazla anahtar paralel çalışır. OpenAI, Claude ve DeepL diğer bulut seçenekleri. Yerel modeller internetsiz çalışır.</p></div>
+            <div class="panel"><div class="panel-title">2 · Motoru seç</div><p class="panel-desc">Bulut motorları (Gemini, OpenAI, Claude, DeepSeek…) Sağlayıcılar sayfasından anahtarla çalışır. Yerel modeller internetsiz ve ücretsizdir: Yerel Modeller sayfasında bilgisayarına önerileni indir.</p></div>
             <div class="panel"><div class="panel-title">3 · Çevir, durdur, devam et</div><p class="panel-desc">“Çeviriyi başlat” önce yedek alır. Durdurursan kaldığın yerden, yeniden ödemeden devam eder.</p></div>
             <div class="panel"><div class="panel-title">4 · Düzelt ve paylaş</div><p class="panel-desc">Çeviri Editörü'nde satırları düzelt ve oyuna uygula; yamayı .capripatch olarak paylaş.</p></div>
             <div class="panel"><div class="panel-title">Geri al</div><p class="panel-desc">Yedekler sayfasından oyunu tek tıkla orijinal hâline döndür.</p></div>

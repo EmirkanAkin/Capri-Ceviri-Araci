@@ -13,6 +13,7 @@ import difflib
 import hashlib
 import io
 import json
+import os
 import re
 import shutil
 import struct
@@ -255,13 +256,8 @@ class TranslationCache:
     def save(self) -> None:
         if not self._dirty:
             return
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(
-            json.dumps(self._data, ensure_ascii=False),
-            encoding="utf-8",
-        )
-        tmp.replace(self.path)
+        from fileio import atomic_write_text
+        atomic_write_text(self.path, json.dumps(self._data, ensure_ascii=False))
         self._dirty = False
 
     def get(self, key: str) -> str | None:
@@ -804,6 +800,38 @@ NLLB_MODEL_FILES = {
 }
 
 
+# CTranslate2 biçimli modeller (PyTorch gerektirmez; ~40 MB'lık ortamla çalışır). Dosyalar sabit bir sürümden indirilir,
+# boyut ve SHA-256 doğrulanır. Dönüştürmeler: NLLB → JustFrederik (int8), OPUS → ooeoeo (float16).
+CT2_MODELS: dict[str, dict[str, Any]] = {
+    "opus": {
+        "dir": "model_opus_ct2", "label": "Helsinki-NLP OPUS",
+        "repo": "ooeoeo/opus-mt-tc-big-en-tr-ct2-float16", "revision": "4729dd2c625df6a5782d0a2225a36b14d52925b0",
+        "files": {
+            "config.json": (223, "8f6496adfc930cbfecbe8281112197705c488fab47d34b4829b06d7f478909af"),
+            "model.bin": (471_794_189, "98f9d6fb3d59f18e66ed87f26c9ef37ee0d7c00f1185402523089452497adae5"),
+            "shared_vocabulary.json": (1_112_966, "19bb107d0d72fde62e5c28378da7eb1bb379a2203b9957890618d3df18ba2bb3"),
+            "source.spm": (796_953, "180d3f94ddfee5585d78b702290ded0f4f9bd40f299349c8383b32a579fefad4"),
+            "target.spm": (833_391, "cd0c475692178b6c626aadaef01bd8f98d8053946938e4e67005fc1e4811d797"),
+        },
+    },
+    "nllb": {
+        "dir": "model_nllb_ct2", "label": "Meta NLLB-200",
+        "repo": "JustFrederik/nllb-200-distilled-600M-ct2-int8", "revision": "302d78f00e6fdb50a1064059df7c392b735e9d05",
+        "files": {
+            "config.json": (159, "0c2f6fa2057c7264d052fb4a62ba3476eeae70487acddfa8e779a53a00cbf44c"),
+            "model.bin": (622_595_991, "ed1beaf75134de7505315a5223162f56acff397eff6b50638a500d3936fe707b"),
+            "sentencepiece.bpe.model": (4_852_054, "14bb8dfb35c0ffdea7bc01e56cea38b9e3d5efcdcb9c251d6b40538e1aab555a"),
+            "shared_vocabulary.txt": (2_568_098, "a132a83330f45514c2476eb81d1d69b3c41762264d16ce0a7ea982e5d6c728e5"),
+        },
+    },
+}
+
+
+def ct2_model_url(kind: str, name: str) -> str:
+    spec = CT2_MODELS[kind]
+    return f"https://huggingface.co/{spec['repo']}/resolve/{spec['revision']}/{name}"
+
+
 def get_model_info(kind: str, base_dir: Path) -> ModelInfo:
     """Model türüne göre bilgileri döndür."""
     if kind == "gemini":
@@ -900,6 +928,29 @@ NLLB_LANG_CODES = {
 }
 
 
+def _cublas_loadable() -> bool:
+    """CTranslate2'nin ekran kartında çalışması için gereken cuBLAS 12 kitaplığı (CUDA ya da PyTorch ortamından)."""
+    if os.name != "nt":
+        return True
+    import ctypes
+    try:
+        ctypes.WinDLL("cublas64_12.dll")
+        return True
+    except OSError:
+        return False
+
+
+class _Ct2Tokenizer:
+    """CTranslate2 için sentencepiece sarmalayıcısı (parti boyu hesabı Transformers tokenizer'ıyla aynı arayüzü kullanır)."""
+
+    def __init__(self, src: Any, tgt: Any):
+        self.src, self.tgt = src, tgt
+
+    def encode(self, text: str, add_special_tokens: bool = True) -> list[int]:
+        ids = self.src.encode(text)
+        return ids + [2, 2] if add_special_tokens else ids
+
+
 class TranslationEngine:
     """
     Yerel çeviri motoru — OPUS veya NLLB modeli ile toplu çeviri.
@@ -932,8 +983,51 @@ class TranslationEngine:
         self._max_batch: int = 16
         self._token_budget: int = 512
 
+    @property
+    def backend(self) -> str:
+        """"ct2": CTranslate2 biçimli model (model.bin; ~40 MB'lık ortam), "torch": PyTorch + Transformers."""
+        return "ct2" if self.model_dir and (Path(self.model_dir) / "model.bin").is_file() else "torch"
+
+    def _load_ct2(self) -> None:
+        """CTranslate2 modeli: NVIDIA kartta int8_float16, yoksa (ya da CUDA kitaplıkları eksikse) işlemcide int8."""
+        import ctranslate2
+        import sentencepiece as spm
+
+        directory = Path(self.model_dir)
+        if self.model_kind == "nllb":
+            src_sp = tgt_sp = spm.SentencePieceProcessor(model_file=str(directory / "sentencepiece.bpe.model"))
+        else:
+            src_sp = spm.SentencePieceProcessor(model_file=str(directory / "source.spm"))
+            tgt_sp = spm.SentencePieceProcessor(model_file=str(directory / "target.spm"))
+        self._tokenizer = _Ct2Tokenizer(src_sp, tgt_sp)
+        threads = max(1, min(8, (os.cpu_count() or 4)))
+        # Ekran kartı yalnızca cuBLAS yüklenebiliyorsa denenir: yoksa CTranslate2 önce çekirdekleri derler (yeni kartlarda
+        # dakikalarca sürer), sonra yine işlemciye düşerdi.
+        attempts = [("cuda", "int8_float16")] if ctranslate2.get_cuda_device_count() > 0 and _cublas_loadable() else []
+        attempts.append(("cpu", "int8"))
+        last_error: Exception | None = None
+        for device, compute in attempts:
+            try:
+                translator = ctranslate2.Translator(str(directory), device=device, compute_type=compute,
+                                                    inter_threads=1, intra_threads=threads)
+                translator.translate_batch([["▁a", "</s>"]], max_decoding_length=4)   # CUDA kitaplığı eksikse burada patlar
+            except Exception as error:   # noqa: BLE001 — işlemciye düş
+                last_error = error
+                continue
+            self._model, self._device = translator, device
+            break
+        if self._model is None:
+            raise RuntimeError(f"CTranslate2 modeli yüklenemedi: {last_error}")
+        cuda = self._device == "cuda"
+        self._max_batch = (32 if cuda else 8) if self.model_kind == "nllb" else (96 if cuda else 24)
+        self._token_budget = (900 if cuda else 400) if self.model_kind == "nllb" else (1200 if cuda else 700)
+        self.log(f"{'NLLB' if self.model_kind == 'nllb' else 'OPUS'} modeli hazır (CTranslate2, "
+                 f"{'GPU' if cuda else 'CPU'}).")
+
     def load_model(self) -> None:
         """Çeviri modelini belleğe yükle."""
+        if self.backend == "ct2":
+            return self._load_ct2()
         import torch
 
         self._device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -975,25 +1069,50 @@ class TranslationEngine:
         """NLLB'de kaynak/hedef dili değiştirir (model yeniden yüklenmez)."""
         self.source_lang = source_lang if source_lang and source_lang != "auto" else "en"
         self.target_lang = target_lang or "tr"
-        if self.model_kind == "nllb" and self._tokenizer is not None:
+        if self.model_kind == "nllb" and self._tokenizer is not None and self.backend == "torch":
             self._tokenizer.src_lang = NLLB_LANG_CODES.get(self.source_lang, "eng_Latn")
             self._forced_bos = self._tokenizer.convert_tokens_to_ids(NLLB_LANG_CODES.get(self.target_lang, "tur_Latn"))
 
     def unload_model(self) -> None:
         """Modeli bellekten kaldır."""
+        model, self._model = self._model, None
+        del model
+        if self.backend == "ct2":
+            return
         import torch
 
-        del self._model
-        self._model = None
         if self._device == "cuda":
             torch.cuda.empty_cache()
 
+    def _run_batch_ct2(self, texts: list[str], beams: int) -> list[str]:
+        nllb = self.model_kind == "nllb"
+        src_code = NLLB_LANG_CODES.get(self.source_lang, "eng_Latn")
+        tgt_code = NLLB_LANG_CODES.get(self.target_lang, "tur_Latn")
+        sources = []
+        for text in texts:
+            pieces = self._tokenizer.src.encode(text, out_type=str)[:510]
+            sources.append(([src_code] if nllb else []) + pieces + ["</s>"])
+        longest = max(len(tokens) for tokens in sources)
+        results = self._model.translate_batch(
+            sources, target_prefix=[[tgt_code]] * len(sources) if nllb else None, beam_size=beams,
+            max_decoding_length=min(320, max(32, int(longest * 1.6) + 24)), no_repeat_ngram_size=3,
+            repetition_penalty=1.08, max_batch_size=self._max_batch)
+        out = []
+        for result in results:
+            tokens = result.hypotheses[0]
+            if nllb and tokens and tokens[0] == tgt_code:
+                tokens = tokens[1:]
+            out.append(self._tokenizer.tgt.decode(tokens))
+        return out
+
     def _run_batch(self, texts: list[str], beams: int = 2) -> list[str]:
         """Bir partiyi çevir."""
-        import torch
-
         if not texts:
             return []
+        if self.backend == "ct2":
+            return self._run_batch_ct2(texts, beams)
+        import torch
+
         encoded = self._tokenizer(
             texts, return_tensors="pt", padding=True,
             truncation=True, max_length=512,
@@ -1026,7 +1145,6 @@ class TranslationEngine:
         Önbellek, sözlük ve TM desteği dahil.
         Dönen dict: {kaynak: çeviri}
         """
-        import torch
         import collections as _collections
 
         if self._model is None:
@@ -1116,7 +1234,9 @@ class TranslationEngine:
                 )
             except RuntimeError as error:
                 if self._device == "cuda" and "out of memory" in str(error).lower():
-                    torch.cuda.empty_cache()
+                    if self.backend == "torch":
+                        import torch
+                        torch.cuda.empty_cache()
                     if len(indexes) > 1:
                         mid = len(indexes) // 2
                         pending.appendleft(indexes[mid:])
@@ -1280,6 +1400,26 @@ def translategemma_prompt(text: str, source: str, target: str) -> str:
             f"Please translate the following {s_name} text into {t_name}:\n\n\n{text}")
 
 
+def hymt_prompt(text: str, source: str, target: str) -> str:
+    """tencent/Hy-MT2 model kartındaki resmi İngilizce istem (dil adıyla; Hy-MT2'de sistem istemi yoktur). Metinde
+    Capri'nin etiket maskeleri (XPH000X) varsa kartın "ayraç" istemi kullanılır."""
+    t_name = {"zh-CN": "Chinese", "zh": "Chinese", "zh-hans": "Chinese", "zh-TW": "Traditional Chinese"}.get(target)         or _language_name(target)
+    if MASK_TOKEN.search(text):
+        return (f"Please accurately translate the following text into {t_name}.\nYou must retain the exact same number "
+                f"of delimiters in the translation. Strictly do not omit, escape, or translate these symbols, and pay "
+                f"close attention to their placement.\n\n{text}")
+    return (f"Translate the following text into {t_name}. Note that you should only output the translated result "
+            f"without any additional explanation:\n\n{text}")
+
+
+def chat_translate_prompt(text: str, source: str, target: str) -> str:
+    """Genel sohbet modelleri (Gemma 4) için tek mesajlık çeviri istemi."""
+    source = "en" if source in ("", "auto", None) else source
+    s_name, t_name = _language_name(source), _language_name(target)
+    return (f"Translate the following {s_name} video game text into {t_name}. Keep the meaning, tone and line breaks. "
+            f"Keep tokens like XPH000X exactly as they are. Output only the translation.\n\n{text}")
+
+
 def milmmt_prompt(text: str, source: str, target: str) -> str:
     """xiaomi-research/MiLMMT-46 model kartındaki resmi düz istem (dil adlarıyla)."""
     source = "en" if source in ("", "auto", None) else source
@@ -1411,7 +1551,7 @@ class OllamaTranslationEngine:
         """Toplu çeviri: modelin ailesine göre (çeviri modeli → resmi istem biçimi; sohbet modeli → §SEP§)."""
         if self.family == "translategemma":
             return self._translategemma_block(texts)
-        if self.family == "milmmt":
+        if self.family in ("milmmt", "hymt", "gemma4"):   # dahili sunucuda metin başına istek (resmi istem)
             return [self._one(text) for text in texts]
         return self._chat_batch(texts)
 

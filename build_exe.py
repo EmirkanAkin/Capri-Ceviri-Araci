@@ -35,11 +35,11 @@ DIST = APP_DIR / "dist"
 NAME = "Capri"
 sys.path.insert(0, str(SRC))
 # Yerel model ortamı uygulama içinden kurulur; pakete girmez
-EXCLUDES = ["torch", "torchvision", "torchaudio", "transformers", "tokenizers", "safetensors", "sentencepiece",
+EXCLUDES = ["torch", "torchvision", "torchaudio", "transformers", "tokenizers", "safetensors", "sentencepiece", "ctranslate2",
             "sacremoses", "huggingface_hub", "accelerate", "sympy", "networkx", "jinja2", "mpmath",
             "matplotlib", "scipy", "pandas", "cv2", "tkinter", "IPython", "pytest", "numpy.testing"]
 HIDDEN = ["webview", "webview.platforms.edgechromium", "webview.platforms.winforms", "clr", "UnityPy", "pylocres",
-          "mss", "rpycdec", "numpy", "requests",
+          "mss", "rpycdec", "numpy", "requests", "zstandard", "zstandard.backend_c",
           # İsteğe bağlı indirilen Unity bileşen okuyucusu (tools/typetree) dışarıdan bunlarla yüklenir
           "unity_typed", "unity_naninovel", "ctypes", "ctypes.wintypes", "platform", "dataclasses", "UnityPy.helpers.TypeTreeNode"]
 DATA = ["web", "assets", "data"]
@@ -70,6 +70,12 @@ def sign(exe: Path) -> bool:
                     "/tr", TIMESTAMP_URL, "/td", "SHA256", str(exe)], check=True)
     print(f"İmzalandı: {exe}")
     return True
+
+
+def whats_new_version() -> str:
+    tree = ast.parse((SRC / "app_modern.py").read_text(encoding="utf-8"))
+    return next((ast.literal_eval(n.value) for n in tree.body if isinstance(n, ast.Assign)
+                 and getattr(n.targets[0], "id", "") == "WHATS_NEW_VERSION"), "")
 
 
 def release_notes() -> str:
@@ -121,6 +127,9 @@ if __name__ == "__main__":
         tag = sys.argv[sys.argv.index("--check-tag") + 1]
         if tag.lstrip("v") != version():
             sys.exit(f"Etiket {tag} ile APP_VERSION {version()} farklı.")
+        if whats_new_version() != version():
+            sys.exit(f"WHATS_NEW ({whats_new_version() or 'sürümsüz'}) bu sürüm için yazılmamış: sürüm notu eski kalır. "
+                     "app_modern.py'deki WHATS_NEW listesini ve WHATS_NEW_VERSION'ı güncelle.")
         sys.exit(0)
     if "--notes" in sys.argv:
         Path(sys.argv[sys.argv.index("--notes") + 1]).write_text(release_notes(), encoding="utf-8")

@@ -41,6 +41,12 @@ PACKAGES: List[Tuple[str, str, str]] = [
     ("safetensors", "0.8.0", "safetensors"), ("sentencepiece", "0.2.2", "sentencepiece"),
     ("transformers", "4.57.6", "transformers"),
 ]
+# OPUS-MT / NLLB'nin hafif çalışma ortamı: CTranslate2 (~23 MB) + sentencepiece; PyTorch gerekmez, işlemcide int8 hızlıdır
+CT2_PACKAGES: List[Tuple[str, str, str]] = [
+    ("numpy", "2.4.6", "numpy"), ("pyyaml", "6.0.3", "yaml"), ("sentencepiece", "0.2.2", "sentencepiece"),
+    ("ctranslate2", "4.9.1", "ctranslate2"),
+]
+CT2_ESTIMATE_MB = 40
 LogFn = Callable[[str], None]
 ProgressFn = Callable[[int, int], None]
 
@@ -68,6 +74,14 @@ def missing() -> List[str]:
 
 def ready() -> bool:
     return not missing()
+
+
+def ct2_missing() -> List[str]:
+    return [name for name, _v, module in CT2_PACKAGES if not _has(module)]
+
+
+def ct2_ready() -> bool:
+    return not ct2_missing()
 
 
 def driver_cuda() -> Optional[Tuple[int, int]]:
@@ -195,14 +209,11 @@ def estimate_mb(cuda: Optional[Tuple[int, int]]) -> int:
     return 2900 if cuda else 260
 
 
-def install(log: LogFn = print, progress: Optional[ProgressFn] = None) -> Dict[str, str]:
-    """Eksik paketleri kurar; seçilen torch sürüm bilgisini döndürür."""
-    downloads = RUNTIME_DIR / "downloads"
-    downloads.mkdir(parents=True, exist_ok=True)
-    result: Dict[str, str] = {}
-    for name, version, module in PACKAGES:
-        if _has(module):
-            continue
+def _install_packages(packages: List[Tuple[str, str, str]], downloads: Path, log: LogFn,
+                      progress: Optional[ProgressFn] = None) -> None:
+    """Eksik paketleri PyPI'dan (SHA-256 doğrulamalı) indirip site-packages'a açar."""
+    todo = [p for p in packages if not _has(p[2])]
+    for index, (name, version, _module) in enumerate(todo, 1):
         meta = requests.get(PYPI_JSON.format(name=name, version=version), timeout=30,
                             headers={"User-Agent": "Capri"}).json()
         wheel = pick_pypi_wheel(meta.get("urls", []))
@@ -216,6 +227,26 @@ def install(log: LogFn = print, progress: Optional[ProgressFn] = None) -> Dict[s
             _download(str(wheel["url"]), target, log, None, f"{name} {version}", sha)
         _install_wheel(target)
         target.unlink(missing_ok=True)
+        if progress:
+            progress(index, len(todo))
+
+
+def install_ct2(log: LogFn = print, progress: Optional[ProgressFn] = None) -> None:
+    """OPUS-MT / NLLB için hafif ortamı (CTranslate2 + sentencepiece, ~40 MB) kurar."""
+    downloads = RUNTIME_DIR / "downloads"
+    downloads.mkdir(parents=True, exist_ok=True)
+    _install_packages(CT2_PACKAGES, downloads, log, progress)
+    shutil.rmtree(downloads, ignore_errors=True)
+    activate()
+    importlib.invalidate_caches()
+
+
+def install(log: LogFn = print, progress: Optional[ProgressFn] = None) -> Dict[str, str]:
+    """Eksik paketleri kurar; seçilen torch sürüm bilgisini döndürür."""
+    downloads = RUNTIME_DIR / "downloads"
+    downloads.mkdir(parents=True, exist_ok=True)
+    result: Dict[str, str] = {}
+    _install_packages(PACKAGES, downloads, log)
     if not _has("torch"):
         cuda = driver_cuda()
         log("NVIDIA ekran kartı: " + (f"CUDA {cuda[0]}.{cuda[1]} destekli sürücü" if cuda else "bulunamadı (CPU sürümü kurulacak)"))

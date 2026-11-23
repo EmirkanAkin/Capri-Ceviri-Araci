@@ -15,6 +15,7 @@ from typing import Dict, List, Optional, Union
 
 from pylocres import LocresFile
 
+import cloud_providers
 from engine_common import (
     Glossary,
     LogFn,
@@ -339,7 +340,7 @@ def translate_texts_unreal(
             extra_instruction=extra_instruction,
         )
 
-    elif selected_model in ("openai", "anthropic", "deepl"):
+    elif selected_model in cloud_providers.TRANSLATE_IDS:
         from providers import translate_with_cloud
         translate_with_cloud(
             selected_model, missing, cache, cache_path, log=log, progress=progress,

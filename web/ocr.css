@@ -53,6 +53,7 @@ body.select { background: #000; cursor: crosshair; }
 .icon-btn { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; color: var(--text-2); }
 .icon-btn:hover { background: var(--surface-3); color: var(--text); }
 .icon-btn.close:hover { background: rgba(255, 128, 119, .16); color: var(--error); }
+.icon-btn.on { color: var(--lime); background: rgba(223, 232, 107, .12); }
 .body { padding: 14px 16px 12px; }
 .tr { font-size: 17px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
 .orig { margin-top: 10px; padding-top: 10px; border-top: 1px dashed #2f3034; color: var(--muted); font-size: 12.5px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }

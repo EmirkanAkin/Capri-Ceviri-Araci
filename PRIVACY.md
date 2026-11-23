@@ -7,7 +7,7 @@ günlükler bilgisayarında, uygulama klasöründe kalır. API anahtarları Wind
 
 | Ne zaman | Nereye | Ne gönderilir |
 |---|---|---|
-| Bulut motoruyla çeviri yaparken | Seçtiğin sağlayıcı (Google Gemini, OpenAI, Anthropic, DeepL) | Çevrilecek metinler, oyuna özel notların ve API anahtarın |
+| Bulut motoruyla çeviri yaparken | Seçtiğin sağlayıcı (Google Gemini, OpenAI, Anthropic, DeepL, DeepSeek, Mistral, xAI, Groq, OpenRouter, Cerebras, Alibaba Qwen, Cohere, Google Cloud Translation, Microsoft Translator ya da kendi girdiğin OpenAI uyumlu sunucu) | Çevrilecek metinler, oyuna özel notların ve API anahtarın |
 | Açılışta güncelleme kontrolü (kapatılabilir) | GitHub | Standart istek; kişisel veri yok |
 | Oyun eklenince kapak görseli ararken | Steam | Oyunun adı veya Steam numarası |
 | Ollama kullanırken | Ayarladığın Ollama adresi (varsayılan: kendi bilgisayarın) | Çevrilecek metinler |

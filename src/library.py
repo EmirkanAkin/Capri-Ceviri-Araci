@@ -17,7 +17,6 @@ import http.server
 import io
 import json
 import mimetypes
-import os
 import re
 import shutil
 import threading
@@ -72,13 +71,8 @@ class ProjectLibrary:
                 pass
 
     def _save(self) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self.path.with_suffix(".tmp")
-        with open(tmp, "w", encoding="utf-8") as handle:
-            handle.write(json.dumps(self.list(), ensure_ascii=False, indent=2))
-            handle.flush()
-            os.fsync(handle.fileno())        # elektrik kesilirse yarım/boş dosya kalmasın
-        tmp.replace(self.path)
+        from fileio import atomic_write_text
+        atomic_write_text(self.path, json.dumps(self.list(), ensure_ascii=False, indent=2))   # yarım kalmaz
 
     def list(self) -> List[Dict[str, Any]]:
         return sorted(self._items.values(), key=lambda p: p.get("updated", 0), reverse=True)

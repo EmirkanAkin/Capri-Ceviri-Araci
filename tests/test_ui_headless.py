@@ -112,6 +112,9 @@ def _visit_all(c) -> None:
     for page in PAGES:
         c.js(f"document.querySelector('[data-page=\"{page}\"]').click()")
         time.sleep(0.25)
+        if page == "models":                                    # ayrıntılı model listesi de taransın
+            c.js("document.querySelector('[data-action=\"llm-all\"]') && document.querySelector('[data-action=\"llm-all\"]').click()")
+            time.sleep(0.25)
         if page == "providers":
             for prov in c.js("[...document.querySelectorAll('[data-prov]')].map(e => e.dataset.prov)"):
                 c.js(f"document.querySelector('[data-prov=\"{prov}\"]').click()")

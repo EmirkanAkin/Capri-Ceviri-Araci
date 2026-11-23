@@ -26,7 +26,8 @@ function fmtDur(sec) {
 }
 const keyOf = (path) => String(path || "").toLowerCase();
 
-const ENGINE_FILTERS = [["all", "Tümü"], ["renpy", "Ren'Py"], ["unity", "Unity"], ["unreal", "Unreal"], ["rpgmaker", "RPG Maker"]];
+const ENGINE_FILTERS = [["all", "Tümü"], ["renpy", "Ren'Py"], ["unity", "Unity"], ["unreal", "Unreal"], ["rpgmaker", "RPG Maker"],
+  ["tyrano", "TyranoScript"], ["kirikiri", "KiriKiri"], ["godot", "Godot"], ["wolf", "WOLF RPG"]];
 const STATUS = {
   new: ["Yeni proje", ""], analyzed: ["Çeviriye hazır", ""], translating: ["Çevriliyor", "warn"],
   translated: ["Çevrildi", "lime"], error: ["Çeviri başarısız", "error"], restored: ["Orijinal dosyalar", ""],
@@ -103,7 +104,7 @@ const HANDLERS = {
     const prevLabel = S.busyLabel;
     S.busy = d.busy; S.busyLabel = d.label || ""; S.cancelling = false; S.stage = null; S.progress = null;
     if (d.busy) { S.taskStart = Date.now(); S.taskError = null; S.stagesSeen = new Set(); S.notice = null; S.shownPct = 0; }
-    renderHero(); renderEngineCard(); renderProgress(); renderModels(); renderAnalysis();
+    renderHero(); renderEngineCard(); renderProgress(); renderModels(); renderAnalysis(); renderQueue();
     if (!d.busy && $("#page-editor").classList.contains("active")) loadEditor(true);
     if (!d.busy && /BepInEx/.test(prevLabel) && activeProject()) call("analyze", true);
     if (!d.busy && prevLabel === "Model indirme" && S.ollamaInfo) {   // Ollama modeli indi: listeyi ve seçimi yenile
@@ -111,7 +112,7 @@ const HANDLERS = {
       call("ollama_models").then((m) => { if (m) { S.ollamaInfo = m; S.providers.ollama_model = m.current; renderProviders(); } });
     }
   },
-  analysis: (d) => { S.analysis = d; S.analysisError = null; renderAnalysis(); renderHero(); },
+  analysis: (d) => { S.analysis = d; S.analysisError = null; renderAnalysis(); renderHero(); maybeGameTour(); },
   project: (p) => upsertProject(p),
   gpu: (g) => { S.gpu = g; renderEngineCard(); renderGpu(); },
   stats: (st) => { S.stats = st; renderStats(); },
@@ -119,6 +120,7 @@ const HANDLERS = {
   backups: (list) => renderBackups(list),
   confirm: (d) => openConfirm(d),
   scan: (d) => { S.scan = d; later(renderScan); },
+  queue: (q) => { setQueue(q); if ((q.items || []).length) S.queueOpen = true; later(renderQueue); later(syncQueueButtons); },
   update: (info) => { S.update = info; $("#updateDot").classList.toggle("hidden", !info.available); renderUpdate(); },
   update_progress: (p) => { S.updateProgress = p; renderUpdate(); },
   done: () => {},
@@ -137,6 +139,8 @@ async function boot(api) {
   if (!st) return;
   Object.assign(S, { state: st, settings: st.settings, projects: st.projects || [], providers: st.providers,
     models: st.models, gpu: st.gpu, busy: st.busy, gpuOpt: st.gpu_opt, ocr: st.ocr, scan: st.scan });
+  // Ek bulut sağlayıcıları (DeepSeek, Mistral, Grok, Groq, OpenRouter… Google Çeviri, Microsoft Translator) arka uçtan gelir
+  for (const p of st.provider_catalog || []) if (!PROVIDERS.some((x) => x.id === p.id)) PROVIDERS.splice(PROVIDERS.findIndex((x) => x.group === "local"), 0, p);
   S.provSel = S.settings.model;
   S.ui = st.ui || { language: "tr", languages: [], dict: {} };
   I18N.set(S.ui.language, S.ui.dict);
@@ -151,6 +155,7 @@ async function boot(api) {
   renderScan();
   renderProviders();
   renderModels();
+  renderTourButtons();
   renderSamples();
   renderTranslator();
   renderGpu();
@@ -158,11 +163,13 @@ async function boot(api) {
   renderDrawer();
   appendLog([`Capri ${st.version} hazır.`]);
   if (S.ui.pending) setUiLanguage(S.ui.language, true);   // bu dilin arayüzü henüz üretilmemiş: arka planda hazırla
+  if (!S.settings.tour_done) setTimeout(() => startTour(), 0);   // ilk açılış: arayüz çizilir çizilmez
 }
 
 /* ── Gezinme ───────────────────────────────────────────────────────── */
 function showPage(id) {
   $$(".page").forEach((p) => p.classList.toggle("active", p.id === `page-${id}`));
+  maybePageTour(id);
   $$(".nav").forEach((n) => n.classList.toggle("active", n.dataset.page === id));
   $("#scroll").scrollTop = 0;
   renderProgress();
@@ -172,6 +179,7 @@ function showPage(id) {
   if (id === "ocr") call("ocr_status").then((o) => { if (o) { S.ocr = o; renderOcr(); } });
   if (id === "ocr") call("ocr_history").then((h) => { S.ocrHistory = h || []; renderOcrHistory(); });
   if (id === "editor") loadEditor(true);
+  if (id === "library") call("queue_state").then((q) => { if (q) { setQueue(q); renderQueue(); syncQueueButtons(); } });
   if (id === "glossary") loadGlossary();
   if (id === "json") $("#jsonModel").textContent = `Motor: ${S.state.model_labels[S.settings.model]}`;
 }
@@ -215,7 +223,8 @@ function renderHero() {
   if (!p) {
     setHero("Hoş geldin", "");
     setText($("#heroTitle"), "Oyununu Türkçeye çevir.");
-    setHtml(meta, ["Ren'Py", "Unity", "Unreal", "RPG Maker", "JSON", "Ekran (OCR)"].map((t) => `<span class="meta-chip">${t}</span>`).join(""));
+    // Motorların tam listesi sağdaki demoda ve boş kütüphanedeki kutularda; burada kısa özet (satır taşmasın)
+    setHtml(meta, ["8 oyun motoru", "Altyazı ve JSON", "Ekran çevirisi (OCR)"].map((t) => `<span class="meta-chip">${t}</span>`).join(""));
     setText($("#heroDesc"), "Oyun klasörünü seç; Capri motoru algılar, yedek alır ve tek tıkla çevirir.");
     setHtml(actions, `<button class="cta" data-action="pick">${icon("plus")}Oyun ekle</button>
                          <button class="ghost" data-page="guide">${icon("book")}Nasıl çalışır?</button>`);
@@ -474,6 +483,8 @@ function providerStatus(id) {
   const pv = S.providers || {};
   if (id === "gemini") return pv.gemini_keys && pv.gemini_keys.length ? [`Hazır · ${pv.gemini_keys.length} anahtar`, "ok"] : ["Anahtar gerekli", "warn"];
   if (["openai", "anthropic", "deepl"].includes(id)) return pv[`${id}_key`] ? ["Hazır", "ok"] : ["Anahtar gerekli", "warn"];
+  if (id === "custom") return pv.custom_base_url ? ["Hazır", "ok"] : ["Adres gerekli", "warn"];
+  if (PROVIDERS.some((p) => p.id === id && p.kind)) return pv[`${id}_key`] ? ["Hazır", "ok"] : ["Anahtar gerekli", "warn"];
   if (id === "ollama") return ["Yerel sunucu", ""];
   if (id === "local") {
     const using = LOCAL_ENGINES.includes(S.settings.model) ? localEngines().find((e) => e.using) : null;
@@ -526,6 +537,7 @@ function syncSettingsUi() {
   $("#soundToggle").checked = S.settings.sound !== false;
   $("#notifyToggle").checked = S.settings.notify !== false;
   $("#memoryToggle").checked = S.settings.memory !== false;
+  $("#namesToggle").checked = S.settings.auto_names !== false;
   const p = PROVIDERS.find((x) => x.id === S.settings.model);
   const [st] = providerStatus(S.settings.model);
   $("#modelHint").textContent = p ? `${p.tag} · ${st}` : "";
@@ -635,15 +647,20 @@ function cardHtml(p) {
   return `<div class="card ${p.active ? "active" : ""}" data-action="open" data-path="${esc(p.path)}" title="${esc(p.path)}">
     ${art}${badge}
     <button class="card-remove" data-action="remove" data-path="${esc(p.path)}" title="Kütüphaneden kaldır">${icon("x")}</button>
+    ${p.status !== "translated" ? `<button class="card-queue ${inQueue(p.path) ? "on" : ""}" data-action="queue-add" data-path="${esc(p.path)}" title="${inQueue(p.path) ? "Toplu çeviri sırasında" : "Toplu çeviri sırasına ekle"}">${icon(inQueue(p.path) ? "check" : "play")}</button>` : ""}
     <div class="card-info"><div class="card-title">${esc(p.title)}</div><div class="card-meta">${esc(meta)}</div></div></div>`;
 }
 
 const ADD_CARD = `<button class="card add" data-action="pick"><span class="plus">${icon("plus")}</span>Oyun ekle</button>`;
 const ENGINE_INTRO = `<div class="engines-intro">${[
   ["Ren'Py", "Görsel romanlar: .rpy/.rpyc/.rpa, otomatik Türkçe font yaması."],
-  ["Unity", "resources.assets metinleri; IL2CPP oyunlarda BepInEx köprüsü."],
-  ["Unreal Engine", "UE4/UE5 .locres tabloları, ~mods yapısı."],
-  ["RPG Maker", "MV / MZ veri dosyaları, kontrol kodları korunur."],
+  ["Unity", "Metin dosyaları, Utage, I2 ve Unity Localization, Naninovel; gerekirse BepInEx köprüsü."],
+  ["Unreal Engine", "UE4/UE5 .locres tabloları (.pak ve IoStore içinde de); çeviri ~mods yaması olur."],
+  ["RPG Maker", "MV / MZ ve XP / VX / VX Ace, şifreli arşivler dahil; kontrol kodları korunur."],
+  ["TyranoScript · KiriKiri", "Japon görsel romanları: .ks senaryoları, seçenekler ve isimler."],
+  ["Godot 3 / 4", "Çeviri tabloları, sahne yazıları ve betik metinleri; oyuna dokunmayan yama."],
+  ["WOLF RPG", "Konuşmalar, seçenekler ve veritabanı; şifreli Data.wolf arşivleri de açılır."],
+  ["Altyazı · JSON", ".srt / .vtt / .ass altyazılar ve her türlü JSON dil dosyası."],
 ].map(([t, d]) => `<div class="engine-tile"><span class="pill lime">Destekleniyor</span><div class="t">${t}</div><div class="d">${d}</div></div>`).join("")}</div>`;
 
 function renderLibraries() {
@@ -685,6 +702,56 @@ async function startTranslate() {
   Object.assign(S, { busy: true, busyLabel: "Çeviri", taskStart: Date.now(), taskError: null, stage: null, progress: null });
   renderHero(); renderEngineCard();
   if ((await call("translate")) !== true) { S.busy = false; S.busyLabel = ""; renderHero(); renderEngineCard(); }
+}
+
+/* ── Toplu çeviri ──────────────────────────────────────────────────── */
+/* Kuyruk değişince kütüphane ızgarası yeniden çizilmez: yalnızca kartlardaki ▶ düğmeleri güncellenir. */
+function setQueue(q) {
+  S.queue = q;
+  S.queueKeys = new Set(((q && q.items) || []).map((i) => keyOf(i.path)));
+}
+const inQueue = (path) => !!(S.queueKeys && S.queueKeys.has(keyOf(path)));
+function syncQueueButtons() {
+  $$(".card-queue").forEach((b) => {
+    const on = inQueue(b.dataset.path);
+    if (b.classList.contains("on") === on) return;
+    b.classList.toggle("on", on);
+    b.title = I18N.t(on ? "Toplu çeviri sırasında" : "Toplu çeviri sırasına ekle");
+    b.innerHTML = icon(on ? "check" : "play");
+  });
+}
+const QUEUE_STATE = { waiting: ["Bekliyor", ""], running: ["Çevriliyor", "warn"], done: ["Çevrildi", "ok"],
+  failed: ["Hata", "error"], skipped: ["Atlandı", ""] };
+
+function renderQueue() {
+  const box = $("#queuePanel");
+  if (!box) return;
+  const q = S.queue || { items: [], running: false };
+  const items = q.items || [];
+  if (!S.queueOpen && !items.length) { setHtml(box, ""); return; }
+  const waiting = items.filter((i) => i.state === "waiting").length;
+  const pending = S.projects.filter((p) => p.status !== "translated" && !inQueue(p.path)).length;
+  const rows = items.map((i) => {
+    const [label, tone] = QUEUE_STATE[i.state] || QUEUE_STATE.waiting;
+    return `<div class="list-row">
+      <div class="list-icon">${i.state === "running" ? '<span class="spinner"></span>' : icon(i.state === "done" ? "check" : i.state === "failed" ? "alert" : "gamepad")}</div>
+      <div class="grow"><div class="title">${esc(i.title)} <span class="pill ${tone}">${label}</span></div>
+        ${i.note ? `<div class="sub">${esc(I18N.t(i.note))}</div>` : ""}</div>
+      ${i.state !== "running" ? `<button class="btn" data-action="queue-remove" data-path="${esc(i.path)}" title="Sıradan çıkar">${icon("x")}</button>` : ""}</div>`;
+  }).join("");
+  setHtml(box, `<div class="panel scan-panel">
+    <div class="panel-head"><div><div class="panel-title">Toplu çeviri</div>
+      <p class="panel-desc">${q.running ? "Oyunlar sırayla çevriliyor. Durdurursan çevrilen satırlar kaybolmaz."
+        : items.length ? `${fmt(waiting)} oyun sırada. Seçili motor ve dil her oyun için kullanılır; önbellekteki satırlar ücretsiz.`
+          : "Oyunları sıraya ekle, gece boyunca teker teker çevrilsin. Kartlardaki ▶ düğmesiyle de ekleyebilirsin."}</p></div>
+      <div class="row-actions" style="margin:0">
+        ${pending && !q.running ? `<button class="btn" data-action="queue-add-pending">${icon("plus")}Çevrilmemişleri ekle (${fmt(pending)})</button>` : ""}
+        ${items.length && !q.running ? `<button class="btn" data-action="queue-clear">${icon("trash")}Temizle</button>` : ""}
+        ${q.running ? `<button class="stop-btn" data-action="cancel">${icon("stop")}Durdur</button>`
+          : `<button class="btn lime" data-action="queue-start" ${waiting && !S.busy ? "" : "disabled"}>${icon("play")}Başlat</button>`}
+      </div></div>
+    ${rows ? `<div class="list">${rows}</div>` : ""}
+  </div>`);
 }
 
 /* ── Otomatik oyun tarama ──────────────────────────────────────────── */
@@ -749,8 +816,10 @@ function renderEditor() {
     return `<div class="trow ${it.flag ? "flag" : ""} ${it.src in ed.dirty ? "dirty" : ""}">
       <div class="cell-src selectable">${highlightTags(it.src)}</div>
       <div class="cell-tr"><textarea rows="1" data-edit="${i}" spellcheck="false">${esc(value)}</textarea></div>
-      <div class="cell-act">${it.flag ? `<span title="İncelenmeli" style="color:var(--warn)">${icon("alert")}</span>` : ""}</div></div>`;
+      <div class="cell-act">${it.flag ? `<span title="${esc((it.why || []).map((w) => I18N.t(w)).join(" · ") || I18N.t("İncelenmeli"))}" style="color:var(--warn)">${icon("alert")}</span>` : ""}</div>
+      ${it.flag && (it.why || []).length ? `<div class="cell-why">${esc(it.why.map((w) => I18N.t(w)).join(" · "))}</div>` : ""}</div>`;
   }).join("");
+  const reviewable = ed.items.some((it) => it.flag) || ((ed.sources.find((s) => s.model === ed.model) || {}).review > 0);
   $("#editorBody").innerHTML = `
     <div class="toolbar">
       <select class="input" id="edModel">${ed.sources.map((s) => `<option value="${s.model}" ${s.model === ed.model ? "selected" : ""}>${esc(s.label)} · ${fmt(s.count)} satır</option>`).join("")}</select>
@@ -761,6 +830,7 @@ function renderEditor() {
     <div class="row-actions">
       <button class="btn lime" id="edSave" title="Ctrl+S" ${dirtyCount ? "" : "disabled"}>${icon("check")}Kaydet${dirtyCount ? ` (${dirtyCount})` : ""}</button>
       <button class="btn" id="edApply" ${S.busy ? "disabled" : ""}>${icon("play")}Oyuna uygula</button>
+      ${reviewable ? `<button class="btn" id="edFix" ${S.busy ? "disabled" : ""} title="Turuncu satırları sorunlarıyla birlikte bir sohbet modeline (Gemini, OpenAI, Claude, Ollama, yerel Gemma 4) düzelttirir">${icon("sparkle")}İncelenmelileri düzelt</button>` : ""}
     </div>
     <div class="table"><div class="trow head"><div>Kaynak</div><div>Çeviri</div><div></div></div>${rows || `<div class="empty" style="margin:16px;border:0">Eşleşen satır yok.</div>`}</div>
     ${ed.items.length < ed.total ? `<div class="more"><button class="btn" id="edMore">Daha fazla yükle (${fmt(ed.total - ed.items.length)} kaldı)</button></div>` : ""}`;
@@ -849,7 +919,7 @@ const providerOf = (id) => (LOCAL_ENGINES.includes(id) ? "local" : id);
 
 function localEngines() {
   const l = (S.models && S.models.llm) || {};
-  const rows = (l.models || []).filter((m) => m.family !== "milmmt").map((m) => ({
+  const rows = (l.models || []).filter((m) => m.game !== false).map((m) => ({
     engine: "local", id: m.id, title: m.label, sub: m.use, ready: !!m.installed,
     using: S.settings.model === "local" && l.selected === m.id }));
   const gpu = { opus: ["OPUS-MT", "İngilizce → Türkçe, çok hızlı · ekran kartı"], nllb: ["NLLB-200", "200 dil · ekran kartı"] };
@@ -883,6 +953,7 @@ function renderProviders() {
     ${type === "textarea" ? `<textarea class="input code" data-field="${name}" spellcheck="false">${esc(providerValue(name))}</textarea>`
       : type === "gemini-select" ? geminiSelect(name)
       : type === "ollama-select" ? ollamaSelect(name)
+      : type === "model" ? modelInput(p, name)
       : `<input class="input" data-field="${name}" type="${type}" value="${esc(providerValue(name))}" spellcheck="false">`}</div>`).join("");
   let extra = "";
   if (p.id === "local") {
@@ -900,8 +971,19 @@ function renderProviders() {
       ${p.fields.length ? `<button class="btn" data-action="save-provider">${icon("check")}Kaydet</button>` : ""}
       <button class="btn" data-action="test-provider">${icon("zap")}${p.fields.length ? "Bağlantıyı test et" : "Durumu kontrol et"}</button>
       ${p.id === "local" ? "" : `<button class="btn ${isDefault ? "" : "lime"}" data-action="default-provider" ${isDefault ? "disabled" : ""}>${icon("check")}${isDefault ? "Varsayılan motor" : "Varsayılan yap"}</button>`}
+      ${p.key_url ? `<button class="btn" data-action="open-url" data-path="${esc(p.key_url)}">${icon("globe")}Anahtar al</button>` : ""}
       <span class="status-msg" id="provStatus"></span>
     </div>`;
+}
+
+/* Model alanı: elle yazılabilir; bağlantı testi sağlayıcının model listesini öneri olarak doldurur. Boş bırakılırsa
+   önerilen model (yoksa listeden hızlı bir sohbet modeli) kullanılır. */
+function modelInput(p, name) {
+  const models = (S.providerModels && S.providerModels[p.id]) || [];
+  const hint = p.default_model ? `Boş: ${p.default_model}` : "Boş: otomatik seçilir";
+  return `<input class="input" data-field="${name}" list="models-${p.id}" value="${esc(providerValue(name))}" placeholder="${esc(hint)}" spellcheck="false">
+    <datalist id="models-${p.id}">${models.map((m) => `<option value="${esc(m)}">`).join("")}</datalist>
+    ${models.length ? `<div class="field-hint">${fmt(models.length)} model bulundu; listeden seçebilirsin.</div>` : ""}`;
 }
 
 function ollamaSelect(name) {
@@ -973,17 +1055,93 @@ async function testProvider() {
   status.textContent = "Kontrol ediliyor…";
   const res = await call("test_provider", p.id, value);
   if (!res) return;
-  status.className = `status-msg ${res.ok ? "ok" : "error"}`;
-  status.textContent = res.msg;
+  if (res.models && res.models.length) {
+    (S.providerModels = S.providerModels || {})[p.id] = res.models;
+    const keep = collectProviders();
+    renderProviders();
+    for (const [k, v] of Object.entries(keep)) { const el = $(`#providerDetail [data-field="${k}"]`); if (el) el.value = v; }
+  }
+  const st = $("#provStatus");
+  st.className = `status-msg ${res.ok ? "ok" : "error"}`;
+  st.textContent = res.msg;
 }
 
 /* ── Yerel modeller ────────────────────────────────────────────────── */
+const LLM_TIERS = [
+  ["light", "Hafif · zayıf bilgisayarlar", "Ekran kartı olmadan ya da 2-4 GB ekran kartıyla çalışır. Dizüstü ve eski bilgisayarlar için."],
+  ["medium", "Orta · çoğu oyun bilgisayarı", "6-8 GB ekran kartı belleğiyle hızlı çalışır; kalite ve hız dengesi."],
+  ["heavy", "Ağır · güçlü ekran kartları", "10 GB ve üstü ekran kartı belleği ister; en yüksek çeviri kalitesi."],
+];
+
 function llmRequirement(m, vram) {
-  const need = m.tier === "heavy"
-    ? `Yüksek sistem gerektirir · ${m.vram_gb} GB+ ekran kartı belleği, ${m.ram_gb} GB RAM`
-    : `Hafif · ${m.vram_gb} GB ekran kartı belleği ya da ${m.ram_gb} GB RAM yeterli`;
+  const need = m.kind === "classic" ? `${m.ram_gb} GB RAM yeterli; ekran kartı gerekmez`
+    : m.tier === "light"
+    ? `${m.vram_gb} GB ekran kartı belleği ya da ${m.ram_gb} GB RAM yeterli`
+    : `${m.vram_gb} GB+ ekran kartı belleği, ${m.ram_gb} GB RAM`;
   const short = vram != null && vram < m.vram_gb;
-  return { need, warn: short ? `Ekran kartın ${fmt(vram)} GB: bu model işlemciye taşar ve yavaş çalışır.` : "" };
+  return { need, warn: short ? `Ekran kartın ${fmt(vram)} GB: bu model kısmen işlemciye taşar ve yavaş çalışır.` : "" };
+}
+
+/* Sade görünüm: kalite ve hız sözle; sayılar yalnızca "Tüm modeller" listesinde */
+function llmQualityWord(m) {
+  const tr = (m.quality || {}).tr || 0;
+  return tr >= 55 ? ["Çok iyi", 4] : tr >= 52 ? ["İyi", 3] : tr >= 48 ? ["Orta", 2] : ["Zayıf", 1];
+}
+
+function llmSpeedWord(m) {
+  const r = m.rate || 0;
+  return r >= 2 ? "Çok hızlı" : r >= 0.9 ? "Hızlı" : r >= 0.3 ? "Orta hız" : "Yavaş";
+}
+
+function llmActions(m, l, detail = false) {
+  if (m.kind === "classic") {                    // OPUS-MT / NLLB: CTranslate2 ile (eski kurulumlar PyTorch), kendi indirme yolu
+    const st = (S.models && S.models[m.id]) || {};
+    const using = S.settings.model === m.id;
+    const main = !st.is_ready
+      ? `<button class="btn" data-action="download-model" data-id="${m.id}" ${S.busy ? "disabled" : ""}>${icon("download")}İndir (${fmt(Math.round(m.size / 1e8) / 10)} GB)</button>`
+      : `<button class="btn ${using ? "" : "lime"}" data-action="classic-use" data-id="${m.id}" ${using ? "disabled" : ""}>${icon("check")}${using ? "Kullanılıyor" : "Kullan"}</button>`;
+    if (!detail) return main;
+    return main + (st.is_ready ? `<button class="btn" data-action="download-model" data-id="${m.id}" ${S.busy ? "disabled" : ""}>${icon("shield")}Doğrula</button>` : "")
+      + (st.is_ready && st.backend === "torch" && !st.compact ? `<button class="btn" data-action="compact-model" data-id="${m.id}" ${S.busy ? "disabled" : ""}>${icon("zap")}Küçült (fp16)</button>` : "")
+      + (st.dir ? `<button class="btn" data-action="open-path" data-path="${esc(st.dir)}">${icon("folder")}Klasörü aç</button>` : "");
+  }
+  const selected = l.selected === m.id && S.settings.model === "local";
+  if (!m.installed) return `<button class="btn ${m.recommended ? "lime" : ""}" data-action="llm-download" data-id="${m.id}" ${S.busy ? "disabled" : ""}>${icon("download")}İndir (${fmt(Math.round(m.size / 1e8) / 10)} GB)</button>`;
+  return `<button class="btn ${selected ? "" : "lime"}" data-action="llm-use" data-id="${m.id}" ${selected ? "disabled" : ""}>${icon("check")}${selected ? "Kullanılıyor" : "Kullan"}</button>
+    <button class="btn" data-action="llm-remove" data-id="${m.id}" ${S.busy ? "disabled" : ""}>${icon("trash")}Sil</button>`;
+}
+
+function llmCard(m, l, opts = {}) {
+  const [word, level] = llmQualityWord(m);
+  const dots = [1, 2, 3, 4].map((i) => `<i class="${i <= level ? "on" : ""}"></i>`).join("");
+  const tier = LLM_TIERS.find((t) => t[0] === m.tier);
+  return `<div class="llm-card ${opts.big ? "big" : ""}">
+    ${opts.head ? `<div class="llm-card-head">${esc(opts.head)}</div>` : ""}
+    <div class="llm-card-title">${esc(m.label)}${m.installed ? '<span class="pill ok">İndirildi</span>' : ""}</div>
+    <div class="llm-card-desc">${esc(m.short || m.use)}</div>
+    ${opts.reason ? `<div class="llm-card-reason">${icon("check")}${esc(opts.reason)}</div>` : ""}
+    <div class="llm-card-facts">
+      <span class="llm-dots" title="Türkçe çeviri kalitesi">${dots}<b>${esc(word)}</b></span>
+      <span>${esc(llmSpeedWord(m))}</span>
+      <span>${fmt(Math.round(m.size / 1e8) / 10)} GB</span>
+      ${opts.big && tier ? `<span>${esc(tier[1].split(" · ")[0])}</span>` : ""}
+    </div>
+    <div class="row-actions" style="margin:0">${llmActions(m, l)}</div></div>`;
+}
+
+/* Ayrıntılı satır ("Tüm modeller"): puanlar sayıyla, gereksinim ve hız */
+function llmDetailRow(m, l) {
+  const req = llmRequirement(m, l.vram_gb);
+  const q = m.quality || {};
+  const facts = [q.tr != null ? `Türkçe ${fmt(Math.round(q.tr))}` : "", q.avg != null ? `14 dil ${fmt(Math.round(q.avg))}` : (m.kind === "classic" ? "Yalnızca İngilizce → Türkçe" : ""),
+    q.tags != null ? `Etiket %${fmt(Math.round(q.tags * 100))}` : "", req.need, m.speed].filter(Boolean);
+  return `<div class="list-row llm-row">
+    <div class="grow"><div class="title"><span class="llm-rank num">${fmt(m.rank)}</span>${esc(m.label)}
+      ${m.best_in_tier ? '<span class="pill lime">Bu grubun en iyisi</span>' : ""}
+      ${m.recommended ? '<span class="pill lime">Senin bilgisayarına önerilen</span>' : ""}${m.installed ? '<span class="pill ok">İndirildi</span>' : ""}</div>
+      <div class="sub">${esc(m.use)}</div>
+      <div class="sub llm-facts">${facts.map(esc).join(" · ")}</div>${req.warn ? `<div class="sub warn-text">${esc(req.warn)}</div>` : ""}</div>
+    <div class="row-actions" style="margin:0">${llmActions(m, l, true)}</div></div>`;
 }
 
 function renderLlm() {
@@ -992,60 +1150,46 @@ function renderLlm() {
   if (!box) return;
   if (!l) { box.innerHTML = ""; return; }
   const runtime = (l.runtimes || []).find((r) => r.installed);
-  const rows = (l.models || []).map((m) => {
-    const req = llmRequirement(m, l.vram_gb);
-    const selected = l.selected === m.id && S.settings.model === "local";
-    const actions = !m.installed
-      ? `<button class="btn ${m.recommended ? "lime" : ""}" data-action="llm-download" data-id="${m.id}" ${S.busy ? "disabled" : ""}>${icon("download")}İndir (${fmt(Math.round(m.size / 1e8) / 10)} GB)</button>`
-      : `${m.family === "milmmt" ? "" : `<button class="btn ${selected ? "" : "lime"}" data-action="llm-use" data-id="${m.id}" ${selected ? "disabled" : ""}>${icon("check")}${selected ? "Kullanılıyor" : "Kullan"}</button>`}
-         <button class="btn" data-action="llm-remove" data-id="${m.id}" ${S.busy ? "disabled" : ""}>${icon("trash")}Sil</button>`;
-    return `<div class="list-row llm-row">
-      <div class="grow"><div class="title">${esc(m.label)}
-        ${m.tier === "heavy" ? '<span class="pill warn">Yüksek sistem</span>' : '<span class="pill">Hafif</span>'}
-        ${m.recommended ? '<span class="pill lime">Ekran kartına önerilen</span>' : ""}${m.installed ? '<span class="pill ok">İndirildi</span>' : ""}</div>
-        <div class="sub">${esc(m.use)}${m.speed ? ` · ${esc(m.speed)}` : ""}</div>
-        <div class="sub">${esc(req.need)}</div>${req.warn ? `<div class="sub warn-text">${esc(req.warn)}</div>` : ""}</div>
-      <div class="row-actions" style="margin:0">${actions}</div></div>`;
+  const models = l.models || [];
+  const rec = models.find((m) => m.recommended) || models[0];
+  const bests = LLM_TIERS.map(([tier, title]) => [models.find((m) => m.tier === tier && m.best_in_tier), title]).filter((x) => x[0]);
+  const shown = new Set([rec && rec.id, ...bests.map((b) => b[0].id)]);
+  const mine = models.filter((m) => m.installed && !shown.has(m.id));
+  const reason = l.vram_gb ? `${fmt(l.vram_gb)} GB ekran kartına tamamen sığan en iyi model`
+    : "Ekran kartı bulunamadı: işlemcide en iyi çalışan model";
+  const all = LLM_TIERS.map(([tier, title, desc]) => {
+    const items = models.filter((m) => m.tier === tier);
+    return items.length ? `<div class="llm-tier"><div class="llm-tier-head"><b>${esc(title)}</b><span>${esc(desc)}</span></div>
+      <div class="list">${items.map((m) => llmDetailRow(m, l)).join("")}</div></div>` : "";
   }).join("");
-  setHtml(box, `<div class="panel-head"><div><div class="panel-title">Yerel çeviri modelleri <span class="pill lime">Önerilen</span></div>
-      <p class="panel-desc">TranslateGemma ve MiLMMT Capri'nin içinde çalışır; Ollama, internet ya da kota gerekmez. Dosyalar SHA-256 ile doğrulanır.</p></div>
+  setHtml(box, `<div class="panel-head"><div><div class="panel-title">Model kitaplığı</div></div>
       <span class="pill ${runtime ? "ok" : ""}">${runtime ? "Çalışma ortamı kurulu" : "Çalışma ortamı ilk indirmede kurulur"}</span></div>
-    <div class="list">${rows}</div>
-    <p class="field-hint">Hızlar RTX 5070 ile ölçüldü; ilk çalıştırma birkaç saniye uzun sürer.</p>
-    <p class="field-hint">Gemma kullanım şartlarına tabidir. Ekran kartı yoksa işlemcide 5-10 kat yavaş çalışır.</p>`);
+    ${rec ? `<div class="llm-section">Senin bilgisayarın için önerilen</div>${llmCard(rec, l, { big: true, reason })}` : ""}
+    <div class="llm-section">Her grubun en iyisi</div>
+    <div class="llm-grid">${bests.map(([m, title]) => llmCard(m, l, { head: title })).join("")}</div>
+    ${mine.length ? `<div class="llm-section">İndirdiğin diğer modeller</div><div class="llm-grid">${mine.map((m) => llmCard(m, l)).join("")}</div>` : ""}
+    <button class="btn llm-toggle ${S.llmAll ? "open" : ""}" data-action="llm-all">${icon("chev-r")}${S.llmAll ? "Ayrıntıları gizle" : `Tüm modelleri göster (${fmt(models.length)})`}</button>
+    ${S.llmAll ? `${all}
+      <p class="field-hint">Puanlar Capri'nin kendi testinden: WMT24++ (İngilizce → 14 dil, Türkçe 60 cümle) chrF++ ve 24 oyun satırında etiket koruma. Hızlar RTX 5070 ile ölçüldü (OPUS-MT ve NLLB işlemcide).</p>
+      <p class="field-hint">TranslateGemma ve MiLMMT Gemma kullanım şartlarına, Gemma 4 ve Hy-MT2 Apache 2.0, OPUS-MT CC-BY 4.0, NLLB CC-BY-NC 4.0 (ticari olmayan) lisansına tabidir.</p>` : ""}`);
 }
 
 function renderModels() {
   renderLlm();
-  const info = {
-    opus: ["OPUS-MT · İngilizce → Türkçe", "~450 MB, çok hızlı. Lisans: CC-BY 4.0."],
-    nllb: ["NLLB-200 · 600M · çok dilli", "200 dil. Lisans: CC-BY-NC 4.0 (ticari olmayan kullanım)."],
-  };
+  // PyTorch ve CUDA yalnızca eski (PyTorch biçimli) OPUS-MT / NLLB kurulumları içindir; yeni indirmeler CTranslate2
+  // ile çalışır. Bu bölüm yalnızca eski biçimde kurulu bir model varsa gösterilir.
+  const classic = ["opus", "nllb"].some((k) => (S.models[k] || {}).is_ready && (S.models[k] || {}).backend === "torch");
   const rt = S.models.runtime || { ready: true };
-  $("#runtimePanel").classList.toggle("hidden", !!rt.ready);
-  if (!rt.ready) $("#runtimePanel").innerHTML = `
-    <div class="panel-head"><div><div class="panel-title">Yerel model ortamı kurulu değil</div>
-      <p class="panel-desc">OPUS-MT ve NLLB için PyTorch gerekir (NVIDIA kartta ≈2,9 GB, kartsız ≈260 MB). Bulut motorları ve ekran çevirisi bunsuz da çalışır.</p></div>
-      <span class="pill warn">Eksik: ${esc((rt.missing || []).slice(0, 3).join(", "))}${(rt.missing || []).length > 3 ? "…" : ""}</span></div>
-    <div class="row-actions"><button class="btn lime" data-action="install-runtime" ${S.busy ? "disabled" : ""}>${icon("download")}Ortamı kur</button>
-      <span class="status-msg">Model indirirken de otomatik önerilir.</span></div>`;
-  const links = { opus: "https://huggingface.co/Helsinki-NLP/opus-mt-tc-big-en-tr", nllb: "https://huggingface.co/facebook/nllb-200-distilled-600M" };
-  $("#modelPanels").innerHTML = ["opus", "nllb"].map((k) => {
-    const m = S.models[k] || {};
-    const pct = m.expected_mb ? Math.min(100, (m.size_mb / m.expected_mb) * 100) : 0;
-    return `<div class="panel">
-      <div class="panel-head"><div><div class="panel-title">${info[k][0]}</div><p class="panel-desc">${info[k][1]}</p></div>
-        <div class="chips" style="margin:0">${m.compact ? '<span class="pill lime">fp16 · küçültülmüş</span>' : ""}<span class="pill ${m.is_ready ? "ok" : "warn"}">${m.is_ready ? "Hazır" : "Eksik"}</span></div></div>
-      <div class="model-meter"><div class="bar"><i style="width:${pct}%"></i></div>
-        <div class="line"><span>${fmt(m.present_count)}/${fmt(m.total_files)} dosya</span><span class="num">${fmt(m.size_mb)} / ${fmt(m.expected_mb)} MB</span></div></div>
-      <div class="path selectable">${esc(m.dir || "")}</div>
-      <div class="row-actions">
-        <button class="btn ${m.is_ready ? "" : "lime"}" data-action="download-model" data-id="${k}" ${S.busy ? "disabled" : ""}>${icon("download")}${m.is_ready ? "Doğrula" : "İndir"}</button>
-        ${m.is_ready && !m.compact ? `<button class="btn" data-action="compact-model" data-id="${k}" ${S.busy ? "disabled" : ""}>${icon("zap")}Küçült (fp16)</button>` : ""}
-        <button class="btn" data-action="open-path" data-path="${esc(m.dir || "")}">${icon("folder")}Klasörü aç</button>
-        <button class="btn" data-action="open-url" data-path="${links[k]}">${icon("globe")}Model sayfası</button>
-      </div></div>`;
-  }).join("");
+  $("#classicHead").classList.toggle("hidden", !classic);
+  $("#gpuPanel").classList.toggle("hidden", !classic);
+  $("#runtimePanel").classList.toggle("hidden", !classic || !!rt.ready);
+  if (classic && !rt.ready) $("#runtimePanel").innerHTML = `
+    <div class="panel-head"><div><div class="panel-title">OPUS-MT ve NLLB için PyTorch kurulu değil</div>
+      <p class="panel-desc">Bu iki eski model PyTorch ile çalışır (NVIDIA kartta ≈2,9 GB, kartsız ≈260 MB). Kitaplıktaki diğer modellerin buna ihtiyacı yok: kendi küçük çalışma ortamlarıyla (37 MB) ekran kartında çalışırlar.</p></div>
+      <span class="pill warn">PyTorch eksik</span></div>
+    <div class="row-actions"><button class="btn lime" data-action="install-runtime" ${S.busy ? "disabled" : ""}>${icon("download")}PyTorch'u kur</button>
+      <span class="status-msg">Yalnızca OPUS-MT ya da NLLB'yi kullanacaksan gerekir.</span></div>`;
+  setHtml($("#modelPanels"), "");   // OPUS-MT ve NLLB yerel model kitaplığında
 }
 
 /* ── Metin çevirici ────────────────────────────────────────────────── */
@@ -1102,7 +1246,7 @@ async function runTranslate(force) {
 function renderGpu() {
   const g = S.gpuOpt;
   const cuda = S.gpu && S.gpu.cuda;
-  const chip = !cuda ? `<span class="pill warn">${S.gpu && S.gpu.runtime === false ? "Yerel ortam gerekli" : "CUDA yok"}</span>`
+  const chip = !cuda ? `<span class="pill warn">${S.gpu && S.gpu.runtime === false ? "PyTorch gerekli" : "CUDA yok"}</span>`
     : S.gpuBusy ? '<span class="pill warn">Hazırlanıyor…</span>'
     : g && g.ok ? '<span class="pill ok">Hazır · optimize edildi</span>' : '<span class="pill">Optimize edilmedi</span>';
   const metric = (v, l) => `<div class="gpu-metric"><b>${v}</b><span>${l}</span></div>`;
@@ -1113,10 +1257,10 @@ function renderGpu() {
       ${metric(g.preload ? `${esc(g.preload.replace(" (çevrimdışı)", ""))}` : "—", g.preload ? `VRAM'de hazır · ${fmt(g.preload_ms)} ms` : "Ön yüklenen model")}
     </div>` : "";
   $("#gpuPanel").innerHTML = `
-    <div class="panel-head"><div><div class="panel-title">GPU hızlandırma (CUDA)</div>
+    <div class="panel-head"><div><div class="panel-title">OPUS-MT ve NLLB hızlandırma (CUDA)</div>
       <p class="panel-desc">${esc(S.gpu ? `${S.gpu.name}${S.gpu.detail ? " · " + S.gpu.detail : ""}` : "")}</p></div>${chip}</div>
     ${metrics}
-    <div class="why">İlk çevirideki 1-3 saniyelik beklemeyi önler: ekran kartını hazırlar ve seçili OPUS/NLLB modelini belleğe yükler. Bulut motorlarını etkilemez.</div>
+    <div class="why">OPUS-MT ve NLLB'nin ilk çevirideki 1-3 saniyelik beklemesini önler: ekran kartını hazırlar ve seçili modeli belleğe yükler. Diğer yerel modelleri ve bulut motorlarını etkilemez.</div>
     <div class="row-actions">
       <button class="btn lime" data-action="gpu-optimize" ${!cuda || S.gpuBusy ? "disabled" : ""}>${icon("zap")}Şimdi optimize et</button>
       <label class="tx-auto"><span class="switch"><input type="checkbox" id="gpuAuto" ${S.settings.gpu_auto ? "checked" : ""}><i></i></span>Yerel motor seçiliyse açılışta hazırla</label>
@@ -1150,6 +1294,7 @@ function renderOcr() {
   $("#ocrInterval").value = S.settings.ocr_interval || 350;
   $("#ocrIntervalVal").textContent = `${S.settings.ocr_interval || 350} ms`;
   $$("#ocrPlace button").forEach((b) => b.classList.toggle("on", b.dataset.place === (S.settings.ocr_place || "below")));
+  $("#ocrSpeakToggle").checked = !!S.settings.ocr_speak;
   $("#ocrState").className = `pill ${o.available ? "ok" : "warn"}`;
   $("#ocrState").textContent = o.available ? (o.pin_active ? "Canlı çeviri açık" : "Hazır") : "Kullanılamıyor";
   const hk = o.hotkeys || {};
@@ -1431,6 +1576,12 @@ document.addEventListener("click", async (ev) => {
       buildSlides(); renderHero(); renderLibraries();
       break;
     case "scan-now": call("scan_games", true); break;
+    case "queue-toggle": S.queueOpen = !S.queueOpen || !!((S.queue || {}).items || []).length; renderQueue(); break;
+    case "queue-add": ev.stopPropagation(); { const q = await call(inQueue(path) ? "queue_remove" : "queue_add", inQueue(path) ? path : [path]); if (q) HANDLERS.queue(q); } break;
+    case "queue-add-pending": { const q = await call("queue_add", S.projects.filter((p) => p.status !== "translated").map((p) => p.path)); if (q) HANDLERS.queue(q); break; }
+    case "queue-remove": { const q = await call("queue_remove", path); if (q) HANDLERS.queue(q); break; }
+    case "queue-clear": { const q = await call("queue_clear"); if (q) { setQueue(q); renderQueue(); syncQueueButtons(); } break; }
+    case "queue-start": call("queue_start"); break;
     case "play-game": call("play_game"); break;
     case "glossary-export": call("glossary_export", S.glossary.kind, S.glossary.rows); break;
     case "glossary-import": {
@@ -1468,6 +1619,10 @@ document.addEventListener("click", async (ev) => {
     case "default-provider": saveProviders(S.provSel); break;
     case "download-model": call("download_model", el.dataset.id); break;
     case "llm-download": call("download_local_model", el.dataset.id); break;
+    case "llm-all": S.llmAll = !S.llmAll; renderLlm(); break;
+    case "tour": showPage("studio"); startTour(el.dataset.which || "intro"); break;
+    case "page-tour": startTour(el.dataset.which); break;
+    case "classic-use": await updateSettings({ model: el.dataset.id }); renderModels(); renderProviders(); break;
     case "llm-use": await updateSettings({ model: "local", local_model: el.dataset.id }); renderModels(); renderProviders(); break;
     case "engine-use": await updateSettings(el.dataset.engine === "local" ? { model: "local", local_model: el.dataset.id } : { model: el.dataset.engine });
       renderModels(); renderProviders(); break;
@@ -1500,6 +1655,7 @@ document.addEventListener("click", async (ev) => {
     case "save-diagnostics": call("save_diagnostics"); break;
     case "ocr-history-clear": await call("ocr_history_clear"); S.ocrHistory = []; renderOcrHistory(); break;
     case "fix-runtime": call("repair_runtime_errors"); break;
+    case "reapply": startTranslate(); break;
     case "copy-log": navigator.clipboard.writeText(S.log.map((e) => `[${e.time}] ${e.text}`).join("\n")).then(() => toast({ title: "Günlük panoya kopyalandı", tone: "ok" })); break;
     case "clear-log": S.log = []; renderDrawer(); break;
     case "clear-notifs": S.notifs = []; renderDrawer(); break;
@@ -1554,6 +1710,10 @@ $("#editorBody").addEventListener("click", async (ev) => {
   if (btn.id === "edApply") {
     if (Object.keys(ed.dirty).length) { toast({ title: "Önce değişiklikleri kaydet", tone: "warn" }); return; }
     call("editor_apply", ed.model);
+  }
+  if (btn.id === "edFix") {
+    if (Object.keys(ed.dirty).length) { toast({ title: "Önce değişiklikleri kaydet", tone: "warn" }); return; }
+    call("editor_fix_review", ed.model);
   }
 });
 
@@ -1667,6 +1827,8 @@ $("#compileToggle").addEventListener("change", (e) => updateSettings({ renpy_com
 $("#soundToggle").addEventListener("change", (e) => updateSettings({ sound: e.target.checked }));
 $("#notifyToggle").addEventListener("change", (e) => updateSettings({ notify: e.target.checked }));
 $("#memoryToggle").addEventListener("change", (e) => updateSettings({ memory: e.target.checked }));
+$("#namesToggle").addEventListener("change", (e) => updateSettings({ auto_names: e.target.checked }));
+$("#ocrSpeakToggle").addEventListener("change", (e) => updateSettings({ ocr_speak: e.target.checked }));
 $("#updateBtn").addEventListener("click", () => openUpdate(!(S.update && S.update.available)));
 
 const search = $("#searchInput");
@@ -1719,3 +1881,324 @@ async function handleDropped(paths) {
 
 window.addEventListener("pywebviewready", () => boot(window.pywebview.api));
 if (window.pywebview && window.pywebview.api) boot(window.pywebview.api);
+
+/* ── Turlar: ilk açılışta tanıtım, ilk oyun analiz edilince çeviri adımları (birer kez; Rehber'den yeniden açılır) ── */
+const TOURS = {
+  intro: { flag: "tour_done", steps: [
+    [null, "Capri'ye hoş geldin", "Capri oyunları Türkçeye (ve başka dillere) çeviren bir araç. Bir dakikada neyin nerede olduğunu gösterelim."],
+    ['.toplinks [data-action="pick"]', "Oyun ekle", "Oyunun klasörünü seç. Capri oyunun motorunu kendisi tanır ve çevrilecek metinleri bulur."],
+    ['.nav[data-page="studio"]', "Stüdyo", "Seçili oyunun özeti: kaç satır var, ne kadar sürer. “Çeviriyi başlat” önce yedek alır, sonra çevirir."],
+    ['.nav[data-page="library"]', "Kütüphane", "Eklediğin bütün oyunlar. Birkaç oyunu sıraya ekleyip teker teker çevirtebilirsin."],
+    ['.nav[data-page="editor"]', "Çeviri Editörü", "Çevirileri satır satır okuyup düzeltirsin. Sorunlu olabilecek satırlar turuncu işaretlenir."],
+    ['.nav[data-page="backups"]', "Yedekler", "Her çeviriden önce oyunun orijinal dosyaları saklanır; tek tıkla eski hâline dönersin."],
+    ['.nav[data-page="providers"]', "Sağlayıcılar", "Çeviriyi yapan yapay zekâyı seçtiğin yer. Gemini, OpenAI gibi bulut motorları için API anahtarı eklenir."],
+    ['.nav[data-page="models"]', "Yerel Modeller", "İnternetsiz ve ücretsiz çeviri. Bilgisayarına önerilen modeli indirip “Kullan” demen yeterli."],
+    ['.nav[data-page="ocr"]', "Ekran Çevirisi", "Dosyası çevrilemeyen oyunlarda ekrandaki yazıyı okuyup anında çevirir. Kısayol: Ctrl+Shift+T."],
+    [".engine-card", "Aktif motor", "Şu an hangi motorla çevrildiğini ve hazır olup olmadığını buradan görürsün."],
+    [null, "Hazırsın", "İlk oyununu ekleyerek başlayabilirsin. Bu turu istediğin zaman Rehber sayfasından yeniden açabilirsin."],
+  ] },
+  game: { flag: "game_tour_done", page: "studio", steps: [
+    ["#heroTitle", "Oyunun hazır", "Capri oyunu tanıdı ve metinlerini taradı. Şimdi çeviriye geçmeden önce birkaç şeye bakalım."],
+    ["#analysisPanel", "Analiz", "Kaç satır çevrileceği, tahmini süre ve maliyet burada. Font ya da şifreli dosya gibi bir sorun varsa uyarısı da burada çıkar."],
+    ["#targetSelect", "Diller", "Hedef dil Türkçe seçili. Kaynak dili çoğu zaman olduğu gibi bırakabilirsin; Capri kendisi algılar."],
+    ["#modelSelect", "Çeviri motoru", "Çeviriyi yapacak yapay zekâ. Anahtarın yoksa Yerel Modeller sayfasından internetsiz bir model indirip burada seçebilirsin."],
+    [() => $("#backupToggle") && $("#backupToggle").closest(".opt"), "Yedek", "Açık kalsın: çeviriden önce oyunun değişecek dosyaları saklanır, beğenmezsen tek tıkla geri dönersin."],
+    [() => $("#qualityToggle") && $("#qualityToggle").closest(".opt"), "Kalite editörü", "İstersen açabilirsin: çeviri bitince İngilizce kalan ya da yapay duran satırları bir sohbet modeli yeniden düzeltir."],
+    ['#heroActions [data-action="translate"]', "Çeviriyi başlat", "Hazır olunca bu düğmeye bas. İlerleme burada görünür; durdurursan kaldığı yerden, yeniden ödemeden devam eder."],
+    ['.nav[data-page="editor"]', "Bittikten sonra", "Çeviri Editörü'nde satırları okuyup düzeltebilir, değişiklikleri oyuna uygulayabilirsin."],
+    ['.nav[data-page="backups"]', "Geri dönmek istersen", "Yedekler sayfasından oyunu tek tıkla orijinal hâline döndürürsün. İyi çeviriler!"],
+  ] },
+};
+const TOUR = TOURS.intro.steps;
+
+/* Turların maskotu: Capri (kullanıcının çizdiği çıkartmalar, web/mascot/*.webp). Her adımda anlatılana uyan bir poz,
+   her tıklamada başka bir giriş efekti ve küçük bir kıvılcım patlaması; başının üstünde kısa bir söz balonu.
+   Maskota tıklanınca pozu değişir. */
+const MASCOT_SAY = {
+  selam: "Selam!", bak: "Şuraya bak!", nasil: "Nasıl yapılır?", cevirelim: "Çevirelim!", dikkat: "Dikkat!",
+  bekle: "Bekle...", sorun: "Sorun mu var?", calisiyor: "Çalışıyor...", ayarlar: "Ayarlar!", basardik: "Başardık!",
+  oyun: "Hadi ekleyelim!", sunum: "Burası merkez!", kutular: "Hepsi burada!", kalem: "Düzeltelim!", kalkan: "Güvende!",
+  fis: "Bağlanalım!", cip: "Kendi bilgisayarında!", kadraj: "Alanı seç!", zipla: "Hadi başla!", buyutec: "İnceleyelim!",
+  dunya: "Hangi dil?", dugme: "Başlıyoruz!", geri: "Geri alırız!", liste: "Sıraya koy!", durbun: "Buldum!",
+  paket: "Paketledim!", ampul: "Bir ipucu!", anahtar: "Anahtar lazım!", dosya: "Dosyayı ver!", saat: "Hepsi kayıtlı!",
+};
+// Adım başlığına göre poz ("tur:başlık" önce, sonra yalnız başlık); listede olmayan adımlarda kurallar devreye girer
+const MASCOT_STEP = {
+  "Capri'ye hoş geldin": "selam", "Oyun ekle": "oyun", "Stüdyo": "sunum", "Kütüphane": "kutular",
+  "Çeviri Editörü": "kalem", "Yedekler": "kalkan", "Sağlayıcılar": "fis", "Yerel Modeller": "cip",
+  "Ekran Çevirisi": "kadraj", "Aktif motor": "ayarlar", "Hazırsın": "zipla",
+  "Oyunun hazır": "oyun", "Analiz": "buyutec", "Diller": "dunya", "Çeviri motoru": "fis", "Yedek": "kalkan",
+  "Kalite editörü": "kalem", "Çeviriyi başlat": "dugme", "Bittikten sonra": "nasil", "Geri dönmek istersen": "geri",
+  "Toplu çeviri": "liste", "Oyun tarama": "durbun", "Turuncu satırlar": "buyutec", "Yama ve tablo": "paket",
+  "Geri yükleme": "geri", "Sözlük": "nasil", "Nasıl çalışır?": "cevirelim", "İpucu": "ampul",
+  "Dosya Çevirici": "dosya", "Anahtar ve test": "anahtar", "Senin bilgisayarın için önerilen": "bak",
+  "Tüm modeller": "liste", "Metin Çevirici": "cevirelim", "Geçmiş": "saat",
+  "editor:Nasıl kullanılır?": "nasil", "ocr:Nasıl kullanılır?": "calisiyor",
+};
+const MASCOT_W = 180, MASCOT_H = 190;
+const MASCOT_FX = ["fx-bounce", "fx-spin", "fx-slide", "fx-jelly", "fx-drop", "fx-wiggle"];
+// Poz: önce adımın başlığı, hedef yoksa metni kurala uyar; hedefli adımda kural yoksa "bak". Aynı adım yeniden
+// çizilince poz değişmez, art arda iki adımda aynı poz olmaz.
+const MASCOT_RULES = [
+  [/yedek|geri d[öo]n|orijinal|hata|başarısız/i, "sorun"],
+  [/editör|düzelt|nasıl|adım|rehber|sözlük|terim/i, "nasil"],
+  [/anahtar|sağlayıcı|kısayol|ayar|hızlandır|kitaplı|model/i, "ayarlar"],
+  [/analiz|tara|sıra|toplu|bekle/i, "bekle"],
+  [/ekran çevirisi|canlı|anında|sabit|izlen|geçmiş/i, "calisiyor"],
+  [/çevir|türkçe|dil/i, "cevirelim"],
+  [/dikkat|önemli|uyarı|unutma|ücret/i, "dikkat"],
+];
+
+function mascotPose(step, first, last, target) {
+  const key = `${S.tourName}:${S.tour}`;
+  if (S.mascotKey === key && S.mascotPose) return S.mascotPose;
+  const rule = (text) => (MASCOT_RULES.find(([re]) => re.test(text)) || [])[1];
+  let pose = MASCOT_STEP[`${S.tourName}:${step[1]}`] || MASCOT_STEP[step[1]];
+  if (!pose) {
+    pose = first && !target ? "selam" : last && !target ? "basardik"
+      : rule(step[1]) || (target ? "bak" : rule(step[2]) || "dikkat");
+    if (pose === S.mascotPrev) pose = pose === "bak" ? "dikkat" : "bak";
+  }
+  S.mascotKey = key; S.mascotPose = pose;
+  return pose;
+}
+
+function mascotBurst(m) {
+  const colors = ["var(--lime)", "#5ff4ff", "#ffd84d", "#fff"];
+  let html = "";
+  for (let i = 0; i < 10; i++) {
+    const ang = (i / 10) * Math.PI * 2 + Math.random() * 0.5, d = 38 + Math.random() * 30;
+    html += `<i class="m-spark" style="--dx:${Math.cos(ang) * d}px;--dy:${Math.sin(ang) * d}px;background:${colors[i % 4]};`
+      + `animation-delay:${Math.random() * 60}ms"></i>`;
+  }
+  const box = document.createElement("div");
+  box.className = "m-burst";
+  box.innerHTML = html;
+  m.appendChild(box);
+  setTimeout(() => box.remove(), 800);
+}
+
+function setMascotPose(m, pose, flip) {
+  if (m.dataset.pose !== pose) {
+    m.querySelector(".m-img").src = `mascot/${pose}.webp`;
+    m.querySelector(".m-say").textContent = MASCOT_SAY[pose];
+    m.dataset.pose = pose;
+  }
+  m.classList.toggle("flip", !!flip);
+  S.mascotPrev = pose;
+}
+
+function playMascotFx(m) {
+  const fig = m.querySelector(".m-fig"), say = m.querySelector(".m-say");
+  S.mascotFx = ((S.mascotFx ?? -1) + 1) % MASCOT_FX.length;
+  fig.classList.remove(...MASCOT_FX);
+  say.classList.remove("in");
+  void fig.offsetWidth;
+  fig.classList.add(MASCOT_FX[S.mascotFx]);
+  say.classList.add("in");
+  mascotBurst(m);
+}
+
+function placeMascot(c, t, follow, pose) {
+  let m = $("#tourMascot");
+  if (!m) {
+    $("#tour").insertAdjacentHTML("beforeend", `<div class="mascot" id="tourMascot" data-tour="mascot" title="Capri">
+      <div class="m-fig"><img class="m-img" alt="" draggable="false"></div><div class="m-say"></div></div>`);
+    m = $("#tourMascot");
+  }
+  const W = MASCOT_W, H = MASCOT_H;
+  let mx, my, flip = false;
+  if (!t) {                                         // karşılama/bitiş: kartın üstünde durur
+    mx = c.left + c.width / 2 - W / 2; my = c.top - H + 22;
+  } else {
+    const tx = t.left + t.width / 2;
+    // Aday yerler: kartın üst köşesi (hedef tarafı), öbür köşe, kartın yanları; hedefi örtmeyen ve ekrana sığan ilki
+    const towardLeft = tx < c.left + c.width / 2;
+    const cands = [
+      [towardLeft ? c.left - W * 0.55 : c.right - W * 0.45, c.top - H * 0.82],
+      [towardLeft ? c.right - W * 0.45 : c.left - W * 0.55, c.top - H * 0.82],
+      [c.right - W * 0.1, c.bottom - H * 0.95],
+      [c.left - W * 0.9, c.bottom - H * 0.95],
+    ];
+    const pad = 6;
+    const fits = ([x, y]) => x >= 0 && y >= 44 && x + W <= innerWidth && y + H <= innerHeight;
+    const covers = ([x, y]) => x + W * 0.15 < t.right + pad && x + W * 0.85 > t.left - pad && y + H * 0.1 < t.bottom + pad && y + H > t.top - pad;
+    [mx, my] = cands.find((p) => fits(p) && !covers(p)) || cands.find(fits) || cands[0];
+    my = Math.max(44, my);
+    flip = pose === "bak" && tx < mx + W / 2;       // yalnızca işaret eden poz hedefe döner (yazılı pozlar aynalanmaz)
+  }
+  Object.assign(m.style, { left: `${mx}px`, top: `${my}px` });
+  setMascotPose(m, pose, flip);
+  if (!follow) playMascotFx(m);
+}
+
+function preloadMascot() {
+  if (S.mascotLoaded) return;
+  S.mascotLoaded = Object.keys(MASCOT_SAY).map((k) => { const i = new Image(); i.src = `mascot/${k}.webp`; return i; });
+}
+
+function startTour(name = "intro") {
+  S.tourName = name;
+  S.tour = 0;
+  S.mascotPrev = S.mascotKey = S.mascotPose = null;
+  preloadMascot();
+  if (TOURS[name].page) showPage(TOURS[name].page);
+  if (!$("#tour")) document.body.insertAdjacentHTML("beforeend",
+    `<div id="tour" class="tour"><div class="tour-spot" id="tourSpot"></div><div class="tour-card" id="tourCard"></div></div>`);
+  renderTour();
+}
+
+function endTour() {
+  const name = S.tourName || "intro";
+  const flag = TOURS[name].flag;
+  S.tour = null;
+  const el = $("#tour");
+  if (el) el.remove();
+  if (flag) { if (!S.settings[flag]) updateSettings({ [flag]: true }); return; }
+  const seen = S.settings.tours_seen || [];          // sayfa turu: bir daha kendiliğinden açılmaz
+  if (!seen.includes(name)) updateSettings({ tours_seen: [...seen, name] });
+}
+
+function tourTarget(selector) {
+  const el = typeof selector === "function" ? selector() : selector ? $(selector) : null;
+  return el && el.getClientRects().length ? el : null;
+}
+
+function renderTour(follow = false) {   // follow: kaydırma/boyut değişimi; yalnızca yeniden konumlandır
+  const box = $("#tour");
+  if (!box || S.tour == null) return;
+  const steps = TOURS[S.tourName || "intro"].steps;
+  const [selector, title, text] = steps[S.tour];
+  const target = tourTarget(selector);
+  const spot = $("#tourSpot"), card = $("#tourCard");
+  const last = S.tour === steps.length - 1;
+  card.innerHTML = `<div class="tour-step num">${fmt(S.tour + 1)} / ${fmt(steps.length)}</div>
+    <div class="tour-title">${esc(title)}</div><p class="tour-text">${esc(text)}</p>
+    <div class="tour-actions">
+      ${last ? "" : `<button class="btn tour-skip" data-tour="skip">Atla</button>`}
+      ${S.tour ? `<button class="btn" data-tour="back">Geri</button>` : ""}
+      <button class="btn lime" data-tour="next">${last ? (S.tourName === "intro" ? "Başla" : "Anladım") : "İleri"}</button></div>`;
+  if (!follow) { card.classList.remove("in"); void card.offsetWidth; card.classList.add("in"); }
+  if (!target) {
+    spot.style.display = "none";
+    box.classList.add("center");
+    card.style.left = card.style.top = "";
+    placeMascot(card.getBoundingClientRect(), null, follow,
+                follow ? $("#tourMascot")?.dataset.pose : mascotPose(steps[S.tour], S.tour === 0, last, null));
+    return;
+  }
+  box.classList.remove("center");
+  const r0 = target.getBoundingClientRect();
+  const tall = r0.height > innerHeight * 0.5;                // uzun öğe (ızgara, tablo): üstü gösterilir
+  if (!follow && (r0.top < 70 || r0.bottom > innerHeight - 20)) target.scrollIntoView({ block: tall ? "start" : "center" });
+  const rr = target.getBoundingClientRect();
+  const r = tall ? { left: rr.left, right: rr.right, width: rr.width, top: Math.max(rr.top, 80),
+                     height: Math.min(rr.height, innerHeight * 0.42), bottom: Math.max(rr.top, 80) + Math.min(rr.height, innerHeight * 0.42) } : rr;
+  Object.assign(spot.style, { display: "block", left: `${r.left - 6}px`, top: `${r.top - 6}px`, width: `${r.width + 12}px`, height: `${r.height + 12}px` });
+  const cw = card.offsetWidth || 340, ch = card.offsetHeight || 180;
+  let left = r.right + 18, top = r.top + r.height / 2 - ch / 2;
+  if (left + cw > innerWidth - 12) { left = Math.min(r.left, innerWidth - cw - 12); top = r.bottom + 14; }
+  if (top + ch > innerHeight - 12) top = Math.max(12, r.top - ch - 14);
+  left = Math.max(12, left);
+  top = Math.max(Math.round(MASCOT_H * 0.8) + 2, top);   // kartın üstünde maskota yer kalsın
+  card.style.left = `${left}px`;
+  card.style.top = `${top}px`;
+  placeMascot({ left, top, right: left + cw, bottom: top + ch, width: cw, height: ch }, r, follow,
+              follow ? $("#tourMascot")?.dataset.pose : mascotPose(steps[S.tour], S.tour === 0, last, target));
+}
+
+/* İlk oyunun analizi bitince (bir kez) çeviri adımları anlatılır; tanıtım turu sürüyorsa onun bitmesi beklenir */
+function maybeGameTour() {
+  if (S.settings.game_tour_done || S.tour != null || !S.analysis || !activeProject()) return;
+  setTimeout(() => { if (!S.settings.game_tour_done && S.tour == null && S.analysis) startTour("game"); }, 250);
+}
+
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-tour]");
+  if (!b) return;
+  const act = b.dataset.tour;
+  const steps = TOURS[S.tourName || "intro"].steps;
+  if (act === "skip") return endTour();
+  if (act === "mascot") {                           // maskota tıklama: başka poz ve efekt
+    const m = $("#tourMascot"), keys = Object.keys(MASCOT_SAY);
+    S.mascotPose = keys[(keys.indexOf(m.dataset.pose) + 1) % keys.length];
+    setMascotPose(m, S.mascotPose, false);
+    return playMascotFx(m);
+  }
+  if (act === "back") S.tour = Math.max(0, S.tour - 1);
+  if (act === "next") { if (S.tour >= steps.length - 1) return endTour(); S.tour += 1; }
+  renderTour();
+});
+document.addEventListener("keydown", (e) => { if (S.tour != null && e.key === "Escape") endTour(); });
+addEventListener("resize", () => renderTour(true));
+$("#scroll").addEventListener("scroll", () => { if (S.tour != null) renderTour(true); }, { passive: true });
+// Tur katmanı arkadaki menüleri kilitler; tekerlek yine sayfayı kaydırır (başlık çubuğu katmanın dışında kalır)
+document.addEventListener("wheel", (e) => {
+  if (S.tour == null || !e.target.closest("#tour")) return;
+  $("#scroll").scrollBy({ top: e.deltaY, left: e.deltaX });
+}, { passive: true });
+
+/* ── Sayfa turları: bir sayfaya ilk girişte o sayfanın önemli öğeleri kısaca gösterilir (Atla / Geri / İleri).
+   Başlığın yanındaki "?" düğmesi turu yeniden açar. Gösterilenler ayarlarda (tours_seen) tutulur. ─────────── */
+const PAGE_TOURS = {
+  library: [
+    ["#fullLibrary", "Kütüphane", "Kütüphane eklediğin bütün oyunları gösterir. Bir karta tıklayınca o oyun Stüdyo'da açılır."],
+    ['#page-library [data-action="queue-toggle"]', "Toplu çeviri", "Kartın köşesindeki oynat düğmesi oyunu toplu çeviri sırasına ekler; sıradaki oyunlar sen başka işle uğraşırken teker teker çevrilir."],
+    ["#scanPanel", "Oyun tarama", "Capri bilgisayarındaki oyun klasörlerini de tarayıp bulduklarını önerir; tek tıkla eklersin."],
+  ],
+  editor: [
+    ["#editorBody", "Çeviri Editörü", "Çeviri Editörü yapılmış çevirileri satır satır gösterir: solda orijinal, sağda çeviri. Bir satıra tıklayıp düzeltebilirsin."],
+    ["#editorBody", "Turuncu satırlar", "Turuncu satırlar incelenmeli: çevrilmemiş, etiketi bozuk, terimi eksik ya da metin kutusuna sığmayabilecek satırlar. Nedeni satırın yanında yazar."],
+    ["#editorBody", "Nasıl kullanılır?", "Düzeltmelerini “Oyuna uygula” ile yaz; bu işlem API harcamaz. “İncelenmelileri düzelt” turuncu satırları bir sohbet modeline toplu düzelttirir."],
+    ['#page-editor [data-action="export-patch"]', "Yama ve tablo", "Çevirini yama dosyası (.capripatch) ya da tablo (CSV) olarak dışa aktarıp paylaşabilir, başkasının yamasını içe aktarabilirsin."],
+  ],
+  backups: [
+    ["#backupList", "Yedekler", "Capri her çeviriden önce oyunun değişecek dosyalarını yedekler. Yedekler burada tarih sırasıyla listelenir."],
+    ["#backupList", "Geri yükleme", "Bir yedeği geri yüklemek oyunu çeviriden önceki hâline döndürür; Capri'nin oyuna eklediği yama dosyaları da silinir."],
+  ],
+  glossary: [
+    ["#glossaryTabs", "Sözlük", "Sözlük, belirli kelime ve cümlelerin her zaman aynı şekilde çevrilmesini sağlar: menü yazıları, karakter adları, oyun terimleri."],
+    ["#glossaryTable", "Nasıl çalışır?", "Bir satır sözlükteki metinle birebir aynıysa yapay zekâya sorulmadan buradaki karşılığı kullanılır; terimler de çevirilerde korunur."],
+    ["#glossaryAdd", "İpucu", "Çevrilmemesi gereken bir adı (ör. karakter adı) karşılığına da aynısını yazarak ekle."],
+  ],
+  json: [
+    ['#page-json [data-action="json-file"]', "Dosya Çevirici", "Dosya Çevirici, kendi motorunu kullanan oyunların dil dosyalarını (JSON) ve .srt / .vtt / .ass altyazıları çevirir."],
+    ['#page-json [data-action="json-run"]', "Nasıl çalışır?", "Anahtarlar, zaman kodları ve biçim etiketleri olduğu gibi kalır, yalnızca metinler çevrilir. Orijinal dosyaya dokunulmaz; çeviri sonuna “_tr” eklenmiş yeni bir dosyaya yazılır."],
+  ],
+  providers: [
+    ["#providerGrid", "Sağlayıcılar", "Sağlayıcılar, çeviriyi yapacak yapay zekâyı seçtiğin yer. Bulut motorları (Gemini, OpenAI, Claude, DeepSeek…) için sağlayıcının sitesinden aldığın API anahtarını buraya yapıştırırsın."],
+    ["#providerDetail", "Anahtar ve test", "“Varsayılan yap” seçtiğin motoru bütün çevirilerde kullanır; “Bağlantıyı test et” anahtarın çalışıp çalışmadığını gösterir. Anahtarlar Windows'ta şifreli saklanır."],
+    ["#providerGrid", "İpucu", "Ücretsiz başlamak için Gemini'nin ücretsiz anahtarı ya da Yerel Modeller sayfasındaki internetsiz modeller yeterli."],
+  ],
+  models: [
+    ["#llmPanel", "Yerel Modeller", "Yerel model, çeviriyi senin bilgisayarında yapan yapay zekâdır: internet, API anahtarı ya da ücret gerekmez, metinler bilgisayarından çıkmaz."],
+    [".llm-card.big", "Senin bilgisayarın için önerilen", "\"Senin bilgisayarın için önerilen\" kartındaki modeli indir ve \"Kullan\"a bas; oyun çevirisi, metin çevirici ve ekran çevirisi bu modeli kullanır. Bilgisayarın zayıfsa Hafif gruptan, güçlü bir ekran kartın varsa Ağır gruptan seç."],
+    [".llm-toggle", "Tüm modeller", "Bütün modelleri puanları, gereksinimleri ve hızlarıyla görmek için bu düğmeye bas."],
+  ],
+  translator: [
+    ["#txInput", "Metin Çevirici", "Metin Çevirici oyundan bağımsız, hızlı çeviri içindir: metni yaz ya da yapıştır, seçili motorla anında çevrilsin."],
+    ["#txHistory", "Geçmiş", "Oyun etiketleri ({isim}, \\C[2] gibi) korunur. Son çevirilerin altta geçmiş olarak durur; birine tıklayınca yeniden açılır."],
+  ],
+  ocr: [
+    ['#page-ocr [data-action="ocr-once"]', "Ekran Çevirisi", "Ekran Çevirisi, dosyası çevrilemeyen oyunlar içindir: ekrandaki yazıyı okur (OCR) ve çevirisini hemen yanında gösterir."],
+    ['#page-ocr [data-action="ocr-pin"]', "Nasıl kullanılır?", "Kısayola bas (varsayılan Ctrl+Shift+T) ve çevrilecek alanı fareyle seç. Sabit modda seçtiğin alan izlenir, metin değiştikçe kendiliğinden çevrilir."],
+    [() => $("#ocrSpeakToggle") && $("#ocrSpeakToggle").closest("label"), "İpucu", "Sesli okumayı açarsan çeviriler sesli de okunur."],
+  ],
+};
+for (const [page, steps] of Object.entries(PAGE_TOURS)) TOURS[page] = { page, steps, seen: true };
+
+/* Sayfa başlığının yanına küçük "?" düğmesi: o sayfanın turunu yeniden açar */
+function renderTourButtons() {
+  for (const page of Object.keys(PAGE_TOURS)) {
+    const title = $(`#page-${page} .section-title`);   // başlık metni yeniden yazılabildiği için düğme yanına konur
+    if (!title || (title.nextElementSibling && title.nextElementSibling.classList.contains("tour-help"))) continue;
+    title.insertAdjacentHTML("afterend", `<button class="sq tour-help" data-action="page-tour" data-which="${page}" title="Bu sayfayı tanıt">?</button>`);
+  }
+}
+
+/* İlk girişte (tanıtım turu bittikten sonra, başka tur açık değilken) bir kez */
+function maybePageTour(page) {
+  if (!PAGE_TOURS[page] || !S.settings.tour_done || S.tour != null) return;
+  if ((S.settings.tours_seen || []).includes(page)) return;
+  setTimeout(() => { if (S.tour == null && $(`#page-${page}`).classList.contains("active")) startTour(page); }, 0);
+}

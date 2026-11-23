@@ -20,17 +20,20 @@
     </div>
     <div class="foot">
       <span class="meta" id="meta"></span>
+      <button class="btn" id="speak" title="Sesli oku"><svg class="i" viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11"/></svg>Oku</button>
       <button class="btn" id="copy"><svg class="i" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg>Kopyala</button>
       <button class="btn lime" id="pin" title="Bu alanı canlı çeviri için sabitle"><svg class="i" viewBox="0 0 24 24"><path d="M12 17v5M9 3h6l-1 6 4 4H6l4-4z"/></svg>Sabitle</button>
     </div>
   </div>
   <script src="i18n.js"></script>
+  <script src="speech.js"></script>
   <script>
     "use strict";
     const $ = (s) => document.querySelector(s);
     const api = () => window.pywebview && window.pywebview.api;
     const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
     let lastText = "";
+    let metaText = "";
 
     function fit() {
       requestAnimationFrame(() => api() && api().ocr_resize("popup", Math.ceil($("#card").scrollHeight)));
@@ -45,19 +48,26 @@
         else if (d.state === "empty") $("#content").innerHTML = `<div class="err">Bu alanda okunabilir metin bulunamadı.</div>`;
         else if (d.state === "error") $("#content").innerHTML = `<div class="err">${esc(d.error)}</div>`;
         else $("#content").innerHTML = `<div class="tr selectable">${esc(d.translation)}</div>`;
-        lastText = d.translation || "";
-        $("#meta").textContent = d.meta || "";
+        lastText = d.state === "ok" ? (d.translation || "") : "";
+        metaText = d.meta || "";
+        $("#meta").textContent = metaText;
         $("#copy").disabled = !lastText;
+        $("#speak").disabled = !lastText;
+        if (d.lang) CapriSpeech.setLang(d.lang);
+        if (d.speak && lastText) CapriSpeech.speak(lastText, true);
         fit();
       },
     };
-    $("#close").addEventListener("click", () => api().ocr_hide("popup"));
+    $("#close").addEventListener("click", () => { CapriSpeech.stop(); api().ocr_hide("popup"); });
+    $("#speak").addEventListener("click", () => {
+      if (!CapriSpeech.speak(lastText, true)) { $("#meta").textContent = I18N.t(CapriSpeech.missingHint()); fit(); }
+    });
     $("#pin").addEventListener("click", () => api().ocr_pin_last());
     $("#copy").addEventListener("click", () => navigator.clipboard.writeText(lastText).then(() => {
       $("#copy").lastChild.textContent = "Kopyalandı";
       setTimeout(() => { $("#copy").lastChild.textContent = "Kopyala"; }, 1200);
     }));
-    addEventListener("keydown", (e) => { if (e.key === "Escape") api().ocr_hide("popup"); });
+    addEventListener("keydown", (e) => { if (e.key === "Escape") { CapriSpeech.stop(); api().ocr_hide("popup"); } });
     // Arayüz dili: ana pencereyle aynı sözlük (dil değişince Python tarafı yeniden gönderir)
     const loadUiLanguage = () => api() && api().ui_dictionary && api().ui_dictionary()
       .then((r) => r && window.I18N && I18N.set(r.language, r.dict)).catch(() => {});

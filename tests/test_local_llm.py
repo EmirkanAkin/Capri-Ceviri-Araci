@@ -25,13 +25,14 @@ FAKE = Path(__file__).with_name("fake_llama_server.py")
 def test_catalog_is_pinned_and_verifiable():
     for spec in local_llm.CATALOG:
         assert re.fullmatch(r"[0-9a-f]{64}", spec["sha256"]) and re.fullmatch(r"[0-9a-f]{40}", spec["rev"]), spec["id"]
-        assert spec["file"].endswith(".gguf") and spec["size"] > 1_000_000_000 and spec["family"] in ("translategemma", "milmmt")
-        assert spec["tier"] in ("light", "heavy") and spec["vram_gb"] and spec["ram_gb"] and spec["speed"], "ölçülen hız yazılı"
+        assert spec["file"].endswith(".gguf") and spec["size"] > 1_000_000_000
+        assert spec["family"] in ("translategemma", "milmmt", "hymt", "gemma4")
+        assert spec["tier"] in local_llm.TIERS and spec["vram_gb"] and spec["ram_gb"] and spec["speed"], "ölçülen hız yazılı"
     for runtime in local_llm.RUNTIMES.values():
         assert all(re.fullmatch(r"[0-9a-f]{64}", f["sha256"]) for f in runtime["files"])
     assert set(local_llm.RUNTIMES) == {"vulkan"}, "Vulkan her ekran kartında çalışır; CUDA'nın hız farkı %10 (ölçüldü)"
-    assert local_llm.recommend(12)["model"] == "translategemma-12b" and local_llm.recommend(8)["model"] == "translategemma-4b"
-    assert local_llm.recommend(None)["model"] == "translategemma-4b"
+    for vram, tier in ((12, "heavy"), (8, "medium"), (None, "light")):
+        assert local_llm.BY_ID[local_llm.recommend(vram)["model"]]["tier"] == tier
 
 
 # ── İndirme ──────────────────────────────────────────────────────────────────
@@ -240,8 +241,9 @@ def test_recommendation_does_not_wait_for_background_gpu_detection(tmp_path, mon
     bridge = make_bridge(tmp_path, monkeypatch)
     bridge._gpu = {"name": "Algılanıyor…", "detail": "", "cuda": False}
     state = bridge.local_models()
-    assert state["vram_gb"] == 12.0 and state["recommended"]["model"] == "translategemma-12b"
-    assert [m["id"] for m in state["models"] if m["recommended"]] == ["translategemma-12b"]
+    best = local_llm.recommend(12)["model"]
+    assert state["vram_gb"] == 12.0 and state["recommended"]["model"] == best and local_llm.BY_ID[best]["tier"] == "heavy"
+    assert [m["id"] for m in state["models"] if m["recommended"]] == [best]
 
 
 def test_nested_wrapper_folders_are_detected(tmp_path):

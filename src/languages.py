@@ -78,6 +78,22 @@ def get_all_source_languages() -> List[Tuple[str, str]]:
     return res
 
 
+def speaker_note(items, speakers, target_lang_code: str = "tr") -> str:
+    """Partideki satırları kimin söylediği (liste sırası → karakter). Liste ve beklenen yanıt biçimi değişmez; model
+    yalnızca cinsiyet, hitap ve üslup için kullanır."""
+    if not speakers:
+        return ""
+    pairs = [(i, speakers[text]) for i, text in enumerate(items) if speakers.get(text)]
+    if not pairs:
+        return ""
+    listed = ", ".join(f"{i}: {name}" for i, name in pairs)
+    if target_lang_code == "tr":
+        return ("\n\nKonuşan karakterler (listedeki sıra numarası, 0'dan başlar → karakter). Hitap ve üslubu buna göre "
+                f"seç; karakter adını çeviriye ekleme: {listed}")
+    return ("\n\nSpeakers (index in the list, starting at 0 → character). Use them to choose grammatical gender, "
+            f"formality and tone; do not add the name to the translation: {listed}")
+
+
 def build_system_instruction(
     target_lang_code: str = "tr",
     source_lang_code: str = "en",

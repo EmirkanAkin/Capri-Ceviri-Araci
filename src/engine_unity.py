@@ -11,10 +11,11 @@ import re
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Union
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import UnityPy
 
+import cloud_providers
 from engine_common import (
     FontChecker,
     Glossary,
@@ -343,6 +344,8 @@ def extract_texts_unity(info: UnityGameInfo, log: LogFn = print) -> List[UnityTe
         log("StreamingAssets klasörü taranıyor...")
         for ext in ("*.tsv", "*.csv", "*.txt", "*.json"):
             for text_file in info.streaming_assets_dir.rglob(ext):
+                if text_file.parent.name == "LocalizationTables":   # Unity Localization: aşağıda ayrıca okunur
+                    continue
                 try:
                     content = text_file.read_text(encoding="utf-8", errors="ignore")
                     lines = content.splitlines()
@@ -365,6 +368,9 @@ def extract_texts_unity(info: UnityGameInfo, log: LogFn = print) -> List[UnityTe
 
     # 3. Utage senaryo kitapları ve çok dilli tablolar (sharedassets dahil; IL2CPP'de de okunur)
     items.extend(extract_asset_tables(info, log, loaded))
+
+    # 3b. Unity Localization dize tabloları (veri dosyaları ya da Addressables paketleri)
+    items.extend(extract_localization(info, log))
 
     # 4. Bileşen metinleri (PlayMaker FSM, UI Text/TMP, çok dilli XML): tek paket data.unity3d ya da başka metin yoksa.
     #    Oyunun kendi DLL'lerinden üretilen tip bilgisiyle okunur (bkz. unity_typed)
@@ -456,6 +462,83 @@ def glyph_fallback(text: str, glyphs: Set[int]) -> str:
 
 # Oyun çalışırken TextMeshPro, fontta (ve yedek fontlarda) olmayan harfi kutuyla değiştirince Player.log'a yazar.
 _MISSING_GLYPH = re.compile(r"The character with Unicode value \\u([0-9A-Fa-f]{4,5}) was not found in the \[([^\]]+)\] font asset")
+
+
+def localization_tables(info: Any) -> List[Path]:
+    """Unity Localization dize tabloları: Addressables paketleri (localization-string-tables-*.bundle) ve Unity 6 veri
+    dosyaları (StreamingAssets/LocalizationTables/*.json). Okuma/yazma: unity_localization."""
+    import unity_localization
+    return unity_localization.bundles(info) + unity_localization.data_files(info)
+
+
+LOC_FORMATS = ("loc_file", "loc_bundle")
+
+
+def extract_localization(info: Any, log: LogFn = print, source: str = "en") -> List[UnityTextItem]:
+    import unity_localization as ul
+    items: List[UnityTextItem] = []
+    data_dir = Path(info.data_dir)
+    for table in ul.file_tables(info, source, log):
+        for index, entry in enumerate(table.data["Entries"]):
+            text = entry.get(table.value_field) if isinstance(entry, dict) else None
+            if isinstance(text, str) and re.search(r"[^\W\d_]", text):
+                items.append(UnityTextItem(str(table.path.relative_to(data_dir)), table.collection, index,
+                                           table.value_field, text, "loc_file"))
+    try:
+        entries = ul.scan_bundles(info, source, log) if ul.bundles(info) else []
+    except Exception as exc:   # UnityPy okuyamazsa diğer metinler etkilenmesin
+        log(f"Unity Localization paketleri okunamadı: {exc}")
+        entries = []
+    for e in entries:
+        items.append(UnityTextItem(str(e.bundle.relative_to(data_dir)), f"loc:{e.path_id}", e.index, str(e.entry_id),
+                                   e.text, "loc_bundle"))
+    files = sum(1 for i in items if i.format_type == "loc_file")
+    if items:
+        log(f"Unity Localization: {files} veri dosyası metni, {len(items) - files} paket metni")
+    return items
+
+
+def localization_outputs(info: Any, items: List[UnityTextItem], target: str) -> Tuple[List[Path], List[Path]]:
+    """(yedeklenecek, Capri'nin oluşturacağı) dosyalar."""
+    import unity_localization as ul
+    data_dir = Path(info.data_dir)
+    backup: List[Path] = []
+    created: List[Path] = []
+    for rel in sorted({i.source_file for i in items if i.format_type == "loc_file"}):
+        src = data_dir / rel
+        m = ul._FILE_NAME.match(src.name)
+        if not m:
+            continue
+        target_path = src.with_name(f"{m.group('collection')}_{ul.unity_locale(target)}.json")
+        (backup if target_path.exists() else created).append(target_path)
+    bundles = sorted({data_dir / i.source_file for i in items if i.format_type == "loc_bundle"})
+    if bundles:
+        backup += bundles
+        catalog = ul.catalog_path(info)
+        if catalog:
+            backup.append(catalog)
+    return backup, created
+
+
+def write_localization(info: Any, translations: Dict[str, str], items: List[UnityTextItem], log: LogFn = print,
+                       target: str = "tr", replace_file=None) -> int:
+    import unity_localization as ul
+    data_dir = Path(info.data_dir)
+    written = 0
+    for rel in sorted({i.source_file for i in items if i.format_type == "loc_file"}):
+        table = ul._load(data_dir / rel)
+        if table is None:
+            continue
+        table.value_field = next(i.key_id for i in items if i.source_file == rel and i.format_type == "loc_file")
+        path, changed = ul.write_file_table(table, translations, target)
+        if changed:
+            log(f"Unity Localization: {path.name} yazıldı ({changed} metin)")
+            written += changed
+    entries = [ul.BundleEntry(data_dir / i.source_file, int(i.asset_name.split(":", 1)[1]), i.line_index,
+                              int(i.key_id), i.original, "") for i in items if i.format_type == "loc_bundle"]
+    if entries:
+        written += ul.write_bundles(info, translations, entries, log, replace_file=replace_file)
+    return written
 
 
 def player_log_paths(info: Any) -> List[Path]:
@@ -602,16 +685,9 @@ def _replace_file(path: Path, data: bytes) -> None:
     açık tutabildiğinden önce çöp toplanır; Windows yine izin vermezse dosyanın üzerine doğrudan yazılır."""
     import gc
 
-    temporary = path.with_suffix(path.suffix + ".capri-tmp")
-    temporary.write_bytes(data)
+    from fileio import atomic_write
     gc.collect()
-    try:
-        temporary.replace(path)
-    except PermissionError:
-        with open(path, "r+b") as handle:
-            handle.write(data)
-            handle.truncate()
-        temporary.unlink(missing_ok=True)
+    atomic_write(path, data, in_place_fallback=True)
 
 
 def write_asset_tables(info: UnityGameInfo, translations: Dict[str, str], items: List[UnityTextItem],
@@ -814,7 +890,7 @@ def _translate_texts_unity(
             extra_instruction=extra_instruction,
         )
 
-    elif selected_model in ("openai", "anthropic", "deepl"):
+    elif selected_model in cloud_providers.TRANSLATE_IDS:
         from providers import translate_with_cloud
         translate_with_cloud(
             selected_model, missing, cache, cache_path, log=log, progress=progress,
@@ -962,14 +1038,17 @@ def write_translations_unity(
             lines[item.line_index] = "\t".join(parts) + ending
             changed += 1
         if changed:
-            temporary = path.with_suffix(path.suffix + ".tmp")
-            temporary.write_bytes("".join(lines).encode("utf-8"))
-            temporary.replace(path)
+            from fileio import atomic_write
+            atomic_write(path, "".join(lines).encode("utf-8"))
             modified_count += changed
             log(f"Güncellendi: {path.name} ({changed} satır)")
 
     # 3. Utage senaryo kitapları ve çok dilli tablolar
     modified_count += write_asset_tables(info, translations, extracted_items, log)
+
+    # 3b. Unity Localization dize tabloları
+    if any(i.format_type in LOC_FORMATS for i in extracted_items):
+        modified_count += write_localization(info, translations, extracted_items, log, target_lang, _replace_file)
 
     # 4. Bileşen metinleri (PlayMaker, UI Text/TMP, çok dilli XML)
     if any(i.format_type == "typed" for i in extracted_items):
