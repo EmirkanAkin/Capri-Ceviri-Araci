@@ -363,7 +363,15 @@ def test_runtime_install_downloads_missing_and_activates(tmp_path, monkeypatch):
 def test_local_model_requires_runtime(tmp_path, monkeypatch):
     bridge = make_bridge(tmp_path, monkeypatch, model="opus")
     monkeypatch.setattr(app_modern.gpu_runtime, "ready", lambda: False)
+    # Eski (PyTorch biçimli) model kurulu ama PyTorch yok: PyTorch istenir
+    monkeypatch.setattr(app_modern.prov, "get_offline_model_status",
+                        lambda kind: {"is_ready": True, "backend": "torch", "present_count": 8, "total_files": 8})
     with pytest.raises(app_modern.UserError, match="PyTorch"):
+        bridge._check_model_ready("unity")
+    # Hiç model yok: önce modelin indirilmesi istenir (indirme hafif ortamı da kurar)
+    monkeypatch.setattr(app_modern.prov, "get_offline_model_status",
+                        lambda kind: {"is_ready": False, "backend": "ct2", "present_count": 0, "total_files": 5})
+    with pytest.raises(app_modern.UserError, match="modeli eksik"):
         bridge._check_model_ready("unity")
     monkeypatch.setattr(bridge, "_ask", lambda *a, **k: False)
     monkeypatch.setattr(app_modern.gpu_runtime, "driver_cuda", lambda: None)
